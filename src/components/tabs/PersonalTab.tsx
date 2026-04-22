@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search, Trash2, Calendar, X, Target, Save, AlertCircle, PieChart, CheckCircle2, Pencil, Check, Edit3, SlidersHorizontal, MessageSquare } from 'lucide-react';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
-import { getPersonalExpenses, deletePersonalExpense, updatePersonalExpense, type PersonalExpense, EXPENSE_CATEGORIES } from '@/lib/storage';
+import { getPersonalExpenses, deletePersonalExpense, updatePersonalExpense, saveSharedExpense, generateId, getUniquePersonNames, type PersonalExpense, type SharedExpense, EXPENSE_CATEGORIES } from '@/lib/storage';
 import { AddPersonalExpenseModal } from '@/components/modals/AddPersonalExpenseModal';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
 import { ExpenseChart } from '@/components/ExpenseChart';
@@ -50,6 +50,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
   const [editedCategory, setEditedCategory] = useState('Other');
   const [editedType, setEditedType] = useState<'income' | 'expense'>('expense');
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [showPersonPicker, setShowPersonPicker] = useState(false);
   const [filterType, setFilterType] = useState<'all' | 'expense' | 'income'>('all');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const filterMenuRef = useRef<HTMLDivElement>(null);
@@ -58,9 +59,13 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
     setViewingExpense(null);
     setIsEditingReason(false);
     setShowCategoryPicker(false);
+    setShowPersonPicker(false);
   });
   useBackHandler(!!deletingId, () => setDeletingId(null));
   useBackHandler(showAddModal, () => setShowAddModal(false));
+  useBackHandler(showPersonPicker, () => setShowPersonPicker(false));
+
+  const existingPersonNames = useMemo(() => getUniquePersonNames(), [expenses]);
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(expense => {
@@ -153,12 +158,30 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
     const handleTriggerAdd = (e: any) => {
       if (e.detail?.tabId === 'personal') setShowAddModal(true);
     };
+    const handleOpenTransaction = (e: Event) => {
+      const detail = (e as CustomEvent<{ tabId?: string; transactionId?: string }>).detail;
+      if (!detail || detail.tabId !== 'personal' || !detail.transactionId) return;
+
+      const latest = getPersonalExpenses();
+      setExpenses(latest);
+      const target = latest.find((item) => item.id === detail.transactionId);
+      if (!target) return;
+
+      const monthKey = (target.date || '').slice(0, 7);
+      if (monthKey) setSelectedMonthKey(monthKey);
+      setViewingExpense(target);
+      setIsEditingReason(false);
+      setShowCategoryPicker(false);
+      setShowPersonPicker(false);
+    };
     const sync = () => setExpenses(getPersonalExpenses());
     window.addEventListener('splitmate_trigger_add', handleTriggerAdd);
     window.addEventListener('splitmate_data_changed', sync);
+    window.addEventListener('splitmate_open_transaction', handleOpenTransaction);
     return () => {
       window.removeEventListener('splitmate_trigger_add', handleTriggerAdd);
       window.removeEventListener('splitmate_data_changed', sync);
+      window.removeEventListener('splitmate_open_transaction', handleOpenTransaction);
     };
   }, []);
 
@@ -228,6 +251,52 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
     const absolute = Math.abs(amount);
     const formatted = absolute.toLocaleString(currency.locale, { maximumFractionDigits: 2 });
     return `${signedPrefix}${currency.symbol}${formatted}`;
+  };
+
+  const convertPersonalToShared = (personName: string) => {
+    if (!viewingExpense) return;
+    if (viewingExpense.isMirror) {
+      toast({ title: 'Mirror entry', description: 'This transaction already comes from shared records.', variant: 'destructive' });
+      return;
+    }
+
+    const isIncome = isEditingReason ? editedType === 'income' : Boolean(viewingExpense.isIncome);
+    const draftAmount = isEditingReason ? parseFloat(editedAmount) : viewingExpense.amount;
+    const amount = Number.isFinite(draftAmount) ? Math.abs(draftAmount) : Math.abs(viewingExpense.amount);
+    const reason = (isEditingReason ? editedReason : viewingExpense.reason).trim() || (isIncome ? 'Income' : 'Expense');
+    const date = (isEditingReason ? editedDate : viewingExpense.date) || viewingExpense.date;
+    const category = isIncome ? 'Income' : (isEditingReason ? editedCategory : viewingExpense.category || 'Other');
+
+    const sharedExpense: SharedExpense = {
+      id: generateId(),
+      amount,
+      reason,
+      paidBy: isIncome ? personName : 'me',
+      forPerson: isIncome ? 'me' : personName,
+      personName,
+      date,
+      createdAt: new Date().toISOString(),
+      settled: false,
+      category,
+      accountId: isIncome ? undefined : viewingExpense.accountId,
+    };
+
+    const saved = saveSharedExpense(sharedExpense);
+    if (!saved) return;
+
+    deletePersonalExpense(viewingExpense.id);
+    setExpenses(getPersonalExpenses());
+    setShowPersonPicker(false);
+    setShowCategoryPicker(false);
+    setIsEditingReason(false);
+    setViewingExpense(null);
+
+    toast({
+      title: 'Moved to Split',
+      description: isIncome
+        ? `${personName} gave you ${currency.symbol}${amount.toLocaleString(currency.locale)}.`
+        : `You paid ${personName} ${currency.symbol}${amount.toLocaleString(currency.locale)}.`,
+    });
   };
 
   const shiftMonth = (direction: 'left' | 'right') => {
@@ -679,22 +748,29 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
                   <span className="text-sm">{CATEGORY_EMOJIS[isEditingReason ? editedCategory : viewingExpense.category] || '📦'}</span>
                   <span className="text-[9px] font-black text-primary uppercase tracking-[0.1em]">{isEditingReason ? editedCategory : viewingExpense.category}</span>
                 </button>
-              {(() => {
-                const lowerReason = viewingExpense.reason.toLowerCase();
-                const match = lowerReason.match(/paid by\s+([a-zA-Z\s]+)/);
-                const paidBy = match ? match[1].split(/[()]/)[0].trim() : null;
-
-                return (
-                  <div className={cn(
-                    "px-3 py-1.5 rounded-full border border-border/5",
-                    paidBy ? "bg-rose-500/10 text-rose-500" : "bg-secondary text-muted-foreground"
-                  )}>
-                    <span className="text-[9px] font-black uppercase tracking-[0.1em]">
-                      {paidBy ? `Paid by ${paidBy}` : (isEditingReason ? editedType === 'income' : viewingExpense.isIncome) ? "You Got" : "Paid by You"}
-                    </span>
-                  </div>
-                );
-              })()}
+                <button
+                  type="button"
+                  disabled={!isEditingReason}
+                  onClick={() => {
+                    if (!isEditingReason) return;
+                    if (existingPersonNames.length === 0) {
+                      toast({ title: 'No people found', description: 'Add at least one shared person first.' });
+                      return;
+                    }
+                    setShowPersonPicker(true);
+                  }}
+                  className={cn(
+                    'px-3 py-1.5 rounded-full border border-border/5 transition-all',
+                    (isEditingReason ? editedType === 'income' : viewingExpense.isIncome)
+                      ? 'bg-emerald-500/10 text-emerald-500'
+                      : 'bg-rose-500/10 text-rose-500',
+                    isEditingReason ? 'active:scale-95' : 'cursor-default',
+                  )}
+                >
+                  <span className="text-[9px] font-black uppercase tracking-[0.1em]">
+                    {(isEditingReason ? editedType === 'income' : viewingExpense.isIncome) ? 'You Got' : 'You Paid'}
+                  </span>
+                </button>
               </div>
 
               {isEditingReason && showCategoryPicker && (
@@ -839,6 +915,40 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
             <div className="flex items-center justify-center pt-1">
               <span className="text-[8px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40">Personal Transaction Verified</span>
             </div>
+
+            {showPersonPicker && (
+              <div className="absolute inset-0 z-20 bg-card/95 backdrop-blur-sm rounded-[3rem] p-5 pt-14 flex flex-col">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-black uppercase tracking-[0.16em] text-foreground">Select Person</h3>
+                  <button
+                    type="button"
+                    onClick={() => setShowPersonPicker(false)}
+                    className="w-8 h-8 rounded-full bg-secondary border border-border/10 flex items-center justify-center"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+
+                <p className="text-[10px] font-semibold text-muted-foreground mb-3">
+                  {(isEditingReason ? editedType === 'income' : viewingExpense.isIncome)
+                    ? 'Choose who gave you this amount.'
+                    : 'Choose who you paid this amount to.'}
+                </p>
+
+                <div className="space-y-2 overflow-y-auto max-h-72 pr-1">
+                  {existingPersonNames.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => convertPersonalToShared(name)}
+                      className="w-full h-11 rounded-2xl border border-border/10 bg-secondary/25 text-left px-4 text-sm font-bold tracking-tight active:scale-[0.99]"
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>,
         document.body

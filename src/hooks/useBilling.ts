@@ -15,7 +15,7 @@ import {
 } from '@/lib/proSubscription';
 import { loadProSubscriptionForCurrentUser, saveProSubscriptionForCurrentUser } from '@/integrations/firebase/proSubscription';
 import { getCurrentGoogleUser, subscribeGoogleAuth } from '@/integrations/firebase/auth';
-import { setProStatusCache } from '@/lib/proAccess';
+import { clearProStatusCache, setProStatusCache } from '@/lib/proAccess';
 
 const PRODUCT_META: Array<{ plan: ProPlanId; productId: string; name: string; type: CdvPurchase.ProductType; }> = [
   { plan: 'monthly', productId: 'pro_monthly', name: 'SplitMate Pro - Monthly', type: CdvPurchase.ProductType.PAID_SUBSCRIPTION },
@@ -69,9 +69,46 @@ function getTransactionProductId(transaction: CdvPurchase.Transaction) {
 }
 
 function isTransactionStillValid(transaction: CdvPurchase.Transaction): boolean {
-  const expiryDate = (transaction as any).expiryDate;
+  const transactionAny = transaction as any;
+  const expiryDate =
+    toIsoDate(transactionAny.expiryDate)
+    || toIsoDate(transactionAny.expirationDate)
+    || toIsoDate(transactionAny.expiresDate)
+    || toIsoDate(transactionAny.expiryTime)
+    || toIsoDate(transactionAny.expiryTimeMillis)
+    || toIsoDate(transactionAny.expiryDateMillis)
+    || toIsoDate(transactionAny.expirationDateMillis)
+    || toIsoDate(transactionAny.expiryDateMs)
+    || toIsoDate(transactionAny.expiryDateInMillis);
+
   if (!expiryDate) return true;
-  return new Date(expiryDate) > new Date();
+  return new Date(expiryDate).getTime() > Date.now();
+}
+
+function toIsoDate(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value.toISOString() : null;
+  }
+
+  if (typeof value === 'number') {
+    const millis = value < 1_000_000_000_000 ? value * 1000 : value;
+    const parsed = new Date(millis);
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (/^\d+$/.test(trimmed)) {
+      return toIsoDate(Number(trimmed));
+    }
+    const parsed = new Date(trimmed);
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+  }
+
+  return null;
 }
 
 function buildSubscriptionRecordFromApprovedTransaction(transaction: CdvPurchase.Transaction): ProSubscriptionRecord | null {
@@ -82,15 +119,29 @@ function buildSubscriptionRecordFromApprovedTransaction(transaction: CdvPurchase
   if (!plan) return null;
 
   const purchasedAt = transaction.lastRenewalDate ?? transaction.purchaseDate ?? new Date();
+  const transactionAny = transaction as any;
+  const explicitExpiryDate =
+    toIsoDate(transactionAny.expiryDate)
+    || toIsoDate(transactionAny.expirationDate)
+    || toIsoDate(transactionAny.expiresDate)
+    || toIsoDate(transactionAny.expiryTime)
+    || toIsoDate(transactionAny.expiryTimeMillis)
+    || toIsoDate(transactionAny.expiryDateMillis)
+    || toIsoDate(transactionAny.expirationDateMillis)
+    || toIsoDate(transactionAny.expiryDateMs)
+    || toIsoDate(transactionAny.expiryDateInMillis);
+
+  const computedEndDate = explicitExpiryDate ?? (plan === 'lifetime' ? null : getPlanEndDate(plan, purchasedAt));
+  const isExpiredByDate = computedEndDate ? new Date(computedEndDate).getTime() <= Date.now() : false;
 
   return normalizeProSubscription({
     isPro: true,
     plan,
     startDate: purchasedAt.toISOString(),
-    endDate: plan === 'lifetime' ? null : getPlanEndDate(plan, purchasedAt),
+    endDate: computedEndDate,
     purchaseToken: transaction.purchaseId ?? transaction.transactionId ?? `${productId}:${purchasedAt.getTime()}`,
     productId,
-    isExpired: false,
+    isExpired: isExpiredByDate,
     restoredAt: null,
   });
 }
@@ -168,28 +219,28 @@ export function useBilling() {
     }));
   }, []);
 
-  const syncBestVerifiedPurchase = useCallback(async (restoredAt: string | null) => {
+  const syncBestVerifiedPurchase = useCallback(async (restoredAt: string | null): Promise<ProSubscriptionRecord | null> => {
     const store = getStore();
     const bestPurchase = pickBestVerifiedPurchase(store.verifiedPurchases);
-    if (!bestPurchase) return false;
+    if (!bestPurchase) return null;
 
     const record = buildSubscriptionRecordFromVerifiedPurchase(bestPurchase, restoredAt);
-    if (!record) return false;
+    if (!record) return null;
 
     await saveProSubscriptionForCurrentUser(record);
-    return true;
+    return record;
   }, []);
 
-  const syncBestLocalTransactionPurchase = useCallback(async () => {
+  const syncBestLocalTransactionPurchase = useCallback(async (): Promise<ProSubscriptionRecord | null> => {
     const store = getStore();
     const bestTransaction = pickBestLocalTransaction(store.localTransactions);
-    if (!bestTransaction) return false;
+    if (!bestTransaction) return null;
 
     const record = buildSubscriptionRecordFromApprovedTransaction(bestTransaction);
-    if (!record) return false;
+    if (!record) return null;
 
     await saveProSubscriptionForCurrentUser(record);
-    return true;
+    return record;
   }, []);
 
   const persistProRecordAndFinish = useCallback(async (
@@ -208,7 +259,7 @@ export function useBilling() {
       await finish();
 
       persistedPurchaseTokensRef.current.add(record.purchaseToken);
-      setProStatusCache(true, record.plan);
+      setProStatusCache(true, record.plan, record.endDate);
       setError(null);
       notifyProSubscriptionChanged();
       syncProducts();
@@ -405,11 +456,15 @@ export function useBilling() {
     syncProducts();
 
     const restoredFromVerified = await syncBestVerifiedPurchase(new Date().toISOString());
-    const restoredFromLocal = restoredFromVerified ? false : await syncBestLocalTransactionPurchase();
-    const restored = restoredFromVerified || restoredFromLocal;
+    const restoredFromLocal = restoredFromVerified ? null : await syncBestLocalTransactionPurchase();
+    const restoredRecord = restoredFromVerified || restoredFromLocal;
+    const restored = Boolean(restoredRecord);
 
     if (restored) {
-      setProStatusCache(true);
+      setProStatusCache(true, restoredRecord!.plan, restoredRecord!.endDate);
+      notifyProSubscriptionChanged();
+    } else {
+      clearProStatusCache();
       notifyProSubscriptionChanged();
     }
 

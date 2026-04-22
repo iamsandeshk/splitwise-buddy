@@ -51,6 +51,32 @@ function parseDate(value: string | null | undefined): number | null {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
+function toIsoDate(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value.toISOString() : null;
+  }
+
+  if (typeof value === 'number') {
+    const millis = value < 1_000_000_000_000 ? value * 1000 : value;
+    const parsed = new Date(millis);
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (/^\d+$/.test(trimmed)) {
+      return toIsoDate(Number(trimmed));
+    }
+    const parsed = new Date(trimmed);
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+  }
+
+  return null;
+}
+
 function addDays(base: Date, days: number) {
   return new Date(base.getTime() + (days * 24 * 60 * 60 * 1000));
 }
@@ -96,9 +122,9 @@ export function normalizeProSubscription(record: Partial<ProSubscriptionRecord> 
 
   const startDate = new Date(record.startDate);
   const normalizedStartDate = Number.isFinite(startDate.getTime()) ? startDate.toISOString() : new Date().toISOString();
-  const endDate = record.plan === 'lifetime'
-    ? null
-    : (record.endDate ? new Date(record.endDate).toISOString() : getPlanEndDate(record.plan, new Date(normalizedStartDate)));
+  const explicitEndDate = toIsoDate(record.endDate);
+  const endDate = explicitEndDate
+    ?? (record.plan === 'lifetime' ? null : getPlanEndDate(record.plan, new Date(normalizedStartDate)));
 
   const normalized: ProSubscriptionRecord = {
     isPro: record.isPro ?? true,
@@ -111,7 +137,7 @@ export function normalizeProSubscription(record: Partial<ProSubscriptionRecord> 
     restoredAt: record.restoredAt ?? null,
   };
 
-  if (normalized.plan !== 'lifetime' && normalized.endDate) {
+  if (normalized.endDate) {
     const endTime = parseDate(normalized.endDate);
     if (endTime !== null && endTime <= Date.now()) {
       normalized.isPro = false;
@@ -126,15 +152,30 @@ export function buildSubscriptionRecordFromVerifiedPurchase(purchase: CdvPurchas
   const plan = getPlanIdFromProductId(purchase.id);
   if (!plan) return null;
 
-  const startDate = new Date(purchase.purchaseDate ?? Date.now()).toISOString();
+  const purchaseAny = purchase as any;
+  const startDate = toIsoDate(purchase.purchaseDate) || new Date().toISOString();
+  const explicitExpiryDate =
+    toIsoDate(purchaseAny.expiryDate)
+    || toIsoDate(purchaseAny.expirationDate)
+    || toIsoDate(purchaseAny.expiresDate)
+    || toIsoDate(purchaseAny.expiryTime)
+    || toIsoDate(purchaseAny.expiryTimeMillis)
+    || toIsoDate(purchaseAny.expiryDateMillis)
+    || toIsoDate(purchaseAny.expirationDateMillis)
+    || toIsoDate(purchaseAny.expiryDateMs)
+    || toIsoDate(purchaseAny.expiryDateInMillis);
+
+  const computedEndDate = explicitExpiryDate ?? (plan === 'lifetime' ? null : getPlanEndDate(plan, new Date(startDate)));
+  const isExpiredByDate = computedEndDate ? new Date(computedEndDate).getTime() <= Date.now() : false;
+
   return normalizeProSubscription({
     isPro: true,
     plan,
     startDate,
-    endDate: plan === 'lifetime' ? null : getPlanEndDate(plan, new Date(startDate)),
+    endDate: computedEndDate,
     purchaseToken: purchase.purchaseId ?? purchase.transactionId ?? purchase.id,
     productId: purchase.id,
-    isExpired: Boolean(purchase.isExpired) && plan !== 'lifetime',
+    isExpired: Boolean(purchase.isExpired) || isExpiredByDate,
     restoredAt,
   });
 }

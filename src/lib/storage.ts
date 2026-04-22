@@ -61,6 +61,7 @@ export interface FinancialAccount {
   name: string;
   type: FinancialAccountType;
   budget: number;
+  isDefault?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -839,14 +840,20 @@ export function setOnboardingDone(): void {
 
 // Personal Expenses
 export function savePersonalExpense(expense: PersonalExpense): boolean {
+  const defaultAccountId = getDefaultAccountId();
+  const normalizedExpense: PersonalExpense = {
+    ...expense,
+    accountId: expense.accountId || defaultAccountId,
+  };
+
   const expenses = getPersonalExpenses();
-  const index = expenses.findIndex(e => e.id === expense.id);
+  const index = expenses.findIndex(e => e.id === normalizedExpense.id);
   
   if (index !== -1) {
-    expenses[index] = expense;
+    expenses[index] = normalizedExpense;
   } else {
-    if (!canAddTransaction(expense.isMirror)) return false;
-    expenses.push(expense);
+    if (!canAddTransaction(normalizedExpense.isMirror)) return false;
+    expenses.push(normalizedExpense);
   }
   
   localStorage.setItem(STORAGE_KEYS.PERSONAL_EXPENSES, JSON.stringify(expenses));
@@ -1066,17 +1073,23 @@ export function deleteFriendGroup(id: string): void {
 
 // Shared Expenses
 export function saveSharedExpense(expense: SharedExpense, skipSync = false): boolean {
+  const defaultAccountId = getDefaultAccountId();
+  const normalizedExpense: SharedExpense = {
+    ...expense,
+    accountId: expense.paidBy === 'me' ? (expense.accountId || defaultAccountId) : undefined,
+  };
+
   const expenses = getSharedExpenses();
-  const index = expenses.findIndex(e => e.id === expense.id);
+  const index = expenses.findIndex(e => e.id === normalizedExpense.id);
   
   if (index !== -1) {
     // Keep existing flags
-    if (expense.createdByMe === undefined) expense.createdByMe = expenses[index].createdByMe;
-    if (expense.isIncoming === undefined) expense.isIncoming = expenses[index].isIncoming;
-    expenses[index] = expense;
+    if (normalizedExpense.createdByMe === undefined) normalizedExpense.createdByMe = expenses[index].createdByMe;
+    if (normalizedExpense.isIncoming === undefined) normalizedExpense.isIncoming = expenses[index].isIncoming;
+    expenses[index] = normalizedExpense;
   } else {
     const uniquePeople = new Set(expenses.map((entry) => entry.personName).filter(Boolean));
-    if (!isProUserCached() && !uniquePeople.has(expense.personName) && uniquePeople.size >= FREE_LIMITS.MAX_PERSONS) {
+    if (!isProUserCached() && !uniquePeople.has(normalizedExpense.personName) && uniquePeople.size >= FREE_LIMITS.MAX_PERSONS) {
       requestProUpgrade(
         'persons',
         'Free users can add only 3 people. Upgrade to Pro for unlimited shared members.',
@@ -1086,17 +1099,17 @@ export function saveSharedExpense(expense: SharedExpense, skipSync = false): boo
 
     if (!canAddTransaction(false)) return false;
     // Set for new
-    if (expense.createdByMe === undefined) expense.createdByMe = !skipSync;
-    if (expense.isIncoming === undefined) expense.isIncoming = skipSync;
-    expenses.push(expense);
+    if (normalizedExpense.createdByMe === undefined) normalizedExpense.createdByMe = !skipSync;
+    if (normalizedExpense.isIncoming === undefined) normalizedExpense.isIncoming = skipSync;
+    expenses.push(normalizedExpense);
   }
   
   localStorage.setItem(STORAGE_KEYS.SHARED_EXPENSES, JSON.stringify(expenses));
 
   // Auto-create/Update person profile and normalize name based on email
-  if (expense.personName) {
+  if (normalizedExpense.personName) {
     const profiles = getPersonProfiles();
-    const incomingSenderEmail = skipSync ? (expense as any).fromEmail : undefined;
+    const incomingSenderEmail = skipSync ? (normalizedExpense as any).fromEmail : undefined;
 
     // First, check if we have a profile with this exact email
     const profileWithEmail = incomingSenderEmail 
@@ -1107,15 +1120,15 @@ export function saveSharedExpense(expense: SharedExpense, skipSync = false): boo
       // 🚀 CRITICAL: If a profile with this email exists, we MUST use the local name 
       // instead of whatever name was sent in the sync update. 
       // This prevents "Sandu" and "SK" from being two different cards for one person.
-      expense.personName = profileWithEmail.name;
+      normalizedExpense.personName = profileWithEmail.name;
     } else {
       // If no profile with email, check by name
-      const profileWithName = profiles[expense.personName];
+      const profileWithName = profiles[normalizedExpense.personName];
       
       if (!profileWithName) {
         // Create new profile if neither name nor email matched
         savePersonProfile({
-          name: expense.personName,
+          name: normalizedExpense.personName,
           email: incomingSenderEmail || undefined
         });
       } else if (incomingSenderEmail && !profileWithName.email) {
@@ -1129,33 +1142,33 @@ export function saveSharedExpense(expense: SharedExpense, skipSync = false): boo
   }
 
   // 🚀 Group Membership Maintenance
-  if (expense.groupId) {
+  if (normalizedExpense.groupId) {
     const groups = getFriendGroups();
-    const existingGroup = groups.find(g => g.id === expense.groupId);
+    const existingGroup = groups.find(g => g.id === normalizedExpense.groupId);
     if (!existingGroup) {
-      const gName = (expense as any).groupName || "Shared Group";
+      const gName = (normalizedExpense as any).groupName || "Shared Group";
       saveFriendGroup({
-        id: expense.groupId,
+        id: normalizedExpense.groupId,
         name: gName,
-        members: ['me', expense.personName], // Initial members: target and sender
+        members: ['me', normalizedExpense.personName], // Initial members: target and sender
         color: '#8B5CF6',
         createdAt: new Date().toISOString(),
-        syncEmails: skipSync && (expense as any).fromEmail ? [(expense as any).fromEmail] : [] // Link back for 2-way sync
+        syncEmails: skipSync && (normalizedExpense as any).fromEmail ? [(normalizedExpense as any).fromEmail] : [] // Link back for 2-way sync
       });
     } else {
       // Group exists, ensure sender is a member
-      if (!existingGroup.members.includes(expense.personName)) {
+      if (!existingGroup.members.includes(normalizedExpense.personName)) {
         // Double check: if they have an email, maybe they are already in under a different name?
-        const incomingSenderEmail = skipSync ? (expense as any).fromEmail : undefined;
+        const incomingSenderEmail = skipSync ? (normalizedExpense as any).fromEmail : undefined;
         const profiles = getPersonProfiles();
         const emailMatch = incomingSenderEmail ? Object.values(profiles).find((p: any) => p.email?.toLowerCase() === incomingSenderEmail.toLowerCase()) : null;
         
         if (emailMatch && existingGroup.members.includes(emailMatch.name)) {
           // They are already in the group under the profile name, just update the expense name
-          expense.personName = emailMatch.name;
+          normalizedExpense.personName = emailMatch.name;
         } else {
           // Truly a new member
-          existingGroup.members.push(expense.personName);
+          existingGroup.members.push(normalizedExpense.personName);
           localStorage.setItem(STORAGE_KEYS.FRIEND_GROUPS, JSON.stringify(groups));
           window.dispatchEvent(new Event('splitmate_friend_groups_changed'));
         }
@@ -1166,12 +1179,12 @@ export function saveSharedExpense(expense: SharedExpense, skipSync = false): boo
   window.dispatchEvent(new Event('splitmate_data_changed'));
 
   // If someone paid for me, add it as personal expense too
-  if (expense.paidBy !== 'me' && expense.forPerson === 'me') {
+  if (normalizedExpense.paidBy !== 'me' && normalizedExpense.forPerson === 'me') {
     // Smart category inference if still 'Other'
-    let finalCategory = expense.category || 'Other';
+    let finalCategory = normalizedExpense.category || 'Other';
 
     if (finalCategory === 'Other') {
-      const lowerReason = (expense.reason || '').toLowerCase();
+      const lowerReason = (normalizedExpense.reason || '').toLowerCase();
       if (lowerReason.includes('food') || lowerReason.includes('din') || lowerReason.includes('lunch') || lowerReason.includes('dinner') || lowerReason.includes('breakfast') || lowerReason.includes('nasta') || lowerReason.includes('drink') || lowerReason.includes('restaurant')) {
         finalCategory = 'Food & Dining';
       } else if (lowerReason.includes('bus') || lowerReason.includes('uber') || lowerReason.includes('taxi') || lowerReason.includes('train') || lowerReason.includes('petrol') || lowerReason.includes('fuel')) {
@@ -1193,20 +1206,20 @@ export function saveSharedExpense(expense: SharedExpense, skipSync = false): boo
 
     const personalExpense: PersonalExpense = {
       id: generateId(),
-      amount: expense.amount,
-      reason: expense.reason + ` (paid by ${expense.personName})`,
+      amount: normalizedExpense.amount,
+      reason: normalizedExpense.reason + ` (paid by ${normalizedExpense.personName})`,
       category: finalCategory,
-      date: expense.date,
-      createdAt: expense.createdAt,
+      date: normalizedExpense.date,
+      createdAt: normalizedExpense.createdAt,
       isMirror: true,
-      mirrorFromId: expense.id
+      mirrorFromId: normalizedExpense.id
     };
     savePersonalExpense(personalExpense);
   }
 
   // Collaboration Sync Logic
   if (!skipSync) {
-    const profile = getPersonProfile(expense.personName);
+    const profile = getPersonProfile(normalizedExpense.personName);
     const myProfile = getAccountProfile();
 
     if (profile?.email) {
@@ -1216,11 +1229,11 @@ export function saveSharedExpense(expense: SharedExpense, skipSync = false): boo
       }
 
       const inverseExpense: SharedExpense = {
-        ...expense,
-        id: expense.id,
+        ...normalizedExpense,
+        id: normalizedExpense.id,
         personName: myProfile.name,
-        paidBy: expense.paidBy === 'me' ? myProfile.name : 'me',
-        forPerson: expense.forPerson === 'me' ? myProfile.name : 'me',
+        paidBy: normalizedExpense.paidBy === 'me' ? myProfile.name : 'me',
+        forPerson: normalizedExpense.forPerson === 'me' ? myProfile.name : 'me',
       };
 
       addPeerUpdate({
@@ -2272,9 +2285,22 @@ function normalizeAccount(account: Partial<FinancialAccount>, touch = false): Fi
     name: account.name?.trim() || 'Account',
     type: account.type || 'other',
     budget: normalizeMoney(account.budget),
+    isDefault: Boolean(account.isDefault),
     createdAt: account.createdAt || now,
     updatedAt: touch ? now : account.updatedAt || now,
   };
+}
+
+function ensureSingleDefaultAccount(accounts: FinancialAccount[]): FinancialAccount[] {
+  if (accounts.length === 0) return [];
+
+  let defaultIndex = accounts.findIndex((account) => account.isDefault);
+  if (defaultIndex < 0) defaultIndex = 0;
+
+  return accounts.map((account, index) => ({
+    ...account,
+    isDefault: index === defaultIndex,
+  }));
 }
 
 export function getAccounts(): FinancialAccount[] {
@@ -2283,16 +2309,23 @@ export function getAccounts(): FinancialAccount[] {
     if (!stored) return [];
     const parsed = JSON.parse(stored) as Partial<FinancialAccount>[];
     if (!Array.isArray(parsed)) return [];
-    return parsed
+    const sorted = parsed
       .map((item) => normalizeAccount(item))
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return ensureSingleDefaultAccount(sorted);
   } catch {
     return [];
   }
 }
 
+export function getDefaultAccountId(): string | undefined {
+  const accounts = getAccounts();
+  if (accounts.length === 0) return undefined;
+  return accounts.find((item) => item.isDefault)?.id || accounts[0].id;
+}
+
 export function saveAccounts(items: FinancialAccount[]): void {
-  const normalized = items.map((item) => normalizeAccount(item));
+  const normalized = ensureSingleDefaultAccount(items.map((item) => normalizeAccount(item)));
   localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(normalized));
   window.dispatchEvent(new Event('splitmate_accounts_changed'));
   window.dispatchEvent(new Event('splitmate_data_changed'));
@@ -2313,8 +2346,17 @@ export function saveAccount(account: FinancialAccount): boolean {
 
   if (index >= 0) {
     normalized.createdAt = accounts[index].createdAt;
+    if (account.isDefault === undefined) {
+      normalized.isDefault = accounts[index].isDefault;
+    }
+    if (normalized.isDefault) {
+      accounts.forEach((item) => { item.isDefault = false; });
+    }
     accounts[index] = normalized;
   } else {
+    if (normalized.isDefault) {
+      accounts.forEach((item) => { item.isDefault = false; });
+    }
     accounts.unshift(normalized);
   }
   saveAccounts(accounts);
@@ -3079,9 +3121,11 @@ export const FIXED_BOTTOM_TAB_IDS = ['home', 'more'] as const;
 const DEFAULT_TABS: TabConfig[] = [
   { id: 'home', visible: true },
   { id: 'personal', visible: true },
-  { id: 'shared', visible: true },
+  { id: 'transactions', visible: true },
   { id: 'accounts', visible: true },
+  { id: 'shared', visible: false },
   { id: 'sms-transactions', visible: false },
+  { id: 'calendar', visible: false },
   { id: 'links', visible: false },
   { id: 'categories', visible: false },
   { id: 'budgets', visible: false },
@@ -3128,6 +3172,52 @@ function sanitizeTabConfig(config: TabConfig[]): TabConfig[] {
   });
 }
 
+function isLegacyDefaultVisibleConfig(config: TabConfig[]): boolean {
+  const visibleIds = config.filter((tab) => tab.visible).map((tab) => tab.id);
+  const expected = ['home', 'personal', 'shared', 'accounts', 'more'];
+  if (visibleIds.length !== expected.length) return false;
+  return expected.every((id, index) => visibleIds[index] === id);
+}
+
+function migrateLegacyDefaultTabs(config: TabConfig[]): TabConfig[] {
+  if (!isLegacyDefaultVisibleConfig(config)) return config;
+
+  return config.map((tab) => {
+    if (tab.id === 'shared') return { ...tab, visible: false };
+    if (tab.id === 'transactions') return { ...tab, visible: true };
+    return tab;
+  });
+}
+
+function migrateDefaultFiveTabOrder(config: TabConfig[]): TabConfig[] {
+  const visibleIds = config.filter((tab) => tab.visible).map((tab) => tab.id);
+  const targetVisibleIds = ['home', 'personal', 'transactions', 'accounts', 'more'];
+
+  if (visibleIds.length !== targetVisibleIds.length) return config;
+  const hasSameVisibleSet = targetVisibleIds.every((id) => visibleIds.includes(id));
+  if (!hasSameVisibleSet) return config;
+
+  const byId = new Map(config.map((tab) => [tab.id, tab]));
+  const ordered: TabConfig[] = [];
+
+  // Force the requested bottom-nav sequence.
+  targetVisibleIds.forEach((id) => {
+    const entry = byId.get(id);
+    if (!entry) return;
+    ordered.push({ ...entry, visible: true });
+    byId.delete(id);
+  });
+
+  // Keep all other tabs in their existing relative order after pinned tabs.
+  config.forEach((tab) => {
+    if (!byId.has(tab.id)) return;
+    ordered.push({ ...tab });
+    byId.delete(tab.id);
+  });
+
+  return ordered;
+}
+
 export function getTabConfig(): TabConfig[] {
   try {
     const raw = localStorage.getItem('splitmate_tab_config');
@@ -3138,14 +3228,16 @@ export function getTabConfig(): TabConfig[] {
     }
     const parsed = JSON.parse(raw) as TabConfig[];
     const sanitized = sanitizeTabConfig(parsed);
-    if (JSON.stringify(sanitized) !== JSON.stringify(parsed)) {
-      setTabConfig(sanitized);
+    const migratedLegacy = migrateLegacyDefaultTabs(sanitized);
+    const migrated = migrateDefaultFiveTabOrder(migratedLegacy);
+    if (JSON.stringify(migrated) !== JSON.stringify(parsed)) {
+      setTabConfig(migrated);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('splitmate_tab_config_changed'));
       }
     }
 
-    return sanitized;
+    return migrated;
   } catch {
     const fallback = sanitizeTabConfig(DEFAULT_TABS);
     setTabConfig(fallback);

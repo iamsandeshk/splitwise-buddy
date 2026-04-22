@@ -27,6 +27,14 @@ class SmsTransactionsPlugin : Plugin() {
     private val KEY_START_AT = "start_at"
     private val KEY_LAST_FETCH_AT = "last_fetch_at"
     private val BACKFILL_WINDOW_MS = 30L * 24L * 60L * 60L * 1000L
+    private val financialSenderHints = listOf(
+        "BANK", "BNK", "HDFC", "ICICI", "SBI", "KOTAK", "AXIS", "YESBANK", "PNB",
+        "IDFC", "CANARA", "BOB", "UNION", "PAYTM", "PHONEPE", "GPAY", "UPI", "CRED"
+    )
+    private val financialBodyHints = listOf(
+        "debited", "credited", "sent", "received", "upi", "imps", "neft", "rtgs",
+        "txn", "transaction", "withdrawn", "spent", "paid", "payment", "bank"
+    )
 
     @PluginMethod
     fun requestSmsPermissions(call: PluginCall) {
@@ -38,6 +46,13 @@ class SmsTransactionsPlugin : Plugin() {
         }
 
         requestPermissionForAlias("sms", call, "permissionCallback")
+    }
+
+    @PluginMethod
+    fun checkSmsPermissions(call: PluginCall) {
+        val result = JSObject()
+        result.put("granted", getPermissionState("sms") == PermissionState.GRANTED)
+        call.resolve(result)
     }
 
     @Suppress("unused")
@@ -83,12 +98,17 @@ class SmsTransactionsPlugin : Plugin() {
         val startAt = prefs.getLong(KEY_START_AT, now - BACKFILL_WINDOW_MS)
         val lastFetchAt = prefs.getLong(KEY_LAST_FETCH_AT, startAt)
         val since = minOf(maxOf(startAt, lastFetchAt), now - BACKFILL_WINDOW_MS)
-        val limit = call.getInt("limit", 30) ?: 30
+        val includeHistory = call.getBoolean("includeHistory", false) ?: false
+        val limit = call.getInt("limit", if (includeHistory) 10 else 30) ?: if (includeHistory) 10 else 30
 
         val messages = JSArray()
         val projection = arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE, Telephony.Sms.TYPE)
-        val selection = "${Telephony.Sms.DATE} >= ? AND ${Telephony.Sms.TYPE} = 1"
-        val selectionArgs = arrayOf(since.toString())
+        val selection = if (includeHistory) {
+            "${Telephony.Sms.TYPE} = 1"
+        } else {
+            "${Telephony.Sms.DATE} >= ? AND ${Telephony.Sms.TYPE} = 1"
+        }
+        val selectionArgs = if (includeHistory) null else arrayOf(since.toString())
         val sortOrder = "${Telephony.Sms.DATE} DESC"
 
         var cursor: Cursor? = null
@@ -110,13 +130,16 @@ class SmsTransactionsPlugin : Plugin() {
 
                 while (cursor.moveToNext() && count < limit) {
                     val body = cursor.getString(bodyIdx) ?: ""
+                    val address = cursor.getString(addrIdx) ?: ""
+                    if (!isFinancialMessage(address, body)) continue
+
                     val amount = extractAmount(body)
                     if (amount <= 0.0) continue
 
                     val entry = JSObject()
                     entry.put("id", cursor.getLong(idIdx).toString())
-                    entry.put("address", cursor.getString(addrIdx) ?: "")
-                    entry.put("body", body)
+                    entry.put("address", address)
+                    entry.put("body", minimizeBody(body))
                     entry.put("amount", amount)
                     entry.put("dateMillis", cursor.getLong(dateIdx))
                     messages.put(entry)
@@ -124,7 +147,9 @@ class SmsTransactionsPlugin : Plugin() {
                 }
             }
 
-            prefs.edit().putLong(KEY_LAST_FETCH_AT, System.currentTimeMillis()).apply()
+            if (!includeHistory) {
+                prefs.edit().putLong(KEY_LAST_FETCH_AT, System.currentTimeMillis()).apply()
+            }
             val result = JSObject()
             result.put("messages", messages)
             call.resolve(result)
@@ -168,5 +193,33 @@ class SmsTransactionsPlugin : Plugin() {
             ?: return 0.0
         val raw = match.groupValues[1].replace(",", "").trim()
         return raw.toDoubleOrNull() ?: 0.0
+    }
+
+    private fun isFinancialMessage(address: String, body: String): Boolean {
+        val normalizedAddress = address.uppercase(Locale.US).replace(" ", "")
+        val normalizedBody = body.lowercase(Locale.US)
+
+        val senderLooksFinancial = financialSenderHints.any { normalizedAddress.contains(it) }
+            || Regex("^[A-Z]{2}-[A-Z0-9]{4,}$").containsMatchIn(normalizedAddress)
+
+        if (!senderLooksFinancial) return false
+
+        val hasFinancialHint = financialBodyHints.any { normalizedBody.contains(it) }
+        if (!hasFinancialHint) return false
+
+        if (normalizedBody.contains("otp") && !normalizedBody.contains("debited") && !normalizedBody.contains("credited")) {
+            return false
+        }
+
+        return true
+    }
+
+    private fun minimizeBody(body: String): String {
+        val masked = body
+            .replace(Regex("\\b\\d{4,}\\b"), "****")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        return if (masked.length <= 90) masked else "${masked.take(90)}..."
     }
 }

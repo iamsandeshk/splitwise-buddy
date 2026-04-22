@@ -23,7 +23,7 @@ Current app version: 4.1.0
 
 ### SMS Transaction Workflow
 - Dedicated SMS Transactions page
-- Toggle-based SMS capture (off by default)
+- Toggle-based SMS capture (on by default)
 - Optional auto-approve to Personal
 - Date-aware transaction cards with direction-aware amounts
 - Counterparty extraction from SMS text (payer/payee)
@@ -120,7 +120,7 @@ Then run from Android Studio.
 
 ## SMS Capture Notes
 
-- SMS permission is requested only when SMS capture is enabled.
+- SMS permission is requested during app launch/onboarding if SMS capture is enabled.
 - On first enable, a local checkpoint timestamp is set to avoid importing historical SMS.
 - New message processing uses timestamp checkpointing and duplicate signatures.
 - Auto-approve path also checks existing Personal entries to prevent repeated inserts.

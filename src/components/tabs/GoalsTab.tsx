@@ -223,6 +223,7 @@ export function GoalsTab({ onOpenAccount, onBack, bannerAdActive = true }: Goals
             const isLockedGoal = !isPro && idx >= FREE_LIMITS.MAX_GOALS;
             const saved = goal.transactions.reduce((sum, tx) => sum + tx.amount, 0);
             const progress = goal.targetAmount > 0 ? Math.min(100, (saved / goal.targetAmount) * 100) : 0;
+            const remainingAmount = Math.max(0, goal.targetAmount - saved);
             return (
               <div key={goal.id} className="contents">
                 <button
@@ -300,8 +301,8 @@ export function GoalsTab({ onOpenAccount, onBack, bannerAdActive = true }: Goals
                         {progress >= 100 ? 'Goal Achieved' : `${Math.round(progress)}% Complete`}
                      </p>
                      {progress > 0 && progress < 100 && (
-                        <span className="text-[10px] font-black text-primary/40 font-mono tracking-widest">
-                           {((goal.targetAmount - saved) / goal.targetAmount * 100).toFixed(0)}% Left
+                      <span className="text-[10px] font-black text-red-500 font-mono tracking-widest">
+                        {currency.symbol}{remainingAmount.toLocaleString(currency.locale, { maximumFractionDigits: 2 })} Left
                         </span>
                      )}
                   </div>

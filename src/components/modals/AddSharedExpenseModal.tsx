@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { User, Tag, Wallet, ChevronLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { saveSharedExpense, generateId, getUniquePersonNames, EXPENSE_CATEGORIES, getAccounts, getCurrency, getSuggestedReasons, getSuggestedPersons, type SharedExpense } from '@/lib/storage';
+import { saveSharedExpense, generateId, getUniquePersonNames, EXPENSE_CATEGORIES, getAccounts, getCurrency, getDefaultAccountId, getSuggestedReasons, getSuggestedPersons, type SharedExpense } from '@/lib/storage';
 import { pushUpdateToCloud } from '@/integrations/firebase/sync';
 import { getPersonProfile, getAccountProfile, savePersonProfile } from '@/lib/storage';
 import { useBannerAd } from '@/hooks/useBannerAd';
@@ -63,7 +63,7 @@ export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, i
       setPersonName(initialPersonName || '');
       setPersonEmail('');
       setPaidBy('me');
-      setAccountId(getAccounts()[0]?.id || '');
+      setAccountId(getDefaultAccountId() || getAccounts()[0]?.id || '');
       setCategory(EXPENSE_CATEGORIES[0]);
 
       if (amountRef.current) {

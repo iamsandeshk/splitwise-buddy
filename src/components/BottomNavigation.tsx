@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Home, User, Users, ExternalLink, Ellipsis,
-  Landmark, Target, Repeat, WalletCards, PieChart, ArrowLeftRight, CreditCard
+  Landmark, Target, Repeat, WalletCards, PieChart, ArrowLeftRight, CreditCard, ListOrdered
 } from 'lucide-react';
 import { getTabConfig, type TabConfig, getLiquidGlassEnabled } from '@/lib/storage';
 
@@ -13,6 +13,7 @@ interface BottomNavigationProps {
 const ALL_NAV_ITEMS = [
   { id: 'home',          label: 'Home',     icon: Home },
   { id: 'personal',      label: 'Personal', icon: User },
+  { id: 'transactions',  label: 'Txn',      icon: ListOrdered },
   { id: 'shared',        label: 'Split',    icon: Users },
   { id: 'links',         label: 'Links',    icon: ExternalLink },
   { id: 'categories',    label: 'Category', icon: PieChart },

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, CreditCard, Pencil, PiggyBank, Plus, Trash2, Wallet } from 'lucide-react';
+import { ArrowLeft, CreditCard, Pencil, PiggyBank, Plus, Star, Trash2, Wallet } from 'lucide-react';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
 import {
   FINANCIAL_ACCOUNT_TYPES,
@@ -28,12 +28,14 @@ interface AccountFormState {
   name: string;
   type: FinancialAccountType;
   budget: string;
+  isDefault: boolean;
 }
 
 const DEFAULT_FORM: AccountFormState = {
   name: '',
   type: 'savings',
   budget: '',
+  isDefault: false,
 };
 
 const TYPE_ICONS: Record<FinancialAccountType, any> = {
@@ -68,7 +70,7 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
   }, []);
 
   const openCreate = () => {
-    setForm(DEFAULT_FORM);
+    setForm({ ...DEFAULT_FORM, isDefault: getAccounts().length === 0 });
     setShowForm(true);
   };
 
@@ -78,6 +80,7 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
       name: account.name,
       type: account.type,
       budget: String(account.budget),
+      isDefault: Boolean(account.isDefault),
     });
     setShowForm(true);
   };
@@ -92,6 +95,7 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
       name: form.name.trim(),
       type: form.type,
       budget: amount,
+      isDefault: form.isDefault,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -186,7 +190,15 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
                       <Icon size={18} />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-bold text-base leading-none truncate">{account.name}</h3>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <h3 className="font-bold text-base leading-none truncate">{account.name}</h3>
+                        {account.isDefault && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-primary shrink-0">
+                            <Star size={10} className="fill-current" />
+                            Default
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground/50 mt-1">{typeLabel}</p>
                     </div>
                   </div>
@@ -242,17 +254,20 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={openCreate}
-        className={cn(
-          'fixed right-4 z-[60] w-14 h-14 rounded-2xl bg-primary text-white shadow-2xl shadow-primary/30 flex items-center justify-center active:scale-90 transition-all',
-          onBack ? 'bottom-10' : 'bottom-[160px]',
-        )}
-        aria-label="Add Account"
-      >
-        <Plus size={24} strokeWidth={2.5} />
-      </button>
+      {createPortal(
+        <button
+          type="button"
+          onClick={openCreate}
+          className={cn(
+            'fixed right-4 z-[60] w-14 h-14 rounded-2xl bg-primary text-white shadow-2xl shadow-primary/30 flex items-center justify-center active:scale-90 transition-all',
+            onBack ? 'bottom-10' : 'bottom-[160px]',
+          )}
+          aria-label="Add Account"
+        >
+          <Plus size={24} strokeWidth={2.5} />
+        </button>,
+        document.body,
+      )}
 
       {showForm && createPortal(
         <div className="fixed inset-0 z-[10002] bg-black/60 backdrop-blur-sm flex items-end p-4" onClick={() => setShowForm(false)}>
@@ -322,6 +337,23 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
                   required
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">Default Account</label>
+              <button
+                type="button"
+                onClick={() => setForm((prev) => ({ ...prev, isDefault: !prev.isDefault }))}
+                className={cn(
+                  'w-full h-11 rounded-2xl border text-[10px] font-black uppercase tracking-wider transition-all inline-flex items-center justify-center gap-2',
+                  form.isDefault
+                    ? 'bg-primary/15 text-primary border-primary/25'
+                    : 'bg-secondary/20 text-muted-foreground border-border/10',
+                )}
+              >
+                <Star size={12} className={cn(form.isDefault && 'fill-current')} />
+                {form.isDefault ? 'Marked As Default' : 'Mark As Default'}
+              </button>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

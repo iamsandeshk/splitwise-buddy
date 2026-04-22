@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeftRight, CreditCard, ExternalLink, Landmark, Repeat, Sparkles, Target, User, Users, WalletCards, PieChart, X, Globe, ArrowRightLeft, MessageSquare } from 'lucide-react';
+import { ArrowLeftRight, CreditCard, ExternalLink, Landmark, Repeat, Sparkles, Target, User, Users, WalletCards, PieChart, X, Globe, ArrowRightLeft, MessageSquare, CalendarDays, ListOrdered } from 'lucide-react';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
 import {
   FIXED_BOTTOM_TAB_IDS,
@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils';
 import { CurrencyConverterModal } from '@/components/modals/CurrencyConverterModal';
 import { useBackHandler } from '@/hooks/useBackHandler';
 import { useAdFree } from '@/hooks/useAdFree';
+import { getAllAppTransactions } from '@/lib/transactions';
 
 interface MoreTabProps {
   onOpenAccount: () => void;
@@ -32,6 +33,7 @@ interface MoreTabProps {
 
 const MORE_CARD_TAB_IDS = [
   'personal',
+  'transactions',
   'shared',
   'links',
   'categories',
@@ -46,6 +48,7 @@ const MORE_CARD_TAB_IDS = [
 const TAB_LABELS: Record<string, string> = {
   home: 'Home',
   personal: 'Personal',
+  transactions: 'Transactions',
   shared: 'Split',
   links: 'Links',
   categories: 'Categories',
@@ -60,6 +63,7 @@ const TAB_LABELS: Record<string, string> = {
 
 const TAB_ICONS: Record<string, any> = {
   personal: User,
+  transactions: ListOrdered,
   shared: Users,
   links: ExternalLink,
   categories: PieChart,
@@ -74,6 +78,7 @@ const TAB_ICONS: Record<string, any> = {
 
 const TAB_COLORS: Record<string, string> = {
   personal: 'text-primary',
+  transactions: 'text-primary',
   shared: 'text-warning',
   links: 'text-primary',
   categories: 'text-primary',
@@ -103,6 +108,19 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
   const goalsCount = getGoals().length;
   const subscriptionsCount = getSubscriptions().length;
   const smsTransactionsCount = getSmsTransactions().length;
+  const allTransactionsCount = getAllAppTransactions().length;
+  const calendarDayCount = useMemo(() => {
+    const keys = new Set<string>();
+    getPersonalExpenses().forEach((expense) => {
+      const key = (expense.createdAt || expense.date || '').slice(0, 10);
+      if (key) keys.add(key);
+    });
+    getSharedExpenses().forEach((expense) => {
+      const key = (expense.createdAt || expense.date || '').slice(0, 10);
+      if (key) keys.add(key);
+    });
+    return keys.size;
+  }, []);
   const accountSummaries = getAccountSummaries();
   const accountsCount = accountSummaries.length;
   const totalAccountsAvailable = accountSummaries.reduce((sum, account) => sum + account.available, 0);
@@ -247,6 +265,30 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
       icon: Repeat,
     },
     {
+      id: 'transactions',
+      title: 'Transactions',
+      subtitle: 'See all incoming, outgoing, personal, split, group and SMS entries.',
+      countText: `${allTransactionsCount} total`,
+      countClass: 'text-primary bg-primary/10',
+      border: 'hsl(var(--primary) / 0.15)',
+      iconBg: 'hsl(var(--primary) / 0.1)',
+      iconClass: 'text-primary',
+      icon: ListOrdered,
+      isTool: true,
+    },
+    {
+      id: 'calendar',
+      title: 'Calendar',
+      subtitle: 'Month-wise activity view from your first transaction to now.',
+      countText: calendarDayCount > 0 ? `${calendarDayCount} active day${calendarDayCount !== 1 ? 's' : ''}` : 'No Activity Yet',
+      countClass: 'text-primary bg-primary/10',
+      border: 'hsl(var(--primary) / 0.15)',
+      iconBg: 'hsl(var(--primary) / 0.1)',
+      iconClass: 'text-primary',
+      icon: CalendarDays,
+      isTool: true,
+    },
+    {
       id: 'converter',
       title: 'Converter',
       subtitle: 'Real-time global exchange rates directly from market indices.',
@@ -270,9 +312,9 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
       icon: MessageSquare,
       isTool: true,
     },
-  ]), [accountsCount, budgetDailyAllowanceText, currency.locale, currency.symbol, goalsCount, linkCount, loansCount, personalCount, sharedCount, smsTransactionsCount, subscriptionsCount, totalAccountsAvailable]);
+  ]), [accountsCount, allTransactionsCount, budgetDailyAllowanceText, calendarDayCount, currency.locale, currency.symbol, goalsCount, linkCount, loansCount, personalCount, sharedCount, smsTransactionsCount, subscriptionsCount, totalAccountsAvailable]);
 
-  const cardsInMore = useMemo(() => featureCards.filter((card) => card.id === 'sms-transactions' || !visibility.get(card.id)), [featureCards, visibility]);
+  const cardsInMore = useMemo(() => featureCards.filter((card) => card.id === 'sms-transactions' || card.id === 'calendar' || !visibility.get(card.id)), [featureCards, visibility]);
   const currentBottomTabs = useMemo(() => tabConfig.filter((tab) => tab.visible), [tabConfig]);
   const swappableBottomTabs = useMemo(
     () => currentBottomTabs.filter((tab) => !fixedTabs.has(tab.id)),
@@ -346,7 +388,9 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
             {cardsInMore.map((card, idx) => {
                const Icon = card.icon;
               const isConverter = card.id === 'converter';
+              const isTransactions = card.id === 'transactions';
               const isSmsTransactions = card.id === 'sms-transactions';
+              const isCalendar = card.id === 'calendar';
                return (
                   <div key={card.id} className="contents">
                     <div
@@ -355,8 +399,16 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
                         setShowConverter(true);
                         return;
                       }
+                      if (isTransactions) {
+                        onOpenFeatureTab('transactions');
+                        return;
+                      }
                       if (isSmsTransactions) {
                           onOpenFeatureTab('sms-transactions');
+                        return;
+                      }
+                      if (isCalendar) {
+                        onOpenFeatureTab('calendar');
                         return;
                       }
                       onOpenFeatureTab(card.id);
@@ -371,7 +423,7 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
                        tabIndex={0}
                     >
                        <div className="flex items-start justify-between mb-3.5 relative z-10">
-                            {card.id !== 'sms-transactions' ? (
+                            {card.id !== 'transactions' && card.id !== 'sms-transactions' && card.id !== 'calendar' ? (
                              <button
                                type="button"
                                onClick={(e) => {
@@ -385,8 +437,8 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
                              </button>
                             ) : (
                              <div className="h-9 px-3.5 rounded-xl text-[9px] font-bold uppercase tracking-wider inline-flex items-center gap-1.5 bg-secondary/40 border border-border/10 text-muted-foreground">
-                               <MessageSquare size={10} strokeWidth={3} />
-                               SMS
+                               {card.id === 'transactions' ? <ListOrdered size={10} strokeWidth={3} /> : card.id === 'sms-transactions' ? <MessageSquare size={10} strokeWidth={3} /> : <CalendarDays size={10} strokeWidth={3} />}
+                               {card.id === 'transactions' ? 'TXN' : card.id === 'sms-transactions' ? 'SMS' : 'CAL'}
                              </div>
                             )}
                           <div className="w-10 h-10 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300 shadow-inner" style={{ background: card.iconBg }}>

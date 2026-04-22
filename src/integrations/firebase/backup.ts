@@ -10,8 +10,7 @@ import {
   type Timestamp,
 } from 'firebase/firestore';
 import { getCurrentGoogleUser, getFirebaseApp } from './auth';
-import { isProUserCached, requestProUpgrade } from '@/lib/proAccess';
-import { showRewardAd } from '@/lib/storage';
+import { isProUserCached } from '@/lib/proAccess';
 
 export interface CloudBackupInfo {
   payload: string;
@@ -95,23 +94,11 @@ async function enforceFreeCloudAction(kind: 'backup' | 'restore') {
 
   const dayStorageKey = kind === 'backup' ? FREE_BACKUP_DAY_KEY : FREE_RESTORE_DAY_KEY;
   if (localStorage.getItem(dayStorageKey) === todayKey()) {
-    requestProUpgrade(
-      kind,
-      kind === 'backup'
-        ? 'Free users can run cloud backup once per day. Upgrade to Pro for unlimited backups.'
-        : 'Free users can run cloud restore once per day. Upgrade to Pro for unlimited restores.',
-    );
-
     throw new Error(
       kind === 'backup'
-        ? 'Daily free cloud backup limit reached. Upgrade to Pro.'
-        : 'Daily free cloud restore limit reached. Upgrade to Pro.',
+        ? 'Free cloud backup already used for today.'
+        : 'Free cloud restore already used for today.',
     );
-  }
-
-  const rewarded = await showRewardAd(false);
-  if (!rewarded) {
-    throw new Error('Watch the rewarded ad to continue with cloud backup/restore.');
   }
 }
 

@@ -76,15 +76,6 @@ export function ProContextProvider({ children }: PropsWithChildren) {
 
       const now = Date.now();
 
-      if (record.plan === 'lifetime') {
-        setSubscription(record);
-        setIsPro(true);
-        setPlan(record.plan);
-        setLoading(false);
-        setProStatusCache(true, record.plan, null);
-        return;
-      }
-
       const endDateMs = record.endDate ? new Date(record.endDate).getTime() : null;
       const isExpired = endDateMs !== null && endDateMs <= now;
 

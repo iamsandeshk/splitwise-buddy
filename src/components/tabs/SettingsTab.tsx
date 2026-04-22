@@ -67,7 +67,7 @@ import { useAdFree } from '@/hooks/useAdFree';
 import { useProGate } from '@/hooks/useProGate';
 import { getProOverride, isDevOverrideEmail, isProUserCached, setProOverride } from '@/lib/proAccess';
 
-const APP_VERSION = '4.0.0';
+const APP_VERSION = '4.4';
 
 type DeleteStep = 'closed' | 'select' | 'confirm';
 
@@ -378,7 +378,12 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
       toast({ title: 'Cloud backup saved', description: 'Backup linked to your Google account.' });
     } catch (error) {
       const message = (error as { message?: string } | null)?.message || 'Could not upload backup to cloud.';
-      toast({ title: 'Cloud backup failed', description: message, variant: 'destructive' });
+      const isDailyLimit = /free cloud backup already used for today/i.test(message);
+      toast({
+        title: isDailyLimit ? 'Free backup used for today' : 'Cloud backup failed',
+        description: message,
+        variant: isDailyLimit ? 'default' : 'destructive',
+      });
     } finally {
       setIsCloudBackupBusy(false);
     }
@@ -430,7 +435,12 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
       refreshComponentState();
     } catch (error) {
       const message = (error as { message?: string } | null)?.message || 'Could not fetch cloud backup.';
-      toast({ title: 'Cloud restore failed', description: message, variant: 'destructive' });
+      const isDailyLimit = /free cloud restore already used for today/i.test(message);
+      toast({
+        title: isDailyLimit ? 'Free restore used for today' : 'Cloud restore failed',
+        description: message,
+        variant: isDailyLimit ? 'default' : 'destructive',
+      });
     } finally {
       setIsCloudRestoreBusy(false);
     }

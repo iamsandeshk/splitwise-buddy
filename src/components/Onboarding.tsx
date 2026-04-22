@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Wallet, Users, BookmarkPlus, BarChart3, ChevronRight, ChevronLeft, Sun, Moon, Monitor, Check, Plus, Home, User, ExternalLink, Settings, Tag, ArrowDownRight, ArrowUpRight, Folder, Pin, UserCircle2 } from 'lucide-react';
+import { useEffect } from 'react';
+import { Wallet, Users, BookmarkPlus, BarChart3, ChevronRight, ChevronLeft, Sun, Moon, Monitor, Check, Plus, Home, User, ExternalLink, Settings, Tag, ArrowDownRight, ArrowUpRight, Folder, Pin, UserCircle2, MessageSquare } from 'lucide-react';
 import { CURRENCIES, setCurrency, setOnboardingDone, saveAccountProfile, importData, type CurrencyInfo } from '@/lib/storage';
 import { setStoredTheme, type ThemeMode } from '@/lib/theme';
 import { signInWithGoogle, getGooglePhotoUrl } from '@/integrations/firebase/auth';
@@ -152,6 +153,27 @@ function LinksPreview() {
   );
 }
 
+function SmsPermissionPreview() {
+  return (
+    <div className="w-full max-w-[280px] mx-auto rounded-3xl p-4 text-left" style={{ background: 'hsl(var(--card) / 0.78)', border: '1px solid hsl(var(--border) / 0.2)' }}>
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'hsl(var(--primary) / 0.1)', color: 'hsl(var(--primary))' }}>
+          <MessageSquare size={18} />
+        </div>
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Android permission</p>
+          <p className="text-sm font-bold">SMS capture stays on</p>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-2 text-xs text-muted-foreground leading-relaxed">
+        <p>SplitMate asks for READ_SMS only when you turn on SMS capture from SMS Transactions.</p>
+        <p>Only financial transaction SMS are processed, and parsed results are stored in SMS Transactions for manual review.</p>
+      </div>
+    </div>
+  );
+}
+
 const STEPS = [
   {
     icon: Wallet,
@@ -196,8 +218,9 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   const isFeatureStep = step < STEPS.length;
   const isThemeStep = step === STEPS.length;
   const isCurrencyStep = step === STEPS.length + 1;
-  const isSignInStep = step === STEPS.length + 2;
-  const totalSteps = STEPS.length + 3;
+  const isPermissionStep = step === STEPS.length + 2;
+  const isSignInStep = step === STEPS.length + 3;
+  const totalSteps = STEPS.length + 4;
 
   const handleNext = () => {
     if (step < totalSteps - 1) {
@@ -384,6 +407,27 @@ export function Onboarding({ onComplete }: OnboardingProps) {
           </div>
         )}
 
+        {isPermissionStep && (
+          <div className="flex flex-col items-center text-center max-w-sm w-full">
+            <div className="relative mb-8">
+              <div
+                className="w-24 h-24 rounded-[2rem] flex items-center justify-center"
+                style={{
+                  background: 'linear-gradient(135deg, hsl(var(--primary) / 0.15), hsl(var(--primary) / 0.05))',
+                  border: '1px solid hsl(var(--primary) / 0.2)',
+                }}
+              >
+                <MessageSquare size={40} className="text-primary" />
+              </div>
+            </div>
+
+            <h1 className="text-2xl font-extrabold mb-2">Enable SMS capture</h1>
+            <p className="text-sm text-muted-foreground mb-6">We’ll ask Android for SMS access so transaction messages can be detected automatically.</p>
+
+            <SmsPermissionPreview />
+          </div>
+        )}
+
         {isSignInStep && (
           <div className="flex flex-col items-center text-center max-w-sm w-full">
             <div className="relative mb-8">
@@ -486,7 +530,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
           </div>
 
           {/* Right Action: Next or Let's Go */}
-          <div className={`${isFeatureStep || isThemeStep || isCurrencyStep ? 'flex-1' : 'hidden'}`}>
+          <div className={`${isFeatureStep || isThemeStep || isCurrencyStep || isPermissionStep ? 'flex-1' : 'hidden'}`}>
             {!isSignInStep && (
               <button
                 onClick={handleNext}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Capacitor } from '@capacitor/core';
 import { ArrowLeft, Check, MessageSquare, Pencil, Send, X } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
 import { NativeAdCard } from '@/components/NativeAdCard';
 import { useToast } from '@/hooks/use-toast';
@@ -18,12 +18,11 @@ import {
   removeSmsTransaction,
   savePersonalExpense,
   saveSharedExpense,
-  upsertSmsTransactions,
   type SmsTargetTab,
   type SmsTransactionCandidate,
 } from '@/lib/storage';
-import { SmsTransactions } from '@/plugins/SmsTransactionPlugin';
 import { useBannerAd } from '@/hooks/useBannerAd';
+import { SmsTransactions } from '@/plugins/SmsTransactionPlugin';
 
 interface SmsTransactionsTabProps {
   onOpenAccount: () => void;
@@ -33,8 +32,9 @@ interface SmsTransactionsTabProps {
 
 const SMS_CAPTURE_ENABLED_KEY = 'splitmate_sms_capture_enabled';
 const SMS_AUTO_APPROVE_KEY = 'splitmate_sms_auto_approve_enabled';
-const SMS_LAST_FETCH_TIME_KEY = 'splitmate_sms_last_fetch_time';
 const SMS_DEMO_EMAIL = 'sandeshkullolli4@gmail.com';
+
+type PermissionStatus = 'unknown' | 'granted' | 'denied';
 
 type TransactionDirection = 'credit' | 'debit';
 type SmsCategory = 'Food' | 'Transport' | 'Shopping' | 'Utilities' | 'Entertainment' | 'Income' | 'Cash' | 'Transfer' | 'Other';
@@ -428,8 +428,16 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
 
   const [items, setItems] = useState<SmsTransactionCandidate[]>(getSmsTransactions());
   const [editing, setEditing] = useState<SmsTransactionCandidate | null>(null);
-  const [smsCaptureEnabled, setSmsCaptureEnabled] = useState(() => localStorage.getItem(SMS_CAPTURE_ENABLED_KEY) === 'true');
-  const [smsAutoApproveEnabled, setSmsAutoApproveEnabled] = useState(() => localStorage.getItem(SMS_AUTO_APPROVE_KEY) === 'true');
+  const [smsCaptureEnabled, setSmsCaptureEnabled] = useState(() => {
+    const storedValue = localStorage.getItem(SMS_CAPTURE_ENABLED_KEY);
+    return storedValue === null ? true : storedValue === 'true';
+  });
+  const [smsAutoApproveEnabled, setSmsAutoApproveEnabled] = useState(() => {
+    const storedValue = localStorage.getItem(SMS_AUTO_APPROVE_KEY);
+    return storedValue === null ? true : storedValue === 'true';
+  });
+  const [permissionStatus, setPermissionStatus] = useState<PermissionStatus>('unknown');
+  const [showDisclosure, setShowDisclosure] = useState(false);
   const [targetTab, setTargetTab] = useState<SmsTargetTab>('personal');
   const [targetPersonName, setTargetPersonName] = useState('');
   const [targetGroupId, setTargetGroupId] = useState('');
@@ -453,6 +461,7 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
   const groups = useMemo(() => getFriendGroups(), [items.length]);
   const persons = useMemo(() => getUniquePersonNames().filter((name) => name !== 'me'), [items.length]);
   useBackHandler(!!editing, () => setEditing(null));
+  useBackHandler(showDisclosure, () => setShowDisclosure(false));
 
   const refresh = () => setItems(getSmsTransactions());
 
@@ -470,111 +479,108 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
 
   useEffect(() => {
     const sync = () => refresh();
+    const handleOpenTransaction = (e: Event) => {
+      const detail = (e as CustomEvent<{ tabId?: string; transactionId?: string }>).detail;
+      if (!detail || detail.tabId !== 'sms-transactions' || !detail.transactionId) return;
+      const target = getSmsTransactions().find((item) => item.id === detail.transactionId);
+      if (!target) return;
+      openEditor(target);
+    };
+
+    const syncPermissionState = async () => {
+      if (!Capacitor.isNativePlatform()) {
+        setPermissionStatus('denied');
+        return;
+      }
+
+      try {
+        const status = await SmsTransactions.checkSmsPermissions();
+        setPermissionStatus(status.granted ? 'granted' : 'denied');
+      } catch {
+        setPermissionStatus('denied');
+      }
+    };
+
     window.addEventListener('splitmate_sms_transactions_changed', sync);
+    window.addEventListener('splitmate_open_transaction', handleOpenTransaction);
+    void syncPermissionState();
 
     return () => {
       window.removeEventListener('splitmate_sms_transactions_changed', sync);
+      window.removeEventListener('splitmate_open_transaction', handleOpenTransaction);
     };
   }, []);
 
   useEffect(() => {
     localStorage.setItem(SMS_CAPTURE_ENABLED_KEY, String(smsCaptureEnabled));
+    window.dispatchEvent(new Event('splitmate_sms_capture_changed'));
 
-    if (smsCaptureEnabled && !localStorage.getItem(SMS_LAST_FETCH_TIME_KEY)) {
-      // On first enable, start from "now" to avoid importing historical SMS.
-      localStorage.setItem(SMS_LAST_FETCH_TIME_KEY, String(Date.now()));
+    if (!smsCaptureEnabled) {
+      window.dispatchEvent(new Event('splitmate_sms_capture_disabled'));
     }
   }, [smsCaptureEnabled]);
 
   useEffect(() => {
     localStorage.setItem(SMS_AUTO_APPROVE_KEY, String(smsAutoApproveEnabled));
+    window.dispatchEvent(new Event('splitmate_sms_auto_approve_changed'));
   }, [smsAutoApproveEnabled]);
 
-  useEffect(() => {
-    if (!smsCaptureEnabled || !Capacitor.isNativePlatform()) return;
+  const requestPermissionAndEnable = async () => {
+    if (!Capacitor.isNativePlatform()) {
+      toast({
+        title: 'SMS capture unavailable',
+        description: 'SMS permissions are only available on Android native builds.',
+        variant: 'destructive',
+      });
+      setShowDisclosure(false);
+      return;
+    }
 
-    let interval: ReturnType<typeof setInterval> | null = null;
-
-    const pullSmsTransactions = async () => {
-      try {
-        const granted = await SmsTransactions.requestSmsPermissions();
-        if (!granted.granted) return;
-
-        await SmsTransactions.initializeCapture();
-
-        const lastFetchTime = Number(localStorage.getItem(SMS_LAST_FETCH_TIME_KEY) || 0);
-        const result = await SmsTransactions.fetchNewTransactions({ limit: 100 });
-        const existingSmsSignatures = new Set(
-          getSmsTransactions().map((item) => buildSmsSignature(item)),
-        );
-        const batchSignatures = new Set<string>();
-
-        const mappedWithTimestamp = (result.messages || [])
-          .map((msg) => ({
-            id: `sms-${msg.id}`,
-            externalId: `sms-${msg.id}`,
-            sourceAddress: msg.address || 'Unknown',
-            body: msg.body || '',
-            amount: Number(msg.amount || 0),
-            date: new Date(msg.dateMillis || Date.now()).toISOString().split('T')[0],
-            reason: normalizeSmsReason(msg.body || ''),
-            name: normalizeSmsName(msg.address || ''),
-            createdAt: new Date().toISOString(),
-            timestamp: msg.dateMillis || Date.now(),
-          }))
-          .filter((item) => {
-            if (!(item.amount > 0 && item.timestamp > lastFetchTime)) return false;
-
-            const signature = buildSmsSignature(item);
-            if (existingSmsSignatures.has(signature) || batchSignatures.has(signature)) return false;
-
-            batchSignatures.add(signature);
-            return true;
-          });
-
-        const mapped: SmsTransactionCandidate[] = mappedWithTimestamp.map(({ timestamp: _, ...item }) => item);
-
-        if (mapped.length > 0) {
-          const latestTime = Math.max(...mappedWithTimestamp.map((item) => item.timestamp));
-          localStorage.setItem(SMS_LAST_FETCH_TIME_KEY, String(latestTime));
-
-          if (smsAutoApproveEnabled) {
-            mappedWithTimestamp.forEach((item) => {
-              const approved = getAutoApprovedPersonalExpense(item);
-              if (isDuplicateAutoApprovedPersonal(item, approved)) return;
-
-              savePersonalExpense({
-                id: generateId(),
-                amount: item.amount,
-                reason: approved.reason,
-                category: approved.category,
-                date: item.date,
-                createdAt: new Date().toISOString(),
-                isIncome: approved.isIncome,
-                source: 'sms',
-                smsExternalId: item.externalId,
-              });
-            });
-          } else {
-            upsertSmsTransactions(mapped);
-          }
-
-          refresh();
-        }
-      } catch (error) {
-        console.warn('[SMS Tab] SMS capture failed', error);
+    try {
+      const result = await SmsTransactions.requestSmsPermissions();
+      if (!result.granted) {
+        setPermissionStatus('denied');
+        toast({
+          title: 'Permission not granted',
+          description: 'Enable SMS permission in system settings to use auto capture.',
+          variant: 'destructive',
+        });
+        return;
       }
-    };
 
-    void pullSmsTransactions();
-    interval = setInterval(() => {
-      void pullSmsTransactions();
-    }, 25000);
+      setPermissionStatus('granted');
+      setSmsCaptureEnabled(true);
+      window.dispatchEvent(new Event('splitmate_sms_permission_granted'));
+      toast({
+        title: 'SMS capture enabled',
+        description: 'Only financial transaction SMS are processed and stored as minimal records on this device.',
+      });
+    } catch {
+      setPermissionStatus('denied');
+      toast({
+        title: 'SMS permission failed',
+        description: 'Could not enable SMS permission right now.',
+        variant: 'destructive',
+      });
+    } finally {
+      setShowDisclosure(false);
+    }
+  };
 
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [smsAutoApproveEnabled, smsCaptureEnabled]);
+  const handleSmsCaptureToggle = () => {
+    if (smsCaptureEnabled) {
+      setSmsCaptureEnabled(false);
+      return;
+    }
+
+    if (permissionStatus === 'granted') {
+      setSmsCaptureEnabled(true);
+      window.dispatchEvent(new Event('splitmate_sms_permission_granted'));
+      return;
+    }
+
+    setShowDisclosure(true);
+  };
 
   const openEditor = (item: SmsTransactionCandidate) => {
     setEditing(item);
@@ -740,8 +746,8 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
               </p>
               <p className="mt-0.5 text-[11px] text-muted-foreground/80 font-medium leading-tight">
                 {smsCaptureEnabled
-                  ? 'On now. SplitMate can fetch and parse SMS transactions automatically.'
-                  : 'Off now. Turn this on to request SMS access and auto-detect transactions.'}
+                  ? 'On now. Only financial SMS are parsed on-device and queued in SMS Transactions.'
+                  : 'Off now. Turn on to explicitly grant permission and capture financial SMS.'}
               </p>
             </div>
           </div>
@@ -750,7 +756,7 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
             type="button"
             role="switch"
             aria-checked={smsCaptureEnabled}
-            onClick={() => setSmsCaptureEnabled((value) => !value)}
+            onClick={handleSmsCaptureToggle}
             className={cn(
               'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border px-1 transition-all duration-200',
               smsCaptureEnabled
@@ -769,6 +775,18 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
           </button>
         </div>
       </div>
+
+      {!smsCaptureEnabled && (
+        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 space-y-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Prominent Disclosure</p>
+          <p className="text-xs text-foreground font-medium leading-relaxed">
+            SplitMate requests READ_SMS only to detect financial transaction SMS (for example bank debit/credit and UPI alerts) and queue them in SMS Transactions for your manual review.
+          </p>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            We process messages on-device, keep minimal derived details (amount, date, sender, short masked snippet), and do not use non-financial SMS.
+          </p>
+        </div>
+      )}
 
       <div className={cn(
         'relative overflow-hidden border-b border-border/10 py-3 transition-all duration-200',
@@ -1078,6 +1096,45 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
               >
                 <Check size={14} />
                 Approve
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {showDisclosure && createPortal(
+        <div className="fixed inset-0 z-[10004] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowDisclosure(false)}>
+          <div
+            className="w-full max-w-md bg-card rounded-2xl p-6 pb-8 space-y-4 animate-in slide-in-from-bottom-10 border border-border/10 duration-300 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold tracking-tight">Enable SMS Capture</h3>
+            <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
+              <p>
+                SplitMate needs SMS permission to detect financial transaction alerts and place them in SMS Transactions for review.
+              </p>
+              <p>
+                Stored location: local app storage on this device. Stored fields: amount, date, sender, and a short masked message snippet.
+              </p>
+              <p>
+                We only process bank/payment transaction SMS and ignore unrelated messages.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowDisclosure(false)}
+                className="h-11 rounded-2xl bg-secondary/60 border border-border/20 text-[10px] font-black uppercase tracking-wider"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={requestPermissionAndEnable}
+                className="h-11 rounded-2xl bg-primary text-white text-[10px] font-black uppercase tracking-wider"
+              >
+                Continue
               </button>
             </div>
           </div>

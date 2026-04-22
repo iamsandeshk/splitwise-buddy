@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { savePersonalExpense, generateId, EXPENSE_CATEGORIES, getAccounts, getCurrency, getSuggestedReasons, type PersonalExpense } from '@/lib/storage';
+import { savePersonalExpense, generateId, EXPENSE_CATEGORIES, getAccounts, getCurrency, getDefaultAccountId, getSuggestedReasons, type PersonalExpense } from '@/lib/storage';
 import { Receipt, Tag, CalendarDays, ChevronLeft, ArrowRight, Save, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -46,7 +46,7 @@ export function AddPersonalExpenseModal({ isOpen, onClose, onAdd }: AddPersonalE
       setCategory(EXPENSE_CATEGORIES[0]);
       setDate(new Date().toISOString().split('T')[0]);
       setIsIncome(false);
-      setAccountId(getAccounts()[0]?.id || '');
+      setAccountId(getDefaultAccountId() || getAccounts()[0]?.id || '');
     }
   }, [isOpen]);
   

@@ -20,6 +20,8 @@ import { GoalsTab } from '@/components/tabs/GoalsTab';
 import { SubscriptionsTab } from '@/components/tabs/SubscriptionsTab';
 import { ConverterTab } from '@/components/tabs/ConverterTab';
 import { SmsTransactionsTab } from '@/components/tabs/SmsTransactionsTab';
+import { CalendarTab } from '@/components/tabs/CalendarTab';
+import { TransactionsTab } from '@/components/tabs/TransactionsTab';
 import { Onboarding } from '@/components/Onboarding';
 import { isOnboardingDone } from '@/lib/storage';
 import { getTabConfig, getSwipeNavEnabled, getLastActiveTab, setLastActiveTab, getPageSlideEnabled, getPersonBalances, getPersonProfile, savePersonProfile, getPendingSyncUpdates, removePendingSyncUpdate, applySyncUpdate, getRejectionUpdates, removeRejectionUpdate, addRejectionUpdate, getAccountProfile, generateId, type PendingSyncUpdate, type RejectionUpdate } from '@/lib/storage';
@@ -28,6 +30,7 @@ import { App as CapacitorApp } from '@capacitor/app';
 import { useToast } from '@/hooks/use-toast';
 import { useNightlyBackup } from '@/hooks/useNightlyBackup';
 import { useBackHandler } from '@/hooks/useBackHandler';
+import { useSmsCapture } from '@/hooks/useSmsCapture';
 import { cn } from '@/lib/utils';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
 import { useBannerAd } from '@/hooks/useBannerAd';
@@ -160,6 +163,8 @@ const Index = () => {
   const tabHistoryRef = useRef<string[]>([]);
   const lastBackPressAtRef = useRef(0);
 
+  useSmsCapture(!showOnboarding);
+
   // Handle cross-page navigation state (e.g., from PersonDetailsPage)
   useEffect(() => {
     if (location.state && (location.state as any).tabId) {
@@ -250,7 +255,9 @@ const Index = () => {
   const moreCardTabIds = new Set([
     'personal',
     'shared',
+    'transactions',
     'sms-transactions',
+    'calendar',
     'links',
     'categories',
     'budgets',
@@ -460,6 +467,15 @@ const Index = () => {
         return (
           <SharedTab onOpenAccount={openAccountTab} onBack={isTabInMore('shared') ? handleFeatureBack : undefined} bannerAdActive={isTabInMore('shared')} />
         );
+      case 'transactions':
+        return (
+          <TransactionsTab
+            onOpenAccount={openAccountTab}
+            onBack={isTabInMore('transactions') ? handleFeatureBack : undefined}
+            onNavigateToTab={navigateToTab}
+            bannerAdActive={isTabInMore('transactions')}
+          />
+        );
       case 'links':
         return (
           <LinksTab onOpenAccount={openAccountTab} onBack={isTabInMore('links') ? handleFeatureBack : undefined} bannerAdActive={isTabInMore('links')} />
@@ -499,6 +515,10 @@ const Index = () => {
       case 'sms-transactions':
         return (
           <SmsTransactionsTab onOpenAccount={openAccountTab} onBack={isTabInMore('sms-transactions') ? handleFeatureBack : undefined} bannerAdActive={isTabInMore('sms-transactions')} />
+        );
+      case 'calendar':
+        return (
+          <CalendarTab onOpenAccount={openAccountTab} onBack={isTabInMore('calendar') ? handleFeatureBack : undefined} bannerAdActive={isTabInMore('calendar')} />
         );
       case 'account':
         return (

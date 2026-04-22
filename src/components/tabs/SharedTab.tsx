@@ -254,6 +254,30 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
     const handleTriggerAdd = (e: any) => {
       if (e.detail?.tabId === 'shared') setShowAddModal(true);
     };
+    const handleOpenTransaction = (e: Event) => {
+      const detail = (e as CustomEvent<{ tabId?: string; transactionId?: string }>).detail;
+      if (!detail || detail.tabId !== 'shared' || !detail.transactionId) return;
+
+      const all = getSharedExpenses();
+      setPersonBalances(getPersonBalances());
+      setGroupBalances(getGroupBalances());
+      setRecentTransactions(
+        all
+        .filter((item) => !item.groupId)
+        .sort((a, b) => {
+          const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+          if (dateDiff !== 0) return dateDiff;
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        }),
+      );
+
+      const target = all.find((item) => item.id === detail.transactionId);
+      if (!target) return;
+      const monthKey = `${new Date(target.date).getFullYear()}-${String(new Date(target.date).getMonth() + 1).padStart(2, '0')}`;
+      setSelectedMonthKey(monthKey);
+      setViewingTransaction(target);
+      setIsEditingReason(false);
+    };
     const sync = () => {
       setPersonBalances(getPersonBalances());
       setGroupBalances(getGroupBalances());
@@ -265,9 +289,11 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
     };
     window.addEventListener('splitmate_trigger_add', handleTriggerAdd);
     window.addEventListener('splitmate_data_changed', sync);
+    window.addEventListener('splitmate_open_transaction', handleOpenTransaction);
     return () => {
       window.removeEventListener('splitmate_trigger_add', handleTriggerAdd);
       window.removeEventListener('splitmate_data_changed', sync);
+      window.removeEventListener('splitmate_open_transaction', handleOpenTransaction);
     };
   }, []);
 
