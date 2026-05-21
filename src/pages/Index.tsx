@@ -602,7 +602,7 @@ const Index = () => {
             transition={{ type: "spring", stiffness: 400, damping: 25, delay: 0.05 }}
             className={cn(
               "fixed right-4 z-[50]",
-              isTabInMore(activeTab) ? "bottom-16" : "bottom-[240px]"
+              isTabInMore(activeTab) ? "bottom-[7.5rem]" : "bottom-[240px]"
             )}
           >
             <button

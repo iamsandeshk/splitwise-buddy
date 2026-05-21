@@ -382,7 +382,7 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
                 {showSearch ? <X size={16} className="text-primary" /> : <Search size={16} className="text-muted-foreground" />}
               </button>
             )}
-            <AccountQuickButton onClick={onOpenAccount} />
+            {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
           </div>
         </div>
       </div>

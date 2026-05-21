@@ -212,7 +212,7 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
             <p className="text-sm text-muted-foreground font-medium opacity-60">Insight into your spending</p>
           </div>
         </div>
-        <AccountQuickButton onClick={onOpenAccount} />
+        {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
       </div>
 
       {/* Modern Month Strip */}

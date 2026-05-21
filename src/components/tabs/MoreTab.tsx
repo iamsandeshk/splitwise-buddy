@@ -43,6 +43,8 @@ const MORE_CARD_TAB_IDS = [
   'goals',
   'subscriptions',
   'converter',
+  'calendar',
+  'sms-transactions',
 ] as const;
 
 const TAB_LABELS: Record<string, string> = {
@@ -423,7 +425,6 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
                        tabIndex={0}
                     >
                        <div className="flex items-start justify-between mb-3.5 relative z-10">
-                            {card.id !== 'transactions' && card.id !== 'sms-transactions' && card.id !== 'calendar' ? (
                              <button
                                type="button"
                                onClick={(e) => {
@@ -435,12 +436,7 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
                                <ArrowLeftRight size={10} strokeWidth={3} />
                                Swap
                              </button>
-                            ) : (
-                             <div className="h-9 px-3.5 rounded-xl text-[9px] font-bold uppercase tracking-wider inline-flex items-center gap-1.5 bg-secondary/40 border border-border/10 text-muted-foreground">
-                               {card.id === 'transactions' ? <ListOrdered size={10} strokeWidth={3} /> : card.id === 'sms-transactions' ? <MessageSquare size={10} strokeWidth={3} /> : <CalendarDays size={10} strokeWidth={3} />}
-                               {card.id === 'transactions' ? 'TXN' : card.id === 'sms-transactions' ? 'SMS' : 'CAL'}
-                             </div>
-                            )}
+
                           <div className="w-10 h-10 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300 shadow-inner" style={{ background: card.iconBg }}>
                              <Icon size={18} className={card.iconClass} strokeWidth={2} />
                           </div>

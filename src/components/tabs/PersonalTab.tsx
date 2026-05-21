@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search, Trash2, Calendar, X, Target, Save, AlertCircle, PieChart, CheckCircle2, Pencil, Check, Edit3, SlidersHorizontal, MessageSquare } from 'lucide-react';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
@@ -385,7 +385,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
             <p className="text-[13px] text-muted-foreground font-medium opacity-80">Track your independent expenses</p>
           </div>
         </div>
-        <AccountQuickButton onClick={onOpenAccount} />
+        {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
       </div>
 
       {/* Unified Spend Dashboard */}
@@ -583,7 +583,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
         <div className="space-y-4">
           <div className="flex flex-col gap-3.5">
             {visibleExpenses.map((expense, idx) => (
-              <div key={expense.id} className="contents">
+              <Fragment key={expense.id}>
                 <div
                   onClick={() => setViewingExpense(expense)}
                   className="ios-card-modern px-5 py-4 group active:scale-[0.98] transition-all overflow-hidden border border-border/10 transform-gpu cursor-pointer"
@@ -630,8 +630,8 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
                     </div>
                   </div>
                 </div>
-                {idx === 0 && <NativeAdCard />}
-              </div>
+                {(idx + 4) % 5 === 0 && <NativeAdCard />}
+              </Fragment>
             ))}
           </div>
         </div>

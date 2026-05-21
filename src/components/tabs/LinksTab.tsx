@@ -128,7 +128,7 @@ export const LinksTab = ({ onOpenAccount, onBack, bannerAdActive = true }: Links
               <Folder size={17} className="text-muted-foreground" />
             </button>
 
-            <AccountQuickButton onClick={onOpenAccount} />
+            {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
           </div>
         </div>
       </div>

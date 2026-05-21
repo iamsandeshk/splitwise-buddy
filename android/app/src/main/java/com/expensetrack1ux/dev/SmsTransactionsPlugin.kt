@@ -164,6 +164,9 @@ class SmsTransactionsPlugin : Plugin() {
         val normalized = body.lowercase(Locale.US)
         val transactionMarkers = listOf(
             "debited",
+            "credited",
+            "credit",
+            "received",
             "spent",
             "purchase",
             "txn",
@@ -199,6 +202,12 @@ class SmsTransactionsPlugin : Plugin() {
         val normalizedAddress = address.uppercase(Locale.US).replace(" ", "")
         val normalizedBody = body.lowercase(Locale.US)
 
+        if (normalizedBody.contains("cooling period limit for upi transactions")
+            && normalizedBody.contains("via wa")
+            && normalizedBody.contains("72 hours after new user registration")) {
+            return false
+        }
+
         val senderLooksFinancial = financialSenderHints.any { normalizedAddress.contains(it) }
             || Regex("^[A-Z]{2}-[A-Z0-9]{4,}$").containsMatchIn(normalizedAddress)
 
@@ -215,11 +224,10 @@ class SmsTransactionsPlugin : Plugin() {
     }
 
     private fun minimizeBody(body: String): String {
-        val masked = body
-            .replace(Regex("\\b\\d{4,}\\b"), "****")
+        val normalized = body
             .replace(Regex("\\s+"), " ")
             .trim()
 
-        return if (masked.length <= 90) masked else "${masked.take(90)}..."
+        return if (normalized.length <= 240) normalized else "${normalized.take(240)}..."
     }
 }

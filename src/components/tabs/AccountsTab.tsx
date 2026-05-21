@@ -142,7 +142,7 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
             <p className="text-[13px] text-muted-foreground font-medium opacity-80">Manage budgets and track source balances</p>
           </div>
         </div>
-        <AccountQuickButton onClick={onOpenAccount} />
+        {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
       </div>
 
       {accounts.length === 0 ? (

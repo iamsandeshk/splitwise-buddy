@@ -18,6 +18,8 @@ import {
   removeSmsTransaction,
   savePersonalExpense,
   saveSharedExpense,
+  getDefaultAccountId,
+  getAccounts,
   type SmsTargetTab,
   type SmsTransactionCandidate,
 } from '@/lib/storage';
@@ -242,39 +244,132 @@ const inferDirection = (text: string): TransactionDirection => {
   return 'debit';
 };
 
+// UPI ref → name cache helpers (mirrors useSmsCapture.ts)
+const SMS_UPI_REF_NAME_MAP_KEY = 'splitmate_sms_upi_ref_name_map';
+
+const getUpiRefNameCache = (): Record<string, string> => {
+  try {
+    const raw = localStorage.getItem(SMS_UPI_REF_NAME_MAP_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const setUpiRefNameCache = (cache: Record<string, string>) => {
+  localStorage.setItem(SMS_UPI_REF_NAME_MAP_KEY, JSON.stringify(cache));
+};
+
+const extractUpiRefFromText = (text: string): string => {
+  const match = text.match(/\b(?:upi\s*ref(?:\s*no)?|upi\s*rrn|rrn|utr|ref\s*id|txn\s*id|txn\s*ref)\s*[:.#-]?\s*(\d{8,20})\b/i);
+  return match?.[1] || '';
+};
+
+const rememberNameForRef = (text: string, name: string) => {
+  const ref = extractUpiRefFromText(text);
+  if (!ref || !name) return;
+  const cache = getUpiRefNameCache();
+  cache[ref] = name;
+  setUpiRefNameCache(cache);
+};
+
+const lookupNameFromRef = (text: string): string => {
+  const ref = extractUpiRefFromText(text);
+  if (!ref) return '';
+  return getUpiRefNameCache()[ref] || '';
+};
+
+// Strip common trailing junk from a captured name (e.g. "(UPI", "Ref", account placeholders)
+const stripNameTrailingJunk = (raw: string): string =>
+  raw
+    .replace(/\s*\(\s*UPI.*$/i, '')      // remove "(UPI Ref..."
+    .replace(/\s*\(\s*Ref.*$/i, '')       // remove "(Ref..."
+    .replace(/\bUPI\b.*$/i, '')           // remove stray "UPI ..."
+    .replace(/\s+on\s+[\d\/\-].*$/i, '') // remove " on 20/04..."
+    .replace(/\s+via\b.*$/i, '')          // remove " via ..."
+    .trim();
+
+const isAccountPlaceholderStr = (s: string) => /^X{2,}[\dX]*$/i.test(s.replace(/\s/g, ''));
+
 const extractCounterparty = (item: SmsTransactionCandidate, direction: TransactionDirection): string => {
   const text = [item.body, item.reason, item.name, item.sourceAddress].filter(Boolean).join(' ');
 
+  // ── Special-case labels ──────────────────────────────────────────────────
+  if (/\binterest\b.*\bfixed\s*deposit\b|\bfixed\s*deposit\b.*\binterest\b/i.test(text)) return 'Monthly Interest';
+  if (/\bsalary\b/i.test(text)) return 'Salary';
+  if (/\brefund\b/i.test(text)) return 'Refund';
+  if (/\bcashback\b/i.test(text)) return 'Cashback';
+
+  // ── VPA handle (name@bank) ───────────────────────────────────────────────
   const upiHandle = text.match(/\b([a-z0-9._&-]{3,})@([a-z0-9._-]{2,})\b/i);
   if (upiHandle?.[1]) {
     const merchant = cleanCounterparty(upiHandle[1]);
-    if (merchant) return merchant;
+    if (merchant && !/^(upi|ref|txn|pay|payment|https?)$/i.test(merchant)) return merchant;
   }
 
-  const patterns = direction === 'credit'
-    ? [
-        /(?:received|credited|credit(?:ed)?)\s+(?:from|by)\s+([^,.\n]+?)(?=\s+(?:on|via|using|through|ref|utr|txn|transaction|avl|bal|$))/i,
-        /\bfrom\s+([^,.\n]+?)(?=\s+(?:on|via|using|through|ref|utr|txn|transaction|$))/i,
-      ]
-    : [
-        /(?:sent|paid|debited?|transferred)\s+(?:to|at)\s+([^,.\n]+?)(?=\s+(?:on|via|using|through|ref|utr|txn|transaction|avl|bal|$))/i,
-        /\bto\s+([^,.\n]+?)(?=\s+(?:on|via|using|through|ref|utr|txn|transaction|$))/i,
-      ];
+  if (direction === 'debit') {
+    // ── "to NAME (UPI Ref" — Slice format ───────────────────────────────────
+    const toUpiRef = text.match(/\bto\s+([A-Za-z][A-Za-z\s.]{1,60})\s*\(\s*UPI\s*Ref/i);
+    if (toUpiRef?.[1]) {
+      const name = cleanCounterparty(stripNameTrailingJunk(toUpiRef[1]));
+      if (name && !isAccountPlaceholderStr(name)) return name;
+    }
 
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (!match?.[1]) continue;
+    // ── "to NAME on DATE" — Kotak / generic format ───────────────────────────
+    const toOn = text.match(/\bto\s+([A-Za-z][A-Za-z\s.]{1,60})\s+on\s+[\d\/\-]/i);
+    if (toOn?.[1]) {
+      const name = cleanCounterparty(stripNameTrailingJunk(toOn[1]));
+      if (name && !isAccountPlaceholderStr(name)) return name;
+    }
 
-    const candidate = cleanCounterparty(match[1]);
-    if (candidate) return candidate;
+    // ── "sent/paid/debited to NAME via/ref/on" — generic ────────────────────
+    const sentTo = text.match(/(?:sent|paid|debited?|transferred)\s+(?:to|at)\s+([^,.(\n]+?)(?=\s+(?:on|via|using|through|ref|utr|txn|transaction|avl|bal|\())/i);
+    if (sentTo?.[1]) {
+      const name = cleanCounterparty(stripNameTrailingJunk(sentTo[1]));
+      if (name && !isAccountPlaceholderStr(name)) return name;
+    }
+
+    // ── "to NAME via" ────────────────────────────────────────────────────────
+    const toVia = text.match(/\bto\s+([A-Za-z][A-Za-z\s.]{1,60})\s+via\b/i);
+    if (toVia?.[1]) {
+      const name = cleanCounterparty(stripNameTrailingJunk(toVia[1]));
+      if (name && !isAccountPlaceholderStr(name)) return name;
+    }
+
+    // ── "to credit a/c" — KGB style, no person name ─────────────────────────
+    if (/to\s+credit\s+a\/c/i.test(text)) return 'Account Transfer';
   }
 
-  const merchantVia = text.match(/\bto\s+([A-Za-z\s]{3,})\s+via\b/i);
-  if (merchantVia?.[1]) {
-    const merchant = cleanCounterparty(merchantVia[1]);
-    if (merchant) return merchant;
+  if (direction === 'credit') {
+    // ── "from NAME via UPI" — Slice received format ──────────────────────────
+    const fromVia = text.match(/\bfrom\s+([A-Za-z][A-Za-z\s.]{1,60})\s+via\b/i);
+    if (fromVia?.[1]) {
+      const name = cleanCounterparty(stripNameTrailingJunk(fromVia[1]));
+      if (name && !isAccountPlaceholderStr(name)) return name;
+    }
+
+    // ── "from NAME on DATE" ──────────────────────────────────────────────────
+    const fromOn = text.match(/\bfrom\s+([A-Za-z][A-Za-z\s.]{1,60})\s+on\s+[\d\/\-]/i);
+    if (fromOn?.[1]) {
+      const name = cleanCounterparty(stripNameTrailingJunk(fromOn[1]));
+      if (name && !isAccountPlaceholderStr(name)) return name;
+    }
+
+    // ── "credited by NAME on DATE" ────────────────────────────────────────────
+    const creditedBy = text.match(/\bcredited\s+by\s+([A-Za-z][A-Za-z\s.]{1,60})\s+on\s+[\d\/\-]/i);
+    if (creditedBy?.[1]) {
+      const name = cleanCounterparty(stripNameTrailingJunk(creditedBy[1]));
+      if (name && !isAccountPlaceholderStr(name)) return name;
+    }
+
+    // ── UPI ref cache lookup (e.g. KGB credit with no sender name) ───────────
+    const cachedName = lookupNameFromRef(text);
+    if (cachedName) return cachedName;
   }
 
+  // ── Fallback: use source address if it looks like a person/merchant ───────
   const senderLike = cleanCounterparty(item.name || '');
   const senderCodeLike = (item.name || '').replace(/[^A-Za-z]/g, '');
   if (
@@ -285,9 +380,7 @@ const extractCounterparty = (item: SmsTransactionCandidate, direction: Transacti
     return senderLike;
   }
 
-  if (/\b(bank|transfer|neft|imps|rtgs)\b/i.test(text)) {
-    return 'Bank Transfer';
-  }
+  if (/\b(neft|imps|rtgs)\b/i.test(text)) return 'Bank Transfer';
 
   return 'Unknown';
 };
@@ -310,8 +403,18 @@ const getTransactionTitle = (item: SmsTransactionCandidate) => {
   const direction = inferDirection(text);
   const counterparty = extractCounterparty(item, direction);
 
-  if (counterparty === 'Unknown') return 'Unknown';
+  // Remember the resolved name for UPI ref-based lookup across SMS
+  // Don't cache generic fallback labels
+  const SKIP_CACHE = ['Unknown', 'Bank Transfer', 'Account Transfer', 'Bank Transaction', 'Monthly Interest', 'Salary', 'Refund', 'Cashback'];
+  if (!SKIP_CACHE.includes(counterparty)) {
+    rememberNameForRef(text, counterparty);
+  }
+
+  if (counterparty === 'Unknown') return 'Bank Transaction';
   if (counterparty === 'Bank Transfer') return 'Bank Transfer';
+  if (counterparty === 'Account Transfer') return 'Account Transfer';
+  // Special labels that stand alone
+  if (['Monthly Interest', 'Salary', 'Refund', 'Cashback'].includes(counterparty)) return counterparty;
 
   const counterpartyKey = counterparty.toLowerCase();
   const smartEntry = Object.entries(SMART_LABELS).find(([key]) => counterpartyKey.includes(key));
@@ -634,6 +737,7 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
         createdAt: new Date().toISOString(),
         isIncome: draftDirection === 'credit',
         source: 'sms',
+        accountId: getDefaultAccountId() || getAccounts()[0]?.id || undefined,
       });
     }
 
@@ -658,6 +762,7 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
         createdAt: new Date().toISOString(),
         settled: false,
         category: draftDirection === 'credit' ? 'Income' : 'Other',
+        accountId: getDefaultAccountId() || getAccounts()[0]?.id || undefined,
       });
     }
 
@@ -685,6 +790,7 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
         category: draftDirection === 'credit' ? 'Income' : 'Other',
         groupId: group.id,
         splitParticipants: group.members,
+        accountId: getDefaultAccountId() || getAccounts()[0]?.id || undefined,
       });
     }
 
@@ -720,7 +826,7 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
             </p>
           </div>
         </div>
-        <AccountQuickButton onClick={onOpenAccount} />
+        {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
       </div>
 
       <div className={cn(

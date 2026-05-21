@@ -3189,6 +3189,27 @@ function migrateLegacyDefaultTabs(config: TabConfig[]): TabConfig[] {
   });
 }
 
+function isLegacySplitLinksVisibleConfig(config: TabConfig[]): boolean {
+  const visibleIds = config.filter((tab) => tab.visible).map((tab) => tab.id);
+  const legacyPresets = [
+    ['home', 'personal', 'shared', 'links', 'more'],
+    ['home', 'personal', 'shared', 'accounts', 'more'],
+  ];
+
+  if (visibleIds.length !== 5) return false;
+  return legacyPresets.some((preset) => preset.every((id, index) => visibleIds[index] === id));
+}
+
+function migrateLegacySplitLinksTabs(config: TabConfig[]): TabConfig[] {
+  if (!isLegacySplitLinksVisibleConfig(config)) return config;
+
+  return config.map((tab) => {
+    if (tab.id === 'shared' || tab.id === 'links') return { ...tab, visible: false };
+    if (tab.id === 'transactions' || tab.id === 'accounts') return { ...tab, visible: true };
+    return tab;
+  });
+}
+
 function migrateDefaultFiveTabOrder(config: TabConfig[]): TabConfig[] {
   const visibleIds = config.filter((tab) => tab.visible).map((tab) => tab.id);
   const targetVisibleIds = ['home', 'personal', 'transactions', 'accounts', 'more'];
@@ -3229,7 +3250,8 @@ export function getTabConfig(): TabConfig[] {
     const parsed = JSON.parse(raw) as TabConfig[];
     const sanitized = sanitizeTabConfig(parsed);
     const migratedLegacy = migrateLegacyDefaultTabs(sanitized);
-    const migrated = migrateDefaultFiveTabOrder(migratedLegacy);
+    const migratedSplitLinks = migrateLegacySplitLinksTabs(migratedLegacy);
+    const migrated = migrateDefaultFiveTabOrder(migratedSplitLinks);
     if (JSON.stringify(migrated) !== JSON.stringify(parsed)) {
       setTabConfig(migrated);
       if (typeof window !== 'undefined') {

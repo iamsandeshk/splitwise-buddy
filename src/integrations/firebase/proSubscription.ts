@@ -105,6 +105,8 @@ function fromSnapshot(snapshotData: DocumentData, uid: string): ProSubscriptionR
     productId: snapshotData.productId,
     isExpired: snapshotData.isExpired,
     restoredAt: readTimestamp(snapshotData.restoredAt),
+    isTestPurchase: Boolean(snapshotData.isTestPurchase),
+    purchaseType: snapshotData.purchaseType,
   } as Partial<ProSubscriptionRecord> & { uid?: string }) ?? null;
 }
 
@@ -118,6 +120,8 @@ export function toFirestoreSubscription(record: ProSubscriptionRecord) {
     productId: record.productId,
     isExpired: record.isExpired,
     restoredAt: toTimestamp(record.restoredAt),
+    isTestPurchase: record.isTestPurchase,
+    purchaseType: record.purchaseType,
   };
 }
 

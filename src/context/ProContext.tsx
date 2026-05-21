@@ -1,4 +1,6 @@
 import { createContext, type PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { App as CapacitorApp } from '@capacitor/app';
 import { subscribeGoogleAuth } from '@/integrations/firebase/auth';
 import {
   deleteProSubscriptionForCurrentUser,
@@ -10,6 +12,7 @@ import {
   type ProPlanId,
   type ProSubscriptionRecord,
 } from '@/lib/proSubscription';
+import { silentRevalidateProSubscription } from '@/hooks/useBilling';
 import { clearProStatusCache, getProOverride, getProStatusCache, isDevOverrideEmail, setProStatusCache } from '@/lib/proAccess';
 import { getAccountProfile, saveAccountProfile } from '@/lib/storage';
 
@@ -36,6 +39,11 @@ export function ProContextProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     let isMounted = true;
     let unsubscribeSubscription = () => {};
+    let resumeListener: { remove: () => Promise<void> } | null = null;
+
+    const runSilentRevalidation = () => {
+      void silentRevalidateProSubscription().catch(() => {});
+    };
 
     const finishCachedTransactionsForSubscription = async (record: ProSubscriptionRecord) => {
       const store = window.CdvPurchase?.store;
@@ -76,10 +84,15 @@ export function ProContextProvider({ children }: PropsWithChildren) {
 
       const now = Date.now();
 
+      // FIX: Derive expiry from endDate directly, treating null endDate on non-lifetime
+      // plans as expired (consistent with proSubscription.ts fix).
       const endDateMs = record.endDate ? new Date(record.endDate).getTime() : null;
-      const isExpired = endDateMs !== null && endDateMs <= now;
+      const isExpiredByDate = endDateMs !== null
+        ? endDateMs <= now
+        : record.plan !== 'lifetime'; // null endDate for non-lifetime = expired
 
-      if (isExpired) {
+      if (isExpiredByDate || record.isExpired) {
+        // Disable nightly backup if it was on.
         const profile = getAccountProfile();
         if (profile.nightlyBackupEnabled) {
           saveAccountProfile({ ...profile, nightlyBackupEnabled: false });
@@ -123,6 +136,13 @@ export function ProContextProvider({ children }: PropsWithChildren) {
 
     const handleSubscriptionRefresh = () => {
       refreshSubscription();
+      runSilentRevalidation();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        runSilentRevalidation();
+      }
     };
 
     const handleProChange = () => {
@@ -135,6 +155,15 @@ export function ProContextProvider({ children }: PropsWithChildren) {
 
     window.addEventListener(PRO_SUBSCRIPTION_REFRESH_EVENT, handleSubscriptionRefresh);
     window.addEventListener('splitmate_pro_changed', handleProChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    if (Capacitor.isNativePlatform()) {
+      void CapacitorApp.addListener('resume', () => {
+        runSilentRevalidation();
+      }).then((listener) => {
+        resumeListener = listener;
+      }).catch(() => {});
+    }
 
     const unsubscribeAuth = subscribeGoogleAuth((user) => {
       unsubscribeSubscription();
@@ -151,6 +180,7 @@ export function ProContextProvider({ children }: PropsWithChildren) {
       }
 
       setLoading(true);
+      runSilentRevalidation();
 
       unsubscribeSubscription = subscribeToProSubscriptionForCurrentUser(user.uid, (record) => {
         applySubscription(record);
@@ -161,6 +191,10 @@ export function ProContextProvider({ children }: PropsWithChildren) {
       isMounted = false;
       window.removeEventListener(PRO_SUBSCRIPTION_REFRESH_EVENT, handleSubscriptionRefresh);
       window.removeEventListener('splitmate_pro_changed', handleProChange);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (resumeListener) {
+        void resumeListener.remove();
+      }
       unsubscribeSubscription();
       unsubscribeAuth();
     };

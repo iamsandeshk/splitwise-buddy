@@ -228,7 +228,7 @@ export function CalendarTab({ onOpenAccount, onBack, bannerAdActive = true }: Ca
             </p>
           </div>
         </div>
-        <AccountQuickButton onClick={onOpenAccount} />
+        {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
       </div>
 
       <div className="rounded-3xl border border-border/15 bg-gradient-to-b from-card/90 to-card/60 p-4 space-y-4 shadow-[0_10px_40px_-30px_hsl(var(--foreground)/0.4)]">

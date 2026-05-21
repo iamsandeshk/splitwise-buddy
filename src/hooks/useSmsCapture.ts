@@ -6,6 +6,8 @@ import {
   getSmsTransactions,
   savePersonalExpense,
   upsertSmsTransactions,
+  getDefaultAccountId,
+  getAccounts,
   type SmsTransactionCandidate,
 } from '@/lib/storage';
 import { SmsTransactions } from '@/plugins/SmsTransactionPlugin';
@@ -14,6 +16,7 @@ const SMS_CAPTURE_ENABLED_KEY = 'splitmate_sms_capture_enabled';
 const SMS_AUTO_APPROVE_KEY = 'splitmate_sms_auto_approve_enabled';
 const SMS_LAST_FETCH_TIME_KEY = 'splitmate_sms_last_fetch_time';
 const SMS_INITIAL_HISTORY_IMPORTED_KEY = 'splitmate_sms_initial_history_imported';
+const SMS_UPI_REF_NAME_MAP_KEY = 'splitmate_sms_upi_ref_name_map';
 
 type PermissionStatus = 'unknown' | 'granted' | 'denied';
 type TransactionDirection = 'credit' | 'debit';
@@ -69,6 +72,58 @@ const titleCase = (value: string) =>
     .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
     .join(' ');
 
+// Strip trailing junk from a regex-captured name segment.
+// e.g. "Sanket Mathapati (UPI" → "Sanket Mathapati"
+const stripNameTrailingJunk = (raw: string): string =>
+  raw
+    .replace(/\s*\(\s*UPI.*$/i, '')      // remove "(UPI Ref..."
+    .replace(/\s*\(\s*Ref.*$/i, '')       // remove "(Ref..."
+    .replace(/\bUPI\b.*$/i, '')           // remove stray "UPI ..."
+    .replace(/\s+on\s+[\d\/\-].*$/i, '') // remove " on 20/04..."
+    .replace(/\s+via\b.*$/i, '')          // remove " via ..."
+    .trim();
+
+const extractUpiRef = (text: string): string => {
+  const match = text.match(/\b(?:upi\s*ref(?:\s*no)?|upi\s*rrn|rrn|utr|ref\s*id|txn\s*id|txn\s*ref)\s*[:.#-]?\s*(\d{8,20})\b/i);
+  return match?.[1] || '';
+};
+
+const getUpiRefNameCache = (): Record<string, string> => {
+  try {
+    const raw = localStorage.getItem(SMS_UPI_REF_NAME_MAP_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const setUpiRefNameCache = (cache: Record<string, string>) => {
+  localStorage.setItem(SMS_UPI_REF_NAME_MAP_KEY, JSON.stringify(cache));
+};
+
+const rememberNameForUpiRef = (text: string, name: string) => {
+  const ref = extractUpiRef(text);
+  if (!ref || !name) return;
+  const cache = getUpiRefNameCache();
+  cache[ref] = name;
+  setUpiRefNameCache(cache);
+};
+
+const lookupNameFromUpiRef = (text: string): string => {
+  const ref = extractUpiRef(text);
+  if (!ref) return '';
+  const cache = getUpiRefNameCache();
+  return cache[ref] || '';
+};
+
+const shouldIgnoreSmsTransaction = (text: string): boolean => {
+  const lower = text.toLowerCase();
+  return /cooling\s*period\s*limit\s*for\s*upi\s*transactions/.test(lower)
+    || /via\s*wa\s*for\s*72\s*hours\s*after\s*new\s*user\s*registration/.test(lower);
+};
+
 // ─── Amount extraction ────────────────────────────────────────────────────────
 // Handles: Rs. 1,00,000 / Rs.10.00 / INR 250.00 / Rs 850
 
@@ -123,20 +178,22 @@ const ACCOUNT_RE = /^X{2,}[\dX]*$/i;
 const isAccountPlaceholder = (s: string) => ACCOUNT_RE.test(s.replace(/\s/g, ''));
 
 const cleanName = (raw: string): string => {
-  const trimmed = raw.trim().replace(/\s+/g, ' ');
+  const trimmed = stripNameTrailingJunk(raw).replace(/\s+/g, ' ');
   if (!trimmed || trimmed.length < 2) return '';
   if (isAccountPlaceholder(trimmed)) return '';
   // Reject if it starts with a known non-name phrase
   if (/^(credit\s+a\/c|your\s+a\/c|the\s+)/i.test(trimmed)) return '';
   // Reject if it's only numbers
   if (/^\d+$/.test(trimmed)) return '';
+  // Reject if the result is just "UPI" or similar noise
+  if (/^(upi|ref|txn|pay|payment)$/i.test(trimmed)) return '';
   return titleCase(trimmed);
 };
 
 const extractName = (text: string, direction: TransactionDirection): string => {
   // ── Special cases ─────────────────────────────────────────────────────────
   if (/\binterest\b.*\bfixed\s*deposit\b|\bfixed\s*deposit\b.*\binterest\b/i.test(text)) {
-    return 'Interest Income';
+    return 'Monthly Interest';
   }
   if (/\bsalary\b/i.test(text)) return 'Salary';
   if (/\brefund\b/i.test(text)) return 'Refund';
@@ -154,9 +211,9 @@ const extractName = (text: string, direction: TransactionDirection): string => {
   }
 
   if (direction === 'debit') {
-    // ── "to NAME (UPI" — Slice format ────────────────────────────────────────
-    // "to TARUN GOWDA D N (UPI Ref:" or "to BANGALORE METRO (UPI Ref:"
-    const toUpi = text.match(/\bto\s+([A-Z][A-Z\s\.]{1,50?})\s*\(UPI/);
+    // ── "to NAME (UPI Ref" — Slice format ────────────────────────────────────
+    // "to Sanket Mathapati (UPI Ref:" or "to BOTTOMS UP (UPI Ref:"
+    const toUpi = text.match(/\bto\s+([A-Za-z][A-Za-z\s.]{1,60})\s*\(\s*UPI\s*Ref/i);
     if (toUpi) {
       const name = cleanName(toUpi[1]);
       if (name) return name;
@@ -164,14 +221,14 @@ const extractName = (text: string, direction: TransactionDirection): string => {
 
     // ── "to NAME on DATE" — Kotak format ─────────────────────────────────────
     // "to Master Aridass on 19/04/2026"
-    const toOn = text.match(/\bto\s+([A-Z][A-Za-z\s\.]{1,50?})\s+on\s+[\d\/\-]/);
+    const toOn = text.match(/\bto\s+([A-Za-z][A-Za-z\s\.]{1,70?})\s+on\s+[\d\/\-]/i);
     if (toOn) {
       const name = cleanName(toOn[1]);
       if (name) return name;
     }
 
     // ── "to NAME via" ─────────────────────────────────────────────────────────
-    const toVia = text.match(/\bto\s+([A-Z][A-Za-z\s\.]{1,50?})\s+via\b/i);
+    const toVia = text.match(/\bto\s+([A-Za-z][A-Za-z\s\.]{1,70?})\s+via\b/i);
     if (toVia) {
       const name = cleanName(toVia[1]);
       if (name) return name;
@@ -184,21 +241,29 @@ const extractName = (text: string, direction: TransactionDirection): string => {
   if (direction === 'credit') {
     // ── "from NAME via UPI" — Slice received format ───────────────────────────
     // "from CHANDRASHEKHAR KULLOLLI via UPI"
-    const fromVia = text.match(/\bfrom\s+([A-Z][A-Za-z\s\.]{1,50?})\s+via\b/i);
+    const fromVia = text.match(/\bfrom\s+([A-Za-z][A-Za-z\s\.]{1,70?})\s+via\b/i);
     if (fromVia) {
       const name = cleanName(fromVia[1]);
       if (name) return name;
     }
 
     // ── "from NAME on DATE" ───────────────────────────────────────────────────
-    const fromOn = text.match(/\bfrom\s+([A-Z][A-Za-z\s\.]{1,50?})\s+on\s+[\d\/\-]/i);
+    const fromOn = text.match(/\bfrom\s+([A-Za-z][A-Za-z\s\.]{1,70?})\s+on\s+[\d\/\-]/i);
     if (fromOn) {
       const name = cleanName(fromOn[1]);
       if (name) return name;
     }
 
+    const byOn = text.match(/\bcredited\s+by\s+([A-Za-z][A-Za-z\s\.]{1,70?})\s+on\s+[\d\/\-]/i);
+    if (byOn) {
+      const name = cleanName(byOn[1]);
+      if (name) return name;
+    }
+
     // ── "credited with Rs" — self/bank transfer, no person ────────────────────
     // e.g. KGB "Account XX3164 is credited with Rs. 2.00. UPI ref no..."
+    const cachedByRef = lookupNameFromUpiRef(text);
+    if (cachedByRef) return cachedByRef;
     return '';
   }
 
@@ -215,10 +280,22 @@ export const getTransactionInfo = (
     .join(' ');
 
   const direction = inferDirection(text);
+  if (shouldIgnoreSmsTransaction(text)) {
+    return { title: 'Ignored', direction, name: '', sourceApp: '' };
+  }
   const name = extractName(text, direction);
   const sourceApp = extractSourceApp(text);
 
+  if (name) {
+    // Don't cache generic fallback labels as person names
+    const SKIP_CACHE = ['Account Transfer', 'Monthly Interest', 'Salary', 'Refund', 'Cashback'];
+    if (!SKIP_CACHE.includes(name)) {
+      rememberNameForUpiRef(text, name);
+    }
+  }
+
   if (!name) {
+    // Build a clean label — never fall back to the raw SMS body
     const label = sourceApp ? `${sourceApp} Transaction` : 'Bank Transaction';
     return { title: label, direction, name: '', sourceApp };
   }
@@ -247,9 +324,10 @@ const normalizeSmsReason = (body: string): string => {
 
 const getAutoApprovedPersonalExpense = (item: SmsTransactionCandidate) => {
   const { title, direction } = getTransactionInfo(item);
-  const reason = title === 'Bank Transaction' ? normalizeSmsReason(item.body) : title;
+  // Always use the parsed title — never store the raw SMS body as the transaction name.
+  // "Bank Transaction" / "Slice Transaction" etc. are acceptable clean fallbacks.
   return {
-    reason,
+    reason: title,
     category: direction === 'credit' ? 'Income' : 'Other',
     isIncome: direction === 'credit',
   };
@@ -361,6 +439,7 @@ export function useSmsCapture(enabled = true) {
                 };
               })
               .filter((item) => item.amount > 0)
+              .filter((item) => !shouldIgnoreSmsTransaction(item.body || ''))
               .filter((item) => !existingHistorySignatures.has(buildSmsSignature(item)));
 
             if (initialHistory.length > 0) {
@@ -378,6 +457,7 @@ export function useSmsCapture(enabled = true) {
                     isIncome: approved.isIncome,
                     source: 'sms',
                     smsExternalId: item.externalId,
+                    accountId: getDefaultAccountId() || getAccounts()[0]?.id || undefined,
                   });
                 });
               } else {
@@ -417,6 +497,7 @@ export function useSmsCapture(enabled = true) {
             };
           })
           .filter((item) => {
+            if (shouldIgnoreSmsTransaction(item.body || '')) return false;
             if (!(item.amount > 0 && item.timestamp > lastFetchTime)) return false;
             const signature = buildSmsSignature(item);
             if (existingSmsSignatures.has(signature) || batchSignatures.has(signature)) return false;
@@ -446,6 +527,7 @@ export function useSmsCapture(enabled = true) {
               isIncome: approved.isIncome,
               source: 'sms',
               smsExternalId: item.externalId,
+              accountId: getDefaultAccountId() || getAccounts()[0]?.id || undefined,
             });
           });
         } else {

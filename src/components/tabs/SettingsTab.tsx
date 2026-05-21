@@ -10,6 +10,7 @@ import {
   UserCircle2, Save, Camera, ArrowLeft, LogIn, LogOut, Search,
   Pencil, CloudUpload, Home, User, Users, ExternalLink, PieChart,
   WalletCards, Landmark, Target, Repeat, ArrowLeftRight, Globe, Sparkles,
+  Calendar, MessageSquare,
   FileSpreadsheet, HardDrive, Activity, CheckSquare, Plus, RefreshCw, HelpCircle, Bell, Settings, CreditCard, Link as LinkIcon, Crown, Share2, Lock
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -67,7 +68,7 @@ import { useAdFree } from '@/hooks/useAdFree';
 import { useProGate } from '@/hooks/useProGate';
 import { getProOverride, isDevOverrideEmail, isProUserCached, setProOverride } from '@/lib/proAccess';
 
-const APP_VERSION = '4.4';
+const APP_VERSION = '4.6';
 
 type DeleteStep = 'closed' | 'select' | 'confirm';
 
@@ -78,14 +79,18 @@ interface SettingsTabProps {
 const DEFAULT_TAB_LAYOUT: TabConfig[] = [
   { id: 'home', visible: true },
   { id: 'personal', visible: true },
-  { id: 'shared', visible: true },
+  { id: 'transactions', visible: true },
   { id: 'accounts', visible: true },
+  { id: 'shared', visible: false },
+  { id: 'sms-transactions', visible: false },
+  { id: 'calendar', visible: false },
   { id: 'links', visible: false },
   { id: 'categories', visible: false },
   { id: 'budgets', visible: false },
   { id: 'loans', visible: false },
   { id: 'goals', visible: false },
   { id: 'subscriptions', visible: false },
+  { id: 'converter', visible: false },
   { id: 'more', visible: true },
 ];
 
@@ -502,7 +507,10 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   const TAB_LABELS: Record<string, string> = {
     home: 'Home',
     personal: 'Personal',
+    transactions: 'Transactions',
     shared: 'Split',
+    'sms-transactions': 'SMS',
+    calendar: 'Calendar',
     links: 'Links',
     categories: 'Categories',
     budgets: 'Budgets',
@@ -517,7 +525,10 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   const TAB_ICONS: Record<string, any> = {
     home: Home,
     personal: User,
+    transactions: Activity,
     shared: Users,
+    'sms-transactions': MessageSquare,
+    calendar: Calendar,
     links: ExternalLink,
     categories: PieChart,
     budgets: WalletCards,
@@ -532,7 +543,10 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   const TAB_COLORS: Record<string, string> = {
     home: 'text-primary',
     personal: 'text-primary',
+    transactions: 'text-primary',
     shared: 'text-warning',
+    'sms-transactions': 'text-primary',
+    calendar: 'text-primary',
     links: 'text-primary',
     categories: 'text-primary',
     budgets: 'text-primary',
@@ -1003,57 +1017,91 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
       {/* Account Profile */}
       <div>
         <p className="text-xs text-muted-foreground px-2 mb-2 uppercase"></p>
-      <div className="p-3.5 space-y-4">
-        <div className="flex items-center justify-center pt-2">
-          <button
-            onClick={() => {
-              if (isEditingProfile) avatarInputRef.current?.click();
-              else if (profile.avatar && !avatarLoadFailed) setShowFullScreenAvatar(true);
-            }}
-            className="relative w-32 h-32 rounded-full overflow-hidden flex items-center justify-center"
-            style={{
-              background: 'hsl(var(--secondary))',
-              border: '3px solid hsl(var(--primary) / 0.28)',
-              boxShadow: '0 12px 32px -12px hsl(var(--primary) / 0.65)',
-            }}
-          >
-            {profile.avatar && !avatarLoadFailed ? (
-              <img
-                src={profile.avatar}
-                alt="Profile"
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-                onError={() => {
-                  setAvatarLoadFailed(true);
-                }}
-              />
-            ) : (
-              <UserCircle2 size={64} className="text-muted-foreground" />
-            )}
-          </button>
-          <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-        </div>
+        <div className="p-3.5 space-y-4">
+          <div className="flex items-center justify-center pt-2">
+            <button
+              onClick={() => {
+                if (isEditingProfile) avatarInputRef.current?.click();
+                else if (profile.avatar && !avatarLoadFailed) setShowFullScreenAvatar(true);
+              }}
+              className="relative w-32 h-32 rounded-full overflow-hidden flex items-center justify-center"
+              style={{
+                background: 'hsl(var(--secondary))',
+                border: '3px solid hsl(var(--primary) / 0.28)',
+                boxShadow: '0 12px 32px -12px hsl(var(--primary) / 0.65)',
+              }}
+            >
+              {profile.avatar && !avatarLoadFailed ? (
+                <img
+                  src={profile.avatar}
+                  alt="Profile"
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                  onError={() => {
+                    setAvatarLoadFailed(true);
+                  }}
+                />
+              ) : (
+                <UserCircle2 size={64} className="text-muted-foreground" />
+              )}
+            </button>
+            <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+          </div>
 
-        <div className="text-center space-y-1">
-          <div className="flex items-center justify-center gap-1.5">
-            <p className="text-base font-bold truncate">{profile.name || 'Guest'}</p>
-            {isEffectivePro && (
-              <img
-                src="/assets/pro-verified-gold.png"
-                alt="Pro verified"
-                className="w-4 h-4 object-contain"
-              />
+          <div className="text-center space-y-1">
+            <div className="flex items-center justify-center gap-1.5">
+              <p className="text-base font-bold truncate">{profile.name || 'Guest'}</p>
+              {isEffectivePro && (
+                <img
+                  src="/assets/pro-verified-gold.png"
+                  alt="Pro verified"
+                  className="w-4 h-4 object-contain"
+                />
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground truncate">{profile.email || 'No email added yet'}</p>
+            {profile.bio && (
+              <p className="text-xs text-muted-foreground/90 line-clamp-2 px-3">{profile.bio}</p>
             )}
           </div>
-          <p className="text-xs text-muted-foreground truncate">{profile.email || 'No email added yet'}</p>
-          {profile.bio && (
-            <p className="text-xs text-muted-foreground/90 line-clamp-2 px-3">{profile.bio}</p>
-          )}
-        </div>
 
-        {!isEditingProfile && !isGoogleConnected && (
-          <div className="pt-2 pb-1 flex flex-col items-center justify-center space-y-3">
-            <div className="flex items-center gap-3 w-full justify-center">
+          {!isEditingProfile && !isGoogleConnected && (
+            <div className="pt-2 pb-1 flex flex-col items-center justify-center space-y-3">
+              <div className="flex items-center gap-3 w-full justify-center">
+                <button
+                  onClick={handleEditDetails}
+                  className="w-11 h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95"
+                  style={{ background: 'hsl(var(--secondary))', border: '1px solid hsl(var(--border) / 0.35)' }}
+                  title="Edit Profile"
+                >
+                  <Pencil size={19} className="text-primary" />
+                </button>
+                <button
+                  onClick={handleGoogleSignIn}
+                  disabled={isGoogleAuthBusy}
+                  className="flex-1 max-w-[220px] h-11 rounded-2xl font-semibold flex items-center justify-center gap-2.5 disabled:opacity-60 text-sm"
+                  style={{
+                    background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
+                    color: 'hsl(var(--primary-foreground))',
+                    boxShadow: '0 8px 20px -8px hsl(var(--primary) / 0.5)',
+                  }}
+                >
+                  <LogIn size={16} />
+                  {isGoogleAuthBusy ? 'Signing in...' : 'Sign in with Google'}
+                </button>
+              </div>
+              <button
+                onClick={() => setShowPrivacy(true)}
+                className="text-[11px] font-medium text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5"
+              >
+                <Shield size={12} />
+                Why do I need to sign in?
+              </button>
+            </div>
+          )}
+
+          {!isEditingProfile && isGoogleConnected && (
+            <div className="pt-2 pb-1 flex items-center justify-center gap-3">
               <button
                 onClick={handleEditDetails}
                 className="w-11 h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95"
@@ -1063,273 +1111,135 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 <Pencil size={19} className="text-primary" />
               </button>
               <button
-                onClick={handleGoogleSignIn}
+                onClick={triggerSignOutFlow}
                 disabled={isGoogleAuthBusy}
-                className="flex-1 max-w-[220px] h-11 rounded-2xl font-semibold flex items-center justify-center gap-2.5 disabled:opacity-60 text-sm"
-                style={{
-                  background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
-                  color: 'hsl(var(--primary-foreground))',
-                  boxShadow: '0 8px 20px -8px hsl(var(--primary) / 0.5)',
-                }}
+                className="h-11 px-5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-xs text-destructive hover:bg-destructive/10 transition-colors"
+                style={{ background: 'transparent', border: '1px solid hsl(var(--destructive) / 0.3)' }}
               >
-                <LogIn size={16} />
-                {isGoogleAuthBusy ? 'Signing in...' : 'Sign in with Google'}
+                <LogOut size={16} />
+                Sign Out
               </button>
             </div>
-            <button
-              onClick={() => setShowPrivacy(true)}
-              className="text-[11px] font-medium text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5"
-            >
-              <Shield size={12} />
-              Why do I need to sign in?
-            </button>
-          </div>
-        )}
+          )}
 
-        {!isEditingProfile && isGoogleConnected && (
-          <div className="pt-2 pb-1 flex items-center justify-center gap-3">
-            <button
-              onClick={handleEditDetails}
-              className="w-11 h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95"
-              style={{ background: 'hsl(var(--secondary))', border: '1px solid hsl(var(--border) / 0.35)' }}
-              title="Edit Profile"
-            >
-              <Pencil size={19} className="text-primary" />
-            </button>
-            <button
-              onClick={triggerSignOutFlow}
-              disabled={isGoogleAuthBusy}
-              className="h-11 px-5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-xs text-destructive hover:bg-destructive/10 transition-colors"
-              style={{ background: 'transparent', border: '1px solid hsl(var(--destructive) / 0.3)' }}
-            >
-              <LogOut size={16} />
-              Sign Out
-            </button>
-          </div>
-        )}
+          {isEditingProfile ? (
+            <>
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  ref={nameInputRef}
+                  value={profile.name}
+                  onChange={(e) => {
+                    if (!isGoogleConnected) handleProfileChange('name', e.target.value);
+                  }}
+                  placeholder="Your name"
+                  className="w-full h-11 px-3 rounded-xl text-sm"
+                  style={{
+                    background: isGoogleConnected ? 'hsl(var(--secondary) / 0.3)' : 'hsl(var(--secondary) / 0.45)',
+                    border: '1px solid hsl(var(--border) / 0.3)',
+                    opacity: isGoogleConnected ? 0.75 : 1,
+                  }}
+                  disabled={isGoogleConnected}
+                />
+                <input
+                  type="email"
+                  value={profile.email}
+                  onChange={(e) => {
+                    if (!isGoogleConnected) handleProfileChange('email', e.target.value);
+                  }}
+                  placeholder="Email (optional)"
+                  className="w-full h-11 px-3 rounded-xl text-sm"
+                  style={{
+                    background: isGoogleConnected ? 'hsl(var(--secondary) / 0.3)' : 'hsl(var(--secondary) / 0.45)',
+                    border: '1px solid hsl(var(--border) / 0.3)',
+                    opacity: isGoogleConnected ? 0.75 : 1,
+                  }}
+                  disabled={isGoogleConnected}
+                />
+                <textarea
+                  value={profile.bio}
+                  onChange={(e) => handleProfileChange('bio', e.target.value)}
+                  placeholder="Short bio (optional)"
+                  rows={2}
+                  className="w-full px-3 py-2 rounded-xl text-sm resize-none"
+                  style={{ background: 'hsl(var(--secondary) / 0.45)', border: '1px solid hsl(var(--border) / 0.3)' }}
+                />
+                {isGoogleConnected && (
+                  <p className="text-[11px] text-muted-foreground px-1">
+                    Name and email are managed by Google account.
+                  </p>
+                )}
+              </div>
 
-        {isEditingProfile ? (
-          <>
-            <div className="space-y-2">
-              <input
-                type="text"
-                ref={nameInputRef}
-                value={profile.name}
-                onChange={(e) => {
-                  if (!isGoogleConnected) handleProfileChange('name', e.target.value);
-                }}
-                placeholder="Your name"
-                className="w-full h-11 px-3 rounded-xl text-sm"
-                style={{
-                  background: isGoogleConnected ? 'hsl(var(--secondary) / 0.3)' : 'hsl(var(--secondary) / 0.45)',
-                  border: '1px solid hsl(var(--border) / 0.3)',
-                  opacity: isGoogleConnected ? 0.75 : 1,
-                }}
-                disabled={isGoogleConnected}
-              />
-              <input
-                type="email"
-                value={profile.email}
-                onChange={(e) => {
-                  if (!isGoogleConnected) handleProfileChange('email', e.target.value);
-                }}
-                placeholder="Email (optional)"
-                className="w-full h-11 px-3 rounded-xl text-sm"
-                style={{
-                  background: isGoogleConnected ? 'hsl(var(--secondary) / 0.3)' : 'hsl(var(--secondary) / 0.45)',
-                  border: '1px solid hsl(var(--border) / 0.3)',
-                  opacity: isGoogleConnected ? 0.75 : 1,
-                }}
-                disabled={isGoogleConnected}
-              />
-              <textarea
-                value={profile.bio}
-                onChange={(e) => handleProfileChange('bio', e.target.value)}
-                placeholder="Short bio (optional)"
-                rows={2}
-                className="w-full px-3 py-2 rounded-xl text-sm resize-none"
-                style={{ background: 'hsl(var(--secondary) / 0.45)', border: '1px solid hsl(var(--border) / 0.3)' }}
-              />
-              {isGoogleConnected && (
-                <p className="text-[11px] text-muted-foreground px-1">
-                  Name and email are managed by Google account.
-                </p>
+              {isProfileDirty && (
+                <div className="flex gap-2.5">
+                  <button
+                    onClick={handleCancelProfileEdit}
+                    className="flex-1 px-4 py-3 rounded-2xl font-semibold text-sm border border-border bg-secondary/50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveProfile}
+                    className="flex-[2] flex items-center justify-center gap-2 px-4 py-3 rounded-2xl font-semibold text-sm"
+                    style={{
+                      background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
+                      color: 'hsl(var(--primary-foreground))',
+                    }}
+                  >
+                    <Save size={14} />
+                    Save Changes
+                  </button>
+                </div>
               )}
-            </div>
-
-            {isProfileDirty && (
-              <div className="flex gap-2.5">
+              {!isProfileDirty && (
                 <button
                   onClick={handleCancelProfileEdit}
-                  className="flex-1 px-4 py-3 rounded-2xl font-semibold text-sm border border-border bg-secondary/50"
+                  className="w-full px-4 py-3 rounded-2xl font-semibold text-sm border border-border bg-secondary/50"
                 >
-                  Cancel
+                  Close Editor
                 </button>
-                <button
-                  onClick={handleSaveProfile}
-                  className="flex-[2] flex items-center justify-center gap-2 px-4 py-3 rounded-2xl font-semibold text-sm"
-                  style={{
-                    background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
-                    color: 'hsl(var(--primary-foreground))',
-                  }}
-                >
-                  <Save size={14} />
-                  Save Changes
-                </button>
-              </div>
-            )}
-            {!isProfileDirty && (
-              <button
-                onClick={handleCancelProfileEdit}
-                className="w-full px-4 py-3 rounded-2xl font-semibold text-sm border border-border bg-secondary/50"
-              >
-                Close Editor
-              </button>
-            )}
-          </>
-        ) : null}
-      </div>
+              )}
+            </>
+          ) : null}
+        </div>
       </div>
 
       <div>
         <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">PRO</p>
-      <div className="ios-card-modern p-1.5 overflow-hidden mb-4">
-        <button
-          onClick={() => navigate('/pro')}
-          className="w-full flex items-center gap-3.5 px-4 py-4 rounded-[2rem] transition-all relative overflow-hidden group active:scale-[0.98]"
-          style={{
-            background: isEffectivePro
-              ? 'linear-gradient(135deg, hsl(var(--card)), hsl(var(--muted) / 0.55))'
-              : 'linear-gradient(135deg, hsl(var(--card)), hsl(var(--muted) / 0.35))',
-            border: '1px solid hsl(var(--border) / 0.2)',
-            boxShadow: '0 4px 12px -6px hsl(var(--primary) / 0.25)',
-          }}
-        >
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-primary/10 border border-primary/15 transition-transform duration-300">
-            <img
-              src="/assets/pro-verified-gold.png"
-              alt="Pro verified"
-              className="w-6 h-6 object-contain"
-            />
-          </div>
-          <div className="flex-1 text-left">
-            <h2 className="font-semibold text-sm text-foreground mb-0.5">
-              Pro Features
-            </h2>
-            <p className={cn('text-[11px] text-muted-foreground', isEffectivePro && 'text-success/80')}>
-              {isEffectivePro ? `Current plan: ${plan ?? 'Pro'}` : 'Upgrade to unlock premium tools'}
-            </p>
-          </div>
-          <div className="flex items-center justify-center w-6 h-6 shrink-0 transition-transform duration-300 group-hover:translate-x-0.5">
-            <ChevronRight size={18} className="text-muted-foreground/60 group-hover:text-primary transition-colors" />
-          </div>
-        </button>
-      </div>
-      </div>
-
-      <div>
-        <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">PREFERENCES</p>
-        <div className="space-y-3">
-
-      {/* Customization */}
-      <div className="ios-card-modern p-1.5 overflow-hidden">
-        <button
-          onClick={() => setShowCustomize(true)}
-          className="w-full flex items-center gap-3.5 px-4 py-4 rounded-[2rem] transition-all active:scale-[0.985] group"
-          style={{
-            background: 'linear-gradient(160deg, hsl(var(--card)), hsl(var(--primary) / 0.03))',
-          }}
-        >
-          <div className="w-11 h-11 rounded-2xl flex items-center justify-center transition-transform group-active:scale-95"
-            style={{ background: 'hsl(var(--primary) / 0.12)', border: '1px solid hsl(var(--primary) / 0.15)' }}>
-            <Palette size={20} className="text-primary" />
-          </div>
-          <div className="flex-1 text-left">
-            <h2 className="font-bold text-sm">Customization</h2>
-            <p className="text-[11px] text-muted-foreground">Theme, Currency & Bottom Tabs</p>
-          </div>
-          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-secondary/50 border border-border/30">
-            <ChevronRight size={16} className="text-muted-foreground" />
-          </div>
-        </button>
-      </div>
-
-      {!isEffectivePro && <NativeAdCard />}
-
-      {/* Animation */}
-      <div className="ios-card-modern p-1.5 overflow-hidden">
-        <button
-          onClick={() => setShowAnimationMenu(true)}
-          className="w-full flex items-center gap-3.5 px-4 py-4 rounded-[2rem] transition-all active:scale-[0.985] group"
-          style={{
-            background: 'linear-gradient(160deg, hsl(var(--card)), hsl(45 90% 50% / 0.03))',
-          }}
-        >
-          <div className="w-11 h-11 rounded-2xl flex items-center justify-center transition-transform group-active:scale-95"
-            style={{ background: 'hsl(45 90% 50% / 0.12)', border: '1px solid hsl(45 90% 50% / 0.15)' }}>
-            <Sparkles size={20} className="text-amber-500" />
-          </div>
-          <div className="flex-1 text-left">
-            <h2 className="font-bold text-sm">Animation</h2>
-            <p className="text-[11px] text-muted-foreground">Motion & transition effects</p>
-          </div>
-          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-secondary/50 border border-border/30">
-            <ChevronRight size={16} className="text-muted-foreground" />
-          </div>
-        </button>
-      </div>
-        </div>
-      </div>
-
-      {/* Pro Toggle - Testing */}
-      <div>
-        <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">DATA</p>
-        <div className="space-y-3">
-      {isDevOverrideEmail(profile?.email) && (
-        <div className="ios-card-modern p-1.5 overflow-hidden">
-          <div
-            onClick={() => {
-              const next = proOverrideMode === 'on' ? 'off' : 'on';
-              setProOverride(next === 'on' ? 'on' : null);
-              setProOverrideMode(next);
-
-              if (next === 'on') {
-                localStorage.removeItem('ad_free_until');
-                setAdsEnabledState(true);
-                setAdsEnabled(true);
-                window.dispatchEvent(new Event('splitmate_ads_changed'));
-              }
-
-              toast({
-                title: next === 'on' ? 'Test Free Enabled' : 'Test Free Disabled',
-                description: next === 'on' ? 'Pro access is forced off locally, including lifetime plans.' : 'Real subscription access is restored.',
-              });
+        <div className="ios-card-modern p-1.5 overflow-hidden mb-4">
+          <button
+            onClick={() => navigate('/pro')}
+            className="w-full flex items-center gap-3.5 px-4 py-4 rounded-[2rem] transition-all relative overflow-hidden group active:scale-[0.98]"
+            style={{
+              background: isEffectivePro
+                ? 'linear-gradient(135deg, hsl(var(--card)), hsl(var(--muted) / 0.55))'
+                : 'linear-gradient(135deg, hsl(var(--card)), hsl(var(--muted) / 0.35))',
+              border: '1px solid hsl(var(--border) / 0.2)',
+              boxShadow: '0 4px 12px -6px hsl(var(--primary) / 0.25)',
             }}
-            className="w-full flex items-center gap-3.5 px-4 py-4 rounded-[2rem] transition-all bg-card border border-border cursor-pointer active:scale-[0.985] group shadow-sm"
           >
-            <div className={cn(
-              "w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-500",
-              proOverrideMode === 'on' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-muted/10 text-muted-foreground border-border"
-            )}
-              style={{ border: '1.2px solid currentColor' }}>
-              {proOverrideMode === 'on' ? <Lock size={20} /> : <Crown size={20} />}
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-primary/10 border border-primary/15 transition-transform duration-300">
+              <img
+                src="/assets/pro-verified-gold.png"
+                alt="Pro verified"
+                className="w-6 h-6 object-contain"
+              />
             </div>
             <div className="flex-1 text-left">
-              <h2 className="font-bold text-sm">Test Free Mode</h2>
-              <p className="text-[11px] text-muted-foreground">Force local free-tier behavior for QA testing</p>
+              <h2 className="font-semibold text-sm text-foreground mb-0.5">
+                Pro Features
+              </h2>
+              <p className={cn('text-[11px] text-muted-foreground', isEffectivePro && 'text-success/80')}>
+                {isEffectivePro ? `Current plan: ${plan ?? 'Pro'}` : 'Upgrade to unlock premium tools'}
+              </p>
             </div>
-            <div className={cn(
-              "w-12 h-6 rounded-full relative transition-all duration-300 border border-border shadow-inner",
-              proOverrideMode === 'on' ? "bg-emerald-500/20" : "bg-secondary/60"
-            )}>
-              <div className={cn(
-                "absolute top-1 w-4 h-4 rounded-full transition-all duration-300 shadow-sm",
-                proOverrideMode === 'on' ? "left-7 bg-emerald-500" : "left-1 bg-muted-foreground"
-              )} />
+            <div className="flex items-center justify-center w-6 h-6 shrink-0 transition-transform duration-300 group-hover:translate-x-0.5">
+              <ChevronRight size={18} className="text-muted-foreground/60 group-hover:text-primary transition-colors" />
             </div>
-          </div>
+          </button>
         </div>
-      )}
+      </div>
 
       {/* Ads Section - Rewarded */}
       {!isEffectivePro && <div className="ios-card-modern p-1.5 overflow-hidden">
@@ -1341,7 +1251,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
               : 'linear-gradient(160deg, hsl(var(--card)), hsl(var(--primary) / 0.03))',
           }}
         >
-          {/* Main Visual */}
           <div className="relative">
             <div className={cn(
               "w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-700",
@@ -1352,61 +1261,30 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
               style={{ border: '1.2px solid currentColor' }}>
               {isAdFree ? <Crown size={20} className="animate-pulse" /> : <EyeOff size={20} />}
             </div>
-
-            {/* Circular Progress Ring (Only when Active) */}
             {isAdFree && (
               <svg className="absolute -inset-1.5 w-14 h-14 -rotate-90 pointer-events-none opacity-40">
-                <circle
-                  cx="28"
-                  cy="28"
-                  r="25"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  className="text-emerald-500/10"
-                />
-                <circle
-                  cx="28"
-                  cy="28"
-                  r="25"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeDasharray={157}
-                  strokeDashoffset={adFreeOffset}
-                  className="text-emerald-500 transition-all duration-1000"
-                  strokeLinecap="round"
-                />
+                <circle cx="28" cy="28" r="25" fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-500/10" />
+                <circle cx="28" cy="28" r="25" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={157} strokeDashoffset={adFreeOffset} className="text-emerald-500 transition-all duration-1000" strokeLinecap="round" />
               </svg>
             )}
           </div>
-
           <div className="flex-1 text-left min-w-0">
             <div className="flex items-center gap-1.5">
-              <h2 className={cn(
-                "font-black text-[13px] uppercase tracking-tighter italic",
-                isAdFree ? "text-emerald-500" : "text-foreground"
-              )}>
+              <h2 className={cn("font-black text-[13px] uppercase tracking-tighter italic", isAdFree ? "text-emerald-500" : "text-foreground")}>
                 {isAdFree ? 'Premium Ad-Free Active' : 'Remove Advertisements'}
               </h2>
-              {isAdFree && (
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
-              )}
+              {isAdFree && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />}
             </div>
             <p className="text-[10px] text-muted-foreground font-bold leading-none mt-1.5 uppercase tracking-widest opacity-60">
               {isAdFree ? `Clean UI for the next ${remainingTime}` : 'Go Ad-Free for 24 Hours'}
             </p>
           </div>
-
           {!isAdFree && (
             <button
               onClick={async () => {
                 const success = await showRewardAd();
                 if (success) {
-                  toast({
-                    title: "Reward Earned! 💎",
-                    description: "Ads have been successfully disabled for 24 hours. Enjoy your premium experience!",
-                  });
+                  toast({ title: "Reward Earned! 💎", description: "Ads have been successfully disabled for 24 hours. Enjoy your premium experience!" });
                 }
               }}
               className="h-9 px-4 rounded-xl bg-primary text-white text-[9px] font-black uppercase tracking-widest shadow-xl shadow-primary/30 active:scale-95 transition-all border border-white/10 flex items-center gap-2 group"
@@ -1415,7 +1293,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
               Watch Ad
             </button>
           )}
-
           {isAdFree && (
             <div className="flex flex-col items-end gap-1">
               <div className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 shadow-inner">
@@ -1426,6 +1303,110 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
           )}
         </div>
       </div>}
+
+      <div>
+        <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">PREFERENCES</p>
+        <div className="space-y-3">
+
+          {/* Customization */}
+          <div className="ios-card-modern p-1.5 overflow-hidden">
+            <button
+              onClick={() => setShowCustomize(true)}
+              className="w-full flex items-center gap-3.5 px-4 py-4 rounded-[2rem] transition-all active:scale-[0.985] group"
+              style={{
+                background: 'linear-gradient(160deg, hsl(var(--card)), hsl(var(--primary) / 0.03))',
+              }}
+            >
+              <div className="w-11 h-11 rounded-2xl flex items-center justify-center transition-transform group-active:scale-95"
+                style={{ background: 'hsl(var(--primary) / 0.12)', border: '1px solid hsl(var(--primary) / 0.15)' }}>
+                <Palette size={20} className="text-primary" />
+              </div>
+              <div className="flex-1 text-left">
+                <h2 className="font-bold text-sm">Customization</h2>
+                <p className="text-[11px] text-muted-foreground">Theme, Currency & Bottom Tabs</p>
+              </div>
+              <div className="w-8 h-8 rounded-full flex items-center justify-center bg-secondary/50 border border-border/30">
+                <ChevronRight size={16} className="text-muted-foreground" />
+              </div>
+            </button>
+          </div>
+
+          {!isEffectivePro && <NativeAdCard />}
+
+          {/* Animation */}
+          <div className="ios-card-modern p-1.5 overflow-hidden">
+            <button
+              onClick={() => setShowAnimationMenu(true)}
+              className="w-full flex items-center gap-3.5 px-4 py-4 rounded-[2rem] transition-all active:scale-[0.985] group"
+              style={{
+                background: 'linear-gradient(160deg, hsl(var(--card)), hsl(45 90% 50% / 0.03))',
+              }}
+            >
+              <div className="w-11 h-11 rounded-2xl flex items-center justify-center transition-transform group-active:scale-95"
+                style={{ background: 'hsl(45 90% 50% / 0.12)', border: '1px solid hsl(45 90% 50% / 0.15)' }}>
+                <Sparkles size={20} className="text-amber-500" />
+              </div>
+              <div className="flex-1 text-left">
+                <h2 className="font-bold text-sm">Animation</h2>
+                <p className="text-[11px] text-muted-foreground">Motion & transition effects</p>
+              </div>
+              <div className="w-8 h-8 rounded-full flex items-center justify-center bg-secondary/50 border border-border/30">
+                <ChevronRight size={16} className="text-muted-foreground" />
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Pro Toggle - Testing */}
+      <div>
+        <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">DATA</p>
+        <div className="space-y-3">
+          {isDevOverrideEmail(profile?.email) && (
+            <div className="ios-card-modern p-1.5 overflow-hidden">
+              <div
+                onClick={() => {
+                  const next = proOverrideMode === 'on' ? 'off' : 'on';
+                  setProOverride(next === 'on' ? 'on' : null);
+                  setProOverrideMode(next);
+
+                  if (next === 'on') {
+                    localStorage.removeItem('ad_free_until');
+                    setAdsEnabledState(true);
+                    setAdsEnabled(true);
+                    window.dispatchEvent(new Event('splitmate_ads_changed'));
+                  }
+
+                  toast({
+                    title: next === 'on' ? 'Test Free Enabled' : 'Test Free Disabled',
+                    description: next === 'on' ? 'Pro access is forced off locally, including lifetime plans.' : 'Real subscription access is restored.',
+                  });
+                }}
+                className="w-full flex items-center gap-3.5 px-4 py-4 rounded-[2rem] transition-all bg-card border border-border cursor-pointer active:scale-[0.985] group shadow-sm"
+              >
+                <div className={cn(
+                  "w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-500",
+                  proOverrideMode === 'on' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-muted/10 text-muted-foreground border-border"
+                )}
+                  style={{ border: '1.2px solid currentColor' }}>
+                  {proOverrideMode === 'on' ? <Lock size={20} /> : <Crown size={20} />}
+                </div>
+                <div className="flex-1 text-left">
+                  <h2 className="font-bold text-sm">Test Free Mode</h2>
+                  <p className="text-[11px] text-muted-foreground">Force local free-tier behavior for QA testing</p>
+                </div>
+                <div className={cn(
+                  "w-12 h-6 rounded-full relative transition-all duration-300 border border-border shadow-inner",
+                  proOverrideMode === 'on' ? "bg-emerald-500/20" : "bg-secondary/60"
+                )}>
+                  <div className={cn(
+                    "absolute top-1 w-4 h-4 rounded-full transition-all duration-300 shadow-sm",
+                    proOverrideMode === 'on' ? "left-7 bg-emerald-500" : "left-1 bg-muted-foreground"
+                  )} />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1752,69 +1733,67 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
       <div>
         <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">ABOUT</p>
         <div className="space-y-3">
-      {/* About Developer */}
-      <div className="ios-card-modern p-1.5 overflow-hidden"
-        style={{ border: '1px solid hsl(var(--primary) / 0.15)', background: 'hsl(var(--primary) / 0.02)' }}>
-        <div className="p-3.5 space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'hsl(var(--primary) / 0.12)' }}>
-              <UserCircle2 size={20} className="text-primary" />
+          {/* About Developer */}
+          <div className="ios-card-modern p-1.5 overflow-hidden"
+            style={{ border: '1px solid hsl(var(--primary) / 0.15)', background: 'hsl(var(--primary) / 0.02)' }}>
+            <div className="p-3.5 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'hsl(var(--primary) / 0.12)' }}>
+                  <UserCircle2 size={20} className="text-primary" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-sm">About Developer</h2>
+                  <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">Meet the creator</p>
+                </div>
+              </div>
+
+              <div className="space-y-3 px-1">
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Hi, I'm Sandesh! I build privacy-first apps to simplify your digital life.
+                </p>
+              </div>
+
+              <div className="flex gap-2.5">
+                <a
+                  href="https://x.com/The1UX"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full h-12 flex items-center justify-center gap-2.5 rounded-2xl font-black uppercase tracking-tighter text-[11px] no-underline active:scale-[0.98] transition-all bg-foreground text-background border border-foreground/5 shadow-lg shadow-foreground/5"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.25h-6.657l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  </svg>
+                  THE1UX
+                </a>
+              </div>
+
+              <p className="text-[10px] text-muted-foreground text-center font-medium opacity-60 italic">
+                Thank you for being part of the SplitMate journey! ❤️
+              </p>
             </div>
-            <div>
-              <h2 className="font-bold text-sm">About Developer</h2>
-              <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">Meet the creator</p>
+          </div>
+
+          {/* About */}
+          <div className="ios-card-modern p-1.5 overflow-hidden">
+            <div className="p-3.5 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
+                style={{
+                  background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
+                  boxShadow: '0 8px 20px -10px hsl(var(--primary) / 0.5)'
+                }}>
+                <Smartphone size={22} color="white" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <p className="font-bold text-sm">SplitMate - Expense Tracker</p>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-secondary text-muted-foreground">v{APP_VERSION}</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">
+                  100% Private & Secure. All data is stored locally on your device.
+                </p>
+              </div>
             </div>
           </div>
-
-          <div className="space-y-3 px-1">
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              I'm Sandesh, a developer passionate about creating privacy-first apps that help people manage their daily digital lives effortlessly.
-            </p>
-            <div className="h-px bg-border/20" />
-            <p className="text-[11px] font-bold text-foreground">Follow my journey & share feedback:</p>
-          </div>
-
-          <div className="flex gap-2.5">
-            <a
-              href="https://x.com/The1UX"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full h-12 flex items-center justify-center gap-2.5 rounded-2xl font-black uppercase tracking-tighter text-[11px] no-underline active:scale-[0.98] transition-all bg-foreground text-background border border-foreground/5 shadow-lg shadow-foreground/5"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.25h-6.657l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-              </svg>
-              THE1UX
-            </a>
-          </div>
-
-          <p className="text-[10px] text-muted-foreground text-center font-medium opacity-60 italic">
-            Thank you for being part of the SplitMate journey! ❤️
-          </p>
-        </div>
-      </div>
-
-      {/* About */}
-      <div className="ios-card-modern p-1.5 overflow-hidden">
-        <div className="p-3.5 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
-            style={{
-              background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
-              boxShadow: '0 8px 20px -10px hsl(var(--primary) / 0.5)'
-            }}>
-            <Smartphone size={22} color="white" />
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center justify-between">
-              <p className="font-bold text-sm">SplitMate - Expense Tracker</p>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-secondary text-muted-foreground">v{APP_VERSION}</span>
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">
-              100% Private & Secure. All data is stored locally on your device.
-            </p>
-          </div>
-        </div>
-      </div>
         </div>
       </div>
 

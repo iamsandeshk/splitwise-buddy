@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDownRight, ArrowLeft, ArrowLeftRight, ArrowUpRight, CircleArrowOutUpRight, MessageSquare, User, Users, X } from 'lucide-react';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
@@ -7,6 +7,7 @@ import { useBackHandler } from '@/hooks/useBackHandler';
 import { useBannerAd } from '@/hooks/useBannerAd';
 import { cn } from '@/lib/utils';
 import { type AppTransactionItem, getAllAppTransactions } from '@/lib/transactions';
+import { NativeAdCard } from '@/components/NativeAdCard';
 
 interface TransactionsTabProps {
   onOpenAccount: () => void;
@@ -77,7 +78,7 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
             </p>
           </div>
         </div>
-        <AccountQuickButton onClick={onOpenAccount} />
+        {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -97,14 +98,14 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
             No transactions yet.
           </div>
         ) : (
-          items.map((item) => {
+          items.map((item, idx) => {
             const meta = typeMeta[item.type];
             const amountClass = item.direction === 'incoming' ? 'text-emerald-500' : 'text-rose-500';
             const DirIcon = item.direction === 'incoming' ? ArrowDownRight : ArrowUpRight;
 
             return (
+              <Fragment key={item.id}>
               <button
-                key={item.id}
                 type="button"
                 onClick={() => setViewing(item)}
                 className="w-full text-left rounded-2xl border border-border/10 bg-card px-4 py-3.5 active:scale-[0.99] transition-all"
@@ -135,6 +136,8 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
                   </div>
                 </div>
               </button>
+              {(idx + 4) % 5 === 0 && <NativeAdCard />}
+              </Fragment>
             );
           })
         )}

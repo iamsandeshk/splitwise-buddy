@@ -97,7 +97,7 @@ export function ConverterTab({ onOpenAccount, onBack, bannerAdActive = true }: C
                 <X size={20} />
               </button>
             )}
-            <AccountQuickButton onClick={onOpenAccount} />
+            {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
           </div>
         </div>
       </div>

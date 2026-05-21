@@ -187,7 +187,7 @@ export function GoalsTab({ onOpenAccount, onBack, bannerAdActive = true }: Goals
             <p className="text-sm text-muted-foreground font-medium opacity-70 mt-1">Save money for the future</p>
           </div>
         </div>
-        <AccountQuickButton onClick={onOpenAccount} />
+        {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
       </div>
 
       {/* Summary Section */}

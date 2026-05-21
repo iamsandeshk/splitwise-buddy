@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { User, Tag, Wallet, ChevronLeft, Plus, X, Users, Check, Search, FolderPlus, History, Trash2, AlertTriangle } from 'lucide-react';
-import { saveSharedExpense, generateId, getUniquePersonNames, EXPENSE_CATEGORIES, getCurrency, type SharedExpense, getFriendGroups, saveFriendGroup, type FriendGroup, getFriendGroup, getAccountProfile, deleteFriendGroup } from '@/lib/storage';
+import { saveSharedExpense, generateId, getUniquePersonNames, EXPENSE_CATEGORIES, getCurrency, type SharedExpense, getFriendGroups, saveFriendGroup, type FriendGroup, getFriendGroup, getAccountProfile, deleteFriendGroup, getDefaultAccountId, getAccounts } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { pushUpdateToCloud } from '@/integrations/firebase/sync';
@@ -170,6 +170,7 @@ export function GroupExpenseModal({ isOpen, onClose, onAdd, defaultGroupId }: Gr
       category: category || undefined,
       groupId: selectedGroupId || undefined,
       splitParticipants: [...participants], // ALL members including payer — math handles the payer's own share
+      accountId: paidBy === 'me' ? (getDefaultAccountId() || getAccounts()[0]?.id || undefined) : undefined,
     };
 
     const saved = saveSharedExpense(record);
