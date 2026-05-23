@@ -240,22 +240,22 @@ const GLASS_STYLES = `
       filter 0.22s ease;
   }
 
-  /* ── LIGHT active icon */
+  /* ── LIGHT active icon — ember */
   .light .lg-icon.active {
-    color: rgba(0,95,210,1);
+    color: hsl(14 79% 48%);
     transform: scale(1.10) translateY(-1px);
-    filter: drop-shadow(0 2px 5px rgba(0,95,210,0.30));
+    filter: drop-shadow(0 2px 6px hsl(14 79% 50% / 0.35));
     transition:
       color 0.22s ease,
       transform 0.42s cubic-bezier(0.34,1.56,0.64,1),
       filter 0.22s ease;
   }
 
-  /* ── DARK active icon — pure white with glow */
+  /* ── DARK active icon — ember glow */
   :root:not(.light) .lg-icon.active {
-    color: rgba(255,255,255,1);
+    color: hsl(14 92% 67%);
     transform: scale(1.10) translateY(-1px);
-    filter: drop-shadow(0 0 10px rgba(180,200,255,0.65));
+    filter: drop-shadow(0 0 10px hsl(14 92% 60% / 0.55));
     transition:
       color 0.22s ease,
       transform 0.42s cubic-bezier(0.34,1.56,0.64,1),
@@ -267,8 +267,9 @@ const GLASS_STYLES = `
   }
 
   .lg-label {
+    font-family: 'Manrope', system-ui, sans-serif;
     font-size: 9.5px;
-    letter-spacing: 0.01em;
+    letter-spacing: 0.04em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -280,21 +281,21 @@ const GLASS_STYLES = `
 
   /* ── LIGHT labels */
   .light .lg-label.inactive {
-    color: rgba(0,0,0,0.42);
+    color: rgba(0,0,0,0.45);
     font-weight: 600;
   }
   .light .lg-label.active {
-    color: rgba(0,95,210,1);
+    color: hsl(14 79% 45%);
     font-weight: 700;
   }
 
-  /* ── DARK labels — white and bold */
+  /* ── DARK labels — ember active */
   :root:not(.light) .lg-label.inactive {
-    color: rgba(255,255,255,0.80);
+    color: rgba(255,255,255,0.72);
     font-weight: 600;
   }
   :root:not(.light) .lg-label.active {
-    color: rgba(255,255,255,1);
+    color: hsl(14 92% 70%);
     font-weight: 700;
   }
 
