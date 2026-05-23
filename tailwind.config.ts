@@ -83,8 +83,9 @@ export default {
 				'2xl': 'calc(var(--radius-lg) + 4px)'
 			},
 			fontFamily: {
-				sans: ['Inter', 'system-ui', 'sans-serif'],
-				heading: ['Poppins', 'Inter', 'system-ui', 'sans-serif'],
+				sans: ['Manrope', 'Inter', 'system-ui', 'sans-serif'],
+				heading: ['Sora', 'Inter', 'system-ui', 'sans-serif'],
+				display: ['Sora', 'Inter', 'system-ui', 'sans-serif'],
 			},
 			fontSize: {
 				'money': ['1.25rem', { lineHeight: '1.2', fontWeight: '600' }],

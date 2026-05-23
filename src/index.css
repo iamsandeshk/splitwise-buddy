@@ -9,62 +9,62 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* iOS 26 Liquid Glass Theme */
-    --background: 0 0% 4%;
-    --foreground: 0 0% 98%;
+    /* Charcoal & Ember — tactile bento theme */
+    --background: 0 0% 7%;
+    --foreground: 0 0% 96%;
 
-    --card: 0 0% 9%;
-    --card-foreground: 0 0% 98%;
-    --card-glass: 0 0% 13%;
+    --card: 0 0% 11%;
+    --card-foreground: 0 0% 96%;
+    --card-glass: 0 0% 15%;
 
-    --popover: 0 0% 5%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 96%;
 
-    --primary: 211 100% 58%;
-    --primary-glow: 211 100% 72%;
+    --primary: 14 79% 57%;
+    --primary-glow: 14 92% 67%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 0 0% 13%;
-    --secondary-foreground: 0 0% 90%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 92%;
 
-    --muted: 0 0% 11%;
-    --muted-foreground: 0 0% 62%;
+    --muted: 0 0% 13%;
+    --muted-foreground: 0 0% 58%;
 
-    --accent: 211 45% 22%;
-    --accent-foreground: 0 0% 95%;
+    --accent: 14 50% 22%;
+    --accent-foreground: 0 0% 96%;
 
-    --destructive: 0 85% 65%;
+    --destructive: 0 78% 60%;
     --destructive-foreground: 0 0% 100%;
 
     --border: 0 0% 20%;
-    --input: 0 0% 13%;
-    --ring: 211 100% 58%;
+    --input: 0 0% 15%;
+    --ring: 14 79% 57%;
 
-    /* Enhanced Money Colors */
-    --success: 149 88% 52%;
-    --success-glow: 149 100% 68%;
+    /* Money Colors */
+    --success: 152 64% 48%;
+    --success-glow: 152 75% 60%;
     --success-foreground: 0 0% 100%;
-    --danger: 0 85% 65%;
-    --danger-glow: 0 100% 80%;
+    --danger: 0 78% 60%;
+    --danger-glow: 0 90% 72%;
     --danger-foreground: 0 0% 100%;
-    --warning: 45 90% 60%;
-    --warning-glow: 45 100% 75%;
+    --warning: 38 92% 56%;
+    --warning-glow: 38 100% 70%;
     --warning-foreground: 0 0% 100%;
 
-    /* Liquid Glass Values - simplified for performance */
-    --glass-bg: 0 0% 9% / 0.85;
-    --glass-border: 0 0% 100% / 0.08;
-    --glass-shadow: 0 0% 0% / 0.4;
-    
-    /* Typography */
-    --font-heading: 'SF Pro Display', 'Inter', system-ui, sans-serif;
-    --font-body: 'SF Pro Text', 'Inter', system-ui, sans-serif;
+    /* Glass — flatter, tactile */
+    --glass-bg: 0 0% 11% / 0.9;
+    --glass-border: 0 0% 100% / 0.06;
+    --glass-shadow: 0 0% 0% / 0.55;
 
-    /* Enhanced Radius */
-    --radius: 1rem;
-    --radius-sm: 0.75rem;
-    --radius-lg: 1.5rem;
-    --radius-xl: 2rem;
+    /* Typography — Sora + Manrope */
+    --font-heading: 'Sora', 'Inter', system-ui, sans-serif;
+    --font-body: 'Manrope', 'Inter', system-ui, sans-serif;
+
+    /* Radius */
+    --radius: 1.25rem;
+    --radius-sm: 0.875rem;
+    --radius-lg: 1.75rem;
+    --radius-xl: 2.25rem;
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -73,39 +73,39 @@ All colors MUST be HSL.
     --sidebar-accent: 240 4.8% 95.9%;
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-ring: 14 79% 57%;
   }
 
   .light {
-    --background: 0 0% 99%;
-    --foreground: 0 0% 8%;
+    --background: 30 12% 96%;
+    --foreground: 0 0% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 8%;
-    --card-glass: 0 0% 98%;
+    --card-foreground: 0 0% 10%;
+    --card-glass: 30 8% 97%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 8%;
-    --primary: 211 100% 50%;
-    --primary-glow: 211 100% 65%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 14 79% 52%;
+    --primary-glow: 14 92% 62%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 96%;
-    --secondary-foreground: 0 0% 8%;
-    --muted: 0 0% 96%;
-    --muted-foreground: 0 0% 45%;
-    --accent: 211 30% 90%;
-    --accent-foreground: 0 0% 8%;
-    --destructive: 0 84% 60%;
+    --secondary: 30 8% 92%;
+    --secondary-foreground: 0 0% 10%;
+    --muted: 30 8% 93%;
+    --muted-foreground: 0 0% 42%;
+    --accent: 14 70% 92%;
+    --accent-foreground: 14 60% 30%;
+    --destructive: 0 78% 55%;
     --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 88%;
-    --input: 0 0% 94%;
-    --ring: 211 100% 50%;
-    --success: 149 90% 45%;
-    --success-glow: 149 100% 60%;
-    --danger: 0 84% 60%;
-    --danger-glow: 0 100% 75%;
-    --warning: 45 90% 50%;
-    --warning-glow: 45 100% 65%;
-    
-    --glass-bg: 255 100% 100% / 0.85;
+    --border: 30 8% 86%;
+    --input: 30 8% 94%;
+    --ring: 14 79% 52%;
+    --success: 152 64% 40%;
+    --success-glow: 152 75% 55%;
+    --danger: 0 78% 55%;
+    --danger-glow: 0 90% 68%;
+    --warning: 38 92% 50%;
+    --warning-glow: 38 100% 65%;
+
+    --glass-bg: 0 0% 100% / 0.85;
     --glass-border: 0 0% 0% / 0.08;
     --glass-shadow: 0 0% 0% / 0.08;
   }
@@ -131,15 +131,16 @@ All colors MUST be HSL.
   body {
     @apply bg-background text-foreground antialiased;
     font-family: var(--font-body);
+    font-feature-settings: 'ss01', 'cv11';
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* Static gradient - no fixed attachment for performance */
-    background-image: 
-      radial-gradient(ellipse at 15% 40%, hsl(var(--primary) / 0.12) 0%, transparent 45%),
-      radial-gradient(ellipse at 85% 10%, hsl(var(--accent) / 0.10) 0%, transparent 45%),
-      radial-gradient(ellipse at 50% 90%, hsl(var(--success) / 0.07) 0%, transparent 40%);
-    background-size: 100% 100%;
-    background-repeat: no-repeat;
+    /* Charcoal base with subtle ember glow + grain for tactile feel */
+    background-image:
+      radial-gradient(ellipse at 12% 0%, hsl(var(--primary) / 0.10) 0%, transparent 40%),
+      radial-gradient(ellipse at 95% 85%, hsl(var(--primary) / 0.06) 0%, transparent 45%),
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.035 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    background-size: 100% 100%, 100% 100%, 160px 160px;
+    background-repeat: no-repeat, no-repeat, repeat;
     background-attachment: scroll;
   }
 
