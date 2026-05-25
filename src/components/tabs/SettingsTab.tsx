@@ -59,6 +59,7 @@ import {
   type HomeTabSettings
 } from '@/lib/storage';
 import { getStoredTheme, setStoredTheme, type ThemeMode } from '@/lib/theme';
+import { getStoredUiStyle, setStoredUiStyle, type UiStyle } from '@/lib/uiStyle';
 import { getGooglePhotoUrl, signInWithGoogle, signOutGoogle, subscribeGoogleAuth } from '@/integrations/firebase/auth';
 import { getCurrentGoogleUser } from '@/integrations/firebase/auth';
 import { loadBackupForCurrentUser, saveBackupForCurrentUser } from '@/integrations/firebase/backup';
@@ -99,6 +100,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(getStoredTheme());
+  const [uiStyle, setUiStyleState] = useState<UiStyle>(getStoredUiStyle());
   const [deleteStep, setDeleteStep] = useState<DeleteStep>('closed');
   const [deleteSelections, setDeleteSelections] = useState({ personal: false, shared: false, links: false, more: false });
   const [selectedCurrency, setSelectedCurrency] = useState(getCurrency().code);
@@ -1871,6 +1873,52 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                       "text-[10px] uppercase tracking-wide",
                       theme === mode ? "text-primary" : "text-gray-500"
                     )}>{label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* UI Style toggle — Crafted vs Classic */}
+            <div className="bg-card p-6 rounded-[3rem] border border-border/10 shadow-sm space-y-5">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
+                  <span className="text-primary text-[11px] font-black tracking-widest">UI</span>
+                </div>
+                <div>
+                  <h2 className="font-bold text-sm leading-none text-foreground">Interface Style</h2>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mt-1">
+                    {uiStyle === 'crafted' ? 'Crafted — tactile slab + ember' : 'Classic — glassy + gradient'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 rounded-xl bg-secondary/30 p-1 border border-border/10">
+                {([
+                  { mode: 'crafted' as UiStyle, label: 'Crafted', sub: 'New' },
+                  { mode: 'classic' as UiStyle, label: 'Classic', sub: 'Old' },
+                ]).map(({ mode, label, sub }) => (
+                  <button
+                    key={mode}
+                    onClick={() => {
+                      if (uiStyle === mode) return;
+                      setUiStyleState(mode);
+                      setStoredUiStyle(mode);
+                      toast({ title: 'Interface Updated', description: `${label} UI is now active.` });
+                    }}
+                    className="h-12 flex flex-col items-center justify-center gap-0.5 rounded-lg border transition-all duration-200 font-semibold"
+                    style={{
+                      background: uiStyle === mode ? 'hsl(var(--primary) / 0.12)' : 'transparent',
+                      borderColor: uiStyle === mode ? 'hsl(var(--primary) / 0.25)' : 'transparent',
+                    }}
+                  >
+                    <span className={cn(
+                      'text-[11px] uppercase tracking-wider',
+                      uiStyle === mode ? 'text-primary' : 'text-gray-400'
+                    )}>{label}</span>
+                    <span className={cn(
+                      'text-[9px] uppercase tracking-widest',
+                      uiStyle === mode ? 'text-primary/70' : 'text-gray-500/70'
+                    )}>{sub}</span>
                   </button>
                 ))}
               </div>
