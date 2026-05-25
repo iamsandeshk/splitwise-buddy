@@ -504,3 +504,92 @@ All colors MUST be HSL.
   width: 0;
   height: 0;
 }
+
+/* ============================================================
+   CLASSIC UI — restores the previous glassy/blurry style.
+   Toggle by adding .classic-ui to <html> (see lib/uiStyle.ts).
+   ============================================================ */
+.classic-ui body {
+  background-image:
+    radial-gradient(ellipse at 20% 0%, hsl(263 70% 50% / 0.18) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, hsl(217 91% 60% / 0.12) 0%, transparent 50%);
+  background-size: 100% 100%, 100% 100%;
+  background-repeat: no-repeat;
+}
+
+.classic-ui {
+  --primary: 263 70% 60%;
+  --primary-glow: 263 80% 72%;
+  --ring: 263 70% 60%;
+  --radius: 1rem;
+}
+
+.classic-ui .liquid-glass {
+  background: hsl(0 0% 11% / 0.6);
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  border: 1px solid hsl(0 0% 100% / 0.08);
+  box-shadow:
+    0 8px 32px -8px hsl(0 0% 0% / 0.55),
+    inset 0 1px 0 hsl(0 0% 100% / 0.08);
+}
+
+.classic-ui .glass-card,
+.classic-ui .ios-card,
+.classic-ui .ios-card-modern,
+.classic-ui .card-ios,
+.classic-ui .card-liquid {
+  border-radius: 2.25rem;
+}
+.classic-ui .glass-card::before { content: none; }
+
+.classic-ui .ios-card:hover {
+  transform: translateY(-4px);
+  border-color: hsl(0 0% 100% / 0.12);
+}
+
+.classic-ui .btn-primary {
+  background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)));
+  border: 1px solid hsl(0 0% 100% / 0.1);
+  box-shadow: 0 6px 20px -6px hsl(var(--primary) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.15);
+}
+
+.classic-ui .btn-ghost-dashed {
+  border-style: solid;
+  border-color: hsl(0 0% 100% / 0.12);
+  background: hsl(0 0% 11% / 0.5);
+  backdrop-filter: blur(16px);
+}
+
+.classic-ui .input-liquid,
+.classic-ui input,
+.classic-ui textarea {
+  background: hsl(0 0% 11% / 0.6) !important;
+  backdrop-filter: blur(16px);
+  border-color: hsl(0 0% 100% / 0.08) !important;
+}
+
+.classic-ui .fab-button {
+  background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)));
+  box-shadow:
+    0 8px 24px -4px hsl(var(--primary) / 0.5),
+    inset 0 1px 0 hsl(0 0% 100% / 0.15);
+}
+
+/* Card primitive (shadcn) — drop the ember left rule */
+.classic-ui [class*="rounded-3xl"]::before { display: none; }
+
+/* Buttons — gradient + soft shadow rather than flat ember slab */
+.classic-ui button.bg-primary:not(.fab-button) {
+  background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)));
+  border-color: hsl(0 0% 100% / 0.1);
+  box-shadow: 0 6px 20px -6px hsl(var(--primary) / 0.45), inset 0 1px 0 hsl(0 0% 100% / 0.15);
+}
+
+/* Mono labels — soften back to plain caps */
+.classic-ui .mono-label,
+.classic-ui .mono-tag,
+.classic-ui .ember-tag {
+  font-family: var(--font-body);
+  letter-spacing: 0.1em;
+}
