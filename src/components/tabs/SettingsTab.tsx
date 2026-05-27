@@ -1011,9 +1011,9 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
           )}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1.5">
-              <span className="mono-tag">SEC / 09</span>
-              <span className="mono-label">ACCOUNT</span>
+              <span className="mono-label">SETTINGS</span>
             </div>
+
             <h1 className="text-[28px] font-bold leading-none tracking-tight">Settings<span className="text-primary">.</span></h1>
             <p className="text-xs text-muted-foreground mt-1.5 tracking-wide">Profile · preferences · data</p>
           </div>
