@@ -1031,11 +1031,9 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 if (isEditingProfile) avatarInputRef.current?.click();
                 else if (profile.avatar && !avatarLoadFailed) setShowFullScreenAvatar(true);
               }}
-              className="relative w-32 h-32 rounded-full overflow-hidden flex items-center justify-center"
+              className="relative w-32 h-32 rounded-[2rem] overflow-hidden flex items-center justify-center slab-ember"
               style={{
                 background: 'hsl(var(--secondary))',
-                border: '3px solid hsl(var(--primary) / 0.28)',
-                boxShadow: '0 12px 32px -12px hsl(var(--primary) / 0.65)',
               }}
             >
               {profile.avatar && !avatarLoadFailed ? (
