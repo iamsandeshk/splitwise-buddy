@@ -996,24 +996,29 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
 
   return (
     <div className="p-4 space-y-6 pb-20">
-      {/* Header */}
-      <div className="pt-4 pb-1 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4 flex-1">
+      {/* Header — crafted */}
+      <div className="pt-4 pb-1">
+        <div className="flex items-center gap-3">
           {onBack && (
             <button
               type="button"
               onClick={onBack}
-              className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 bg-secondary/80 border border-border/10 active:scale-90 transition-all shadow-sm"
+              className="w-11 h-11 rounded-2xl slab flex items-center justify-center flex-shrink-0 active:scale-90 transition-all"
               aria-label="Back"
             >
               <ChevronLeft size={20} strokeWidth={2.5} />
             </button>
           )}
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold leading-tight">Account</h1>
-            <p className="text-sm text-muted-foreground leading-tight">Profile, preferences & data management</p>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="mono-tag">SEC / 09</span>
+              <span className="mono-label">ACCOUNT</span>
+            </div>
+            <h1 className="text-[28px] font-bold leading-none tracking-tight">Settings<span className="text-primary">.</span></h1>
+            <p className="text-xs text-muted-foreground mt-1.5 tracking-wide">Profile · preferences · data</p>
           </div>
         </div>
+        <hr className="rule-dashed mt-4" />
       </div>
 
       {/* Account Profile */}
@@ -1026,11 +1031,9 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 if (isEditingProfile) avatarInputRef.current?.click();
                 else if (profile.avatar && !avatarLoadFailed) setShowFullScreenAvatar(true);
               }}
-              className="relative w-32 h-32 rounded-full overflow-hidden flex items-center justify-center"
+              className="relative w-32 h-32 rounded-[2rem] overflow-hidden flex items-center justify-center slab-ember"
               style={{
                 background: 'hsl(var(--secondary))',
-                border: '3px solid hsl(var(--primary) / 0.28)',
-                boxShadow: '0 12px 32px -12px hsl(var(--primary) / 0.65)',
               }}
             >
               {profile.avatar && !avatarLoadFailed ? (
