@@ -1851,7 +1851,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 <h2>Appearance</h2>
                 <span className="mono-label">01 / Theme</span>
               </div>
-              <div className="slab p-5 space-y-4">
+              <div className="slab-flat p-5 space-y-4">
                 <p className="text-[13px] text-muted-foreground leading-snug">
                   Choose how the app looks. <span className="text-foreground font-semibold">Auto</span> follows your phone.
                 </p>
@@ -1888,7 +1888,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 <h2>Interface Style</h2>
                 <span className="mono-label">02 / Look</span>
               </div>
-              <div className="slab p-5 space-y-4">
+              <div className="slab-flat p-5 space-y-4">
                 <p className="text-[13px] text-muted-foreground leading-snug">
                   <span className="text-foreground font-semibold">Crafted</span> is the new tactile look. <span className="text-foreground font-semibold">Classic</span> brings back the original glassy theme.
                 </p>
@@ -1932,7 +1932,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 <h2>Main Currency</h2>
                 <span className="mono-label">03 / Money</span>
               </div>
-              <div className="slab p-5 space-y-4">
+              <div className="slab-flat p-5 space-y-4">
                 <div className="flex items-baseline justify-between">
                   <p className="text-[13px] text-muted-foreground leading-snug">
                     Used across every screen.
@@ -1987,7 +1987,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 <h2>Home Dashboard</h2>
                 <span className="mono-label">04 / Widgets</span>
               </div>
-              <div className="slab p-5 space-y-4">
+              <div className="slab-flat p-5 space-y-4">
                 <p className="text-[13px] text-muted-foreground leading-snug">
                   Toggle widgets on or off, and drag the arrows to <span className="text-foreground font-semibold">reorder</span> what shows first on Home.
                 </p>
@@ -2241,7 +2241,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 <h2>Bottom Navigation</h2>
                 <span className="mono-label">05 / Tabs</span>
               </div>
-              <div className="slab p-5 space-y-4">
+              <div className="slab-flat p-5 space-y-4">
                 <p className="text-[13px] text-muted-foreground leading-snug">
                   Reorder the tabs at the bottom of the app. Use the arrows or <span className="text-foreground font-semibold">long-press &amp; drag</span>.
                 </p>
