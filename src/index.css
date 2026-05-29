@@ -245,6 +245,20 @@ All colors MUST be HSL.
       0 18px 36px -22px hsl(var(--primary) / 0.35);
   }
 
+  /* Flat slab — no shadows, hairline border only */
+  .slab-flat {
+    position: relative;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: 1.25rem;
+    box-shadow: none;
+  }
+  .slab-flat-ember {
+    @apply slab-flat;
+    border-color: hsl(var(--primary) / 0.55);
+  }
+
+
   .rule-dashed {
     border: 0;
     border-top: 1px dashed hsl(var(--border));
