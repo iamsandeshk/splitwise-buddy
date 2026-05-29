@@ -2236,98 +2236,104 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
             <div className="h-px" style={{ background: 'hsl(var(--border) / 0.3)' }} />
 
             {/* Bottom Tabs section */}
-            <div className="bg-card p-6 rounded-[3rem] border border-border/10 shadow-sm space-y-5">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
-                  <LayoutGrid size={15} className="text-primary" />
-                </div>
-                <div>
-                  <h2 className="font-bold text-sm leading-none text-foreground">Bottom Tabs</h2>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mt-1">Reorder Navigation</p>
-                </div>
+            <section>
+              <div className="section-head mb-3">
+                <h2>Bottom Navigation</h2>
+                <span className="mono-label">05 / Tabs</span>
               </div>
+              <div className="slab p-5 space-y-4">
+                <p className="text-[13px] text-muted-foreground leading-snug">
+                  Reorder the tabs at the bottom of the app. Use the arrows or <span className="text-foreground font-semibold">long-press &amp; drag</span>.
+                </p>
 
-              <div className="space-y-2.5">
-
-                {bottomTabs.map((tab, index) => {
-                  const isFixed = fixedTabSet.has(tab.id);
-                  const Icon = TAB_ICONS[tab.id] || Sparkles;
-                  const iconColor = TAB_COLORS[tab.id] || 'text-primary';
-                  return (
-                    <div
-                      key={tab.id}
-                      className={cn(
-                        "h-14 flex items-center gap-3 p-2 rounded-[1.75rem] transition-all bg-secondary/30 border border-border/5 active:scale-[0.98]",
-                        tab.id === 'home' && "border-l-2 border-l-primary"
-                      )}
-                      ref={(el) => {
-                        if (el) itemRefs.current.set(index, el);
-                        else itemRefs.current.delete(index);
-                      }}
-                      style={{
-                        transform: dragIndex === index ? `translateY(${dragOffsetY}px)` : 'translateY(0px)',
-                        transition: dragIndex === index ? 'none' : 'transform 0.18s ease',
-                        zIndex: dragIndex === index ? 10 : 1,
-                        opacity: dragIndex === index ? 0.96 : 1,
-                      }}
-                    >
+                <div className="space-y-2">
+                  {bottomTabs.map((tab, index) => {
+                    const isFixed = fixedTabSet.has(tab.id);
+                    const Icon = TAB_ICONS[tab.id] || Sparkles;
+                    const iconColor = TAB_COLORS[tab.id] || 'text-primary';
+                    return (
                       <div
-                        className="flex-1 flex items-center gap-3 min-w-0"
-                        style={{ touchAction: 'none', cursor: 'grab' }}
-                        onTouchStart={(e) => {
-                          if (e.touches[0]) handleLongPressStart(index, e.touches[0].clientY);
+                        key={tab.id}
+                        className={cn(
+                          "h-14 flex items-center gap-3 p-2 rounded-2xl transition-all bg-secondary/40 border border-border/55 active:scale-[0.98]",
+                          tab.id === 'home' && "border-primary/45"
+                        )}
+                        ref={(el) => {
+                          if (el) itemRefs.current.set(index, el);
+                          else itemRefs.current.delete(index);
                         }}
-                        onTouchEnd={handleLongPressCancel}
-                        onTouchCancel={handleLongPressCancel}
-                        onMouseDown={(e) => handleLongPressStart(index, e.clientY)}
-                        onMouseUp={handleLongPressCancel}
-                        onMouseLeave={handleLongPressCancel}
+                        style={{
+                          transform: dragIndex === index ? `translateY(${dragOffsetY}px)` : 'translateY(0px)',
+                          transition: dragIndex === index ? 'none' : 'transform 0.18s ease',
+                          zIndex: dragIndex === index ? 10 : 1,
+                          opacity: dragIndex === index ? 0.96 : 1,
+                        }}
                       >
-                        <div className="w-11 h-11 rounded-2xl flex items-center justify-center shadow-sm bg-background/80 border border-border/5 shrink-0">
-                          <Icon size={18} className={iconColor} strokeWidth={2.5} />
+                        <div
+                          className="flex-1 flex items-center gap-3 min-w-0"
+                          style={{ touchAction: 'none', cursor: 'grab' }}
+                          onTouchStart={(e) => {
+                            if (e.touches[0]) handleLongPressStart(index, e.touches[0].clientY);
+                          }}
+                          onTouchEnd={handleLongPressCancel}
+                          onTouchCancel={handleLongPressCancel}
+                          onMouseDown={(e) => handleLongPressStart(index, e.clientY)}
+                          onMouseUp={handleLongPressCancel}
+                          onMouseLeave={handleLongPressCancel}
+                        >
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-background border border-border/55 shrink-0">
+                            <Icon size={17} className={iconColor} strokeWidth={2.4} />
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <span className="font-bold text-sm block truncate text-foreground leading-tight">
+                              {TAB_LABELS[tab.id] || tab.id}
+                            </span>
+                            <span className="mono-label">
+                              {tab.id === 'home' ? 'Default · first tab' : isFixed ? 'Pinned' : `Position ${index + 1}`}
+                            </span>
+                          </div>
                         </div>
 
-                        <div className="flex-1 min-w-0">
-                          <span className="font-bold text-sm block truncate text-foreground leading-tight">
-                            {TAB_LABELS[tab.id] || tab.id}
-                          </span>
-                          {isFixed && <span className="text-[9px] font-bold text-primary uppercase tracking-widest opacity-80"></span>}
+                        <div className="flex items-center gap-1.5 pr-1">
+                          <button
+                            onClick={() => moveBottomTab(tab.id, 'up')}
+                            disabled={index === 0}
+                            className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-30 bg-background border border-border/55 hover:border-primary/40 active:scale-90 transition-all text-muted-foreground hover:text-primary"
+                            aria-label="Move up"
+                          >
+                            <ChevronUp size={15} strokeWidth={2.5} />
+                          </button>
+                          <button
+                            onClick={() => moveBottomTab(tab.id, 'down')}
+                            disabled={index === bottomTabs.length - 1}
+                            className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-30 bg-background border border-border/55 hover:border-primary/40 active:scale-90 transition-all text-muted-foreground hover:text-primary"
+                            aria-label="Move down"
+                          >
+                            <ChevronDown size={15} strokeWidth={2.5} />
+                          </button>
                         </div>
                       </div>
-
-                      <div className="flex items-center gap-1.5 pr-2">
-                        <button
-                          onClick={() => moveBottomTab(tab.id, 'up')}
-                          disabled={index === 0}
-                          className="w-8 h-8 rounded-xl flex items-center justify-center disabled:opacity-35 bg-secondary hover:bg-secondary/80 active:scale-95 transition-all text-gray-500"
-                        >
-                          <ChevronUp size={16} strokeWidth={2.5} />
-                        </button>
-                        <button
-                          onClick={() => moveBottomTab(tab.id, 'down')}
-                          disabled={index === bottomTabs.length - 1}
-                          className="w-8 h-8 rounded-xl flex items-center justify-center disabled:opacity-35 bg-secondary hover:bg-secondary/80 active:scale-95 transition-all text-gray-500"
-                        >
-                          <ChevronDown size={16} strokeWidth={2.5} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            </section>
 
-            <button
-              onClick={handleResetCustomization}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold"
-              style={{
-                background: 'hsl(var(--secondary) / 0.6)',
-                border: '1px solid hsl(var(--border) / 0.35)',
-              }}
-            >
-              <RotateCcw size={14} />
-              Reset Customization to Defaults
-            </button>
+            {/* Reset */}
+            <section className="pt-2">
+              <button
+                onClick={handleResetCustomization}
+                className="btn-ghost-dashed w-full gap-2 !py-4"
+              >
+                <RotateCcw size={15} />
+                Reset everything to defaults
+              </button>
+              <p className="text-[11px] text-muted-foreground text-center mt-2 leading-snug">
+                Restores theme, currency, widgets, and tab order. Your data stays safe.
+              </p>
+            </section>
+
           </div>
         </div>,
         document.body
