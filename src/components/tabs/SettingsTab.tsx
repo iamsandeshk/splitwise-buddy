@@ -1982,16 +1982,16 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
 
 
             {/* Home Dashboard section */}
-            <div className="bg-card p-6 rounded-[3rem] border border-border/10 shadow-sm space-y-5">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
-                  <LayoutGrid size={15} className="text-primary" />
-                </div>
-                <div>
-                  <h2 className="font-bold text-sm leading-none text-foreground">Home Screen Dashboard</h2>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mt-1">Configure Main Widgets</p>
-                </div>
+            <section>
+              <div className="section-head mb-3">
+                <h2>Home Dashboard</h2>
+                <span className="mono-label">04 / Widgets</span>
               </div>
+              <div className="slab p-5 space-y-4">
+                <p className="text-[13px] text-muted-foreground leading-snug">
+                  Toggle widgets on or off, and drag the arrows to <span className="text-foreground font-semibold">reorder</span> what shows first on Home.
+                </p>
+
 
               <div className="space-y-2.5">
                 {homeSettings.sectionOrder.map((sectionId, index) => {
