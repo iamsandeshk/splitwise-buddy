@@ -2086,6 +2086,8 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 })}
               </div>
             </div>
+            </section>
+
 
             {/* Item Picker Modal */}
             {createPortal(
