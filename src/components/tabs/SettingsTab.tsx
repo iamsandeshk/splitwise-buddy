@@ -1822,167 +1822,164 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
           onMouseMove={(e) => { if (dragIndex !== null) handleDragMove(e.clientY); }}
           onMouseUp={() => { handleLongPressCancel(); handleDragEnd(); }}
         >
-          {/* Header */}
-          <div className="flex items-center gap-4 px-6 pt-12 pb-4">
-            <button
-              onClick={() => setShowCustomize(false)}
-              className="w-11 h-11 rounded-2xl bg-secondary/80 border border-border/10 flex items-center justify-center active:scale-90 transition-all shadow-sm"
-            >
-              <ChevronLeft size={20} strokeWidth={2.5} />
-            </button>
-            <div className="flex-1">
-              <h1 className="text-2xl font-black tracking-tight text-foreground leading-none">Customization</h1>
-              <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mt-1.5 leading-none">Theme, currency & tab layout</p>
+          {/* Header — editorial */}
+          <div className="px-5 pt-12 pb-5">
+            <div className="flex items-center gap-3 mb-4">
+              <button
+                onClick={() => setShowCustomize(false)}
+                className="w-10 h-10 rounded-2xl bg-secondary/60 border border-border/55 flex items-center justify-center active:scale-95 transition-all"
+                aria-label="Back"
+              >
+                <ChevronLeft size={18} strokeWidth={2.5} />
+              </button>
+              <span className="mono-label">Settings / Customize</span>
             </div>
+            <h1 className="text-[2rem] font-black tracking-tight text-foreground leading-[1.05]">
+              Make it<br/>
+              <span className="text-primary">yours.</span>
+            </h1>
+            <p className="text-sm text-muted-foreground mt-2 leading-snug">
+              Pick a look, choose your currency, and arrange the screens the way you actually use them.
+            </p>
+            <hr className="rule-dashed mt-5" />
           </div>
 
-          <div className="flex-1 overflow-y-auto px-5 pb-8 space-y-5">
-            {/* Theme section */}
-            <div className="bg-card p-6 rounded-[3rem] border border-border/10 shadow-sm space-y-5">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
-                  <Sun size={15} className="text-primary" />
-                </div>
-                <div>
-                  <h2 className="font-bold text-sm leading-none text-foreground">App Theme</h2>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mt-1">Appearance Profile</p>
-                </div>
+          <div className="flex-1 overflow-y-auto px-5 pb-8 space-y-6">
+            {/* Theme — Appearance */}
+            <section>
+              <div className="section-head mb-3">
+                <h2>Appearance</h2>
+                <span className="mono-label">01 / Theme</span>
               </div>
-
-              <div className="grid grid-cols-3 gap-2 rounded-xl bg-secondary/30 p-1 border border-border/10">
-                {([
-                  { mode: 'light' as ThemeMode, icon: Sun, label: 'Light' },
-                  { mode: 'dark' as ThemeMode, icon: Moon, label: 'Dark' },
-                  { mode: 'system' as ThemeMode, icon: Monitor, label: 'Auto' },
-                ]).map(({ mode, icon: Icon, label }) => (
-                  <button
-                    key={mode}
-                    onClick={() => handleThemeChange(mode)}
-                    className="h-10 flex items-center justify-center gap-1.5 rounded-lg border transition-all duration-300 font-semibold group"
-                    style={{
-                      background: theme === mode ? 'hsl(var(--primary) / 0.1)' : 'transparent',
-                      borderColor: theme === mode ? 'hsl(var(--primary) / 0.2)' : 'transparent',
-                      transform: theme === mode ? 'scale(1.01)' : 'scale(1)'
-                    }}
-                  >
-                    <Icon
-                      size={15}
-                      className={cn(
-                        "transition-transform group-hover:scale-110",
-                        theme === mode ? "text-primary" : "text-gray-400"
-                      )}
-                    />
-                    <span className={cn(
-                      "text-[10px] uppercase tracking-wide",
-                      theme === mode ? "text-primary" : "text-gray-500"
-                    )}>{label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* UI Style toggle — Crafted vs Classic */}
-            <div className="bg-card p-6 rounded-[3rem] border border-border/10 shadow-sm space-y-5">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
-                  <span className="text-primary text-[11px] font-black tracking-widest">UI</span>
-                </div>
-                <div>
-                  <h2 className="font-bold text-sm leading-none text-foreground">Interface Style</h2>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mt-1">
-                    {uiStyle === 'crafted' ? 'Crafted — tactile slab + ember' : 'Classic — glassy + gradient'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 rounded-xl bg-secondary/30 p-1 border border-border/10">
-                {([
-                  { mode: 'crafted' as UiStyle, label: 'Crafted', sub: 'New' },
-                  { mode: 'classic' as UiStyle, label: 'Classic', sub: 'Old' },
-                ]).map(({ mode, label, sub }) => (
-                  <button
-                    key={mode}
-                    onClick={() => {
-                      if (uiStyle === mode) return;
-                      setUiStyleState(mode);
-                      setStoredUiStyle(mode);
-                      toast({ title: 'Interface Updated', description: `${label} UI is now active.` });
-                    }}
-                    className="h-12 flex flex-col items-center justify-center gap-0.5 rounded-lg border transition-all duration-200 font-semibold"
-                    style={{
-                      background: uiStyle === mode ? 'hsl(var(--primary) / 0.12)' : 'transparent',
-                      borderColor: uiStyle === mode ? 'hsl(var(--primary) / 0.25)' : 'transparent',
-                    }}
-                  >
-                    <span className={cn(
-                      'text-[11px] uppercase tracking-wider',
-                      uiStyle === mode ? 'text-primary' : 'text-gray-400'
-                    )}>{label}</span>
-                    <span className={cn(
-                      'text-[9px] uppercase tracking-widest',
-                      uiStyle === mode ? 'text-primary/70' : 'text-gray-500/70'
-                    )}>{sub}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Currency section */}
-            <div className="bg-card p-6 rounded-[3rem] border border-border/10 shadow-sm space-y-5">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
-                  <Coins size={15} className="text-primary" />
-                </div>
-                <div className="flex-1">
-                  <h2 className="font-bold text-sm leading-none text-foreground">Main Currency</h2>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mt-1">{CURRENCIES.find(c => c.code === selectedCurrency)?.name}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-5 gap-3">
-                {quickCurrencies.map((c) => (
-                  <button
-                    key={c.code}
-                    onClick={() => handleCurrencyChange(c.code)}
-                    className="group flex flex-col items-center gap-2 py-1 transition-all duration-300 relative"
-                  >
-                    <div
-                      className="w-14 h-14 rounded-full border flex items-center justify-center transition-all duration-300"
-                      style={{
-                        background: 'hsl(var(--secondary) / 0.35)',
-                        borderColor: selectedCurrency === c.code ? 'hsl(var(--primary) / 0.2)' : 'hsl(var(--border) / 0.15)',
-                        boxShadow: selectedCurrency === c.code ? '0 0 0 2px hsl(var(--primary) / 0.18)' : 'none',
-                      }}
-                    >
-                      <span
-                        className="text-2xl font-bold leading-none group-hover:scale-110 transition-transform duration-300"
-                        style={{ color: selectedCurrency === c.code ? 'hsl(var(--primary))' : 'hsl(var(--foreground))' }}
+              <div className="slab p-5 space-y-4">
+                <p className="text-[13px] text-muted-foreground leading-snug">
+                  Choose how the app looks. <span className="text-foreground font-semibold">Auto</span> follows your phone.
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { mode: 'light' as ThemeMode, icon: Sun, label: 'Light' },
+                    { mode: 'dark' as ThemeMode, icon: Moon, label: 'Dark' },
+                    { mode: 'system' as ThemeMode, icon: Monitor, label: 'Auto' },
+                  ]).map(({ mode, icon: Icon, label }) => {
+                    const active = theme === mode;
+                    return (
+                      <button
+                        key={mode}
+                        onClick={() => handleThemeChange(mode)}
+                        className={cn(
+                          "h-16 flex flex-col items-center justify-center gap-1.5 rounded-2xl border transition-all active:scale-[0.97]",
+                          active
+                            ? "bg-primary/10 border-primary/50 text-primary"
+                            : "bg-secondary/40 border-border/55 text-muted-foreground hover:text-foreground"
+                        )}
                       >
-                        {c.symbol}
-                      </span>
-                    </div>
-                    <span className={cn(
-                      "text-[9px] font-black uppercase tracking-tight",
-                      selectedCurrency === c.code ? "text-primary" : "text-gray-400"
-                    )}>{c.code}</span>
-                    {selectedCurrency === c.code && (
-                      <div className="absolute top-1.5 right-1.5 w-1 h-1 rounded-full bg-primary" />
-                    )}
-                  </button>
-                ))}
+                        <Icon size={18} strokeWidth={2.2} />
+                        <span className="text-[11px] font-bold uppercase tracking-wider">{label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
+            </section>
 
-              <button
-                onClick={() => {
-                  setCurrencySearch('');
-                  setShowCurrencyBrowser(true);
-                }}
-                className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-secondary/60 hover:bg-secondary text-[11px] font-bold text-foreground uppercase tracking-widest transition-all active:scale-95 border border-border/5"
-              >
-                <Search size={14} className="text-primary" />
-                View All Currencies
-              </button>
-            </div>
+            {/* UI Style — Crafted vs Classic */}
+            <section>
+              <div className="section-head mb-3">
+                <h2>Interface Style</h2>
+                <span className="mono-label">02 / Look</span>
+              </div>
+              <div className="slab p-5 space-y-4">
+                <p className="text-[13px] text-muted-foreground leading-snug">
+                  <span className="text-foreground font-semibold">Crafted</span> is the new tactile look. <span className="text-foreground font-semibold">Classic</span> brings back the original glassy theme.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  {([
+                    { mode: 'crafted' as UiStyle, label: 'Crafted', sub: 'New · tactile + ember' },
+                    { mode: 'classic' as UiStyle, label: 'Classic', sub: 'Old · glassy + gradient' },
+                  ]).map(({ mode, label, sub }) => {
+                    const active = uiStyle === mode;
+                    return (
+                      <button
+                        key={mode}
+                        onClick={() => {
+                          if (uiStyle === mode) return;
+                          setUiStyleState(mode);
+                          setStoredUiStyle(mode);
+                          toast({ title: 'Interface Updated', description: `${label} UI is now active.` });
+                        }}
+                        className={cn(
+                          "p-4 rounded-2xl border text-left transition-all active:scale-[0.98]",
+                          active
+                            ? "bg-primary/10 border-primary/50"
+                            : "bg-secondary/40 border-border/55"
+                        )}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={cn("text-sm font-bold", active ? "text-primary" : "text-foreground")}>{label}</span>
+                          {active && <span className="w-2 h-2 rounded-full bg-primary" />}
+                        </div>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground leading-tight block">{sub}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+
+            {/* Currency */}
+            <section>
+              <div className="section-head mb-3">
+                <h2>Main Currency</h2>
+                <span className="mono-label">03 / Money</span>
+              </div>
+              <div className="slab p-5 space-y-4">
+                <div className="flex items-baseline justify-between">
+                  <p className="text-[13px] text-muted-foreground leading-snug">
+                    Used across every screen.
+                  </p>
+                  <span className="text-[11px] font-bold text-primary tabular tracking-wide">
+                    {selectedCurrency} · {CURRENCIES.find(c => c.code === selectedCurrency)?.name}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-5 gap-2">
+                  {quickCurrencies.map((c) => {
+                    const active = selectedCurrency === c.code;
+                    return (
+                      <button
+                        key={c.code}
+                        onClick={() => handleCurrencyChange(c.code)}
+                        className={cn(
+                          "flex flex-col items-center gap-1.5 py-3 rounded-2xl border transition-all active:scale-95",
+                          active
+                            ? "bg-primary/10 border-primary/50"
+                            : "bg-secondary/30 border-border/55"
+                        )}
+                      >
+                        <span className={cn("text-xl font-bold leading-none", active ? "text-primary" : "text-foreground")}>
+                          {c.symbol}
+                        </span>
+                        <span className={cn("text-[10px] font-bold tracking-wider", active ? "text-primary" : "text-muted-foreground")}>
+                          {c.code}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={() => {
+                    setCurrencySearch('');
+                    setShowCurrencyBrowser(true);
+                  }}
+                  className="btn-ghost-dashed w-full !py-3 gap-2"
+                >
+                  <Search size={14} />
+                  Browse all currencies
+                </button>
+              </div>
+            </section>
+
 
             {/* Home Dashboard section */}
             <div className="bg-card p-6 rounded-[3rem] border border-border/10 shadow-sm space-y-5">
