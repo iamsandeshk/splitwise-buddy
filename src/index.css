@@ -225,27 +225,28 @@ All colors MUST be HSL.
     background: hsl(var(--primary) / 0.08);
   }
 
-  /* Tactile slab — visual backbone */
+  /* Tactile slab — unified visual backbone (single recipe for ALL surfaces) */
   .slab {
     position: relative;
     background: hsl(var(--card));
-    border: 1px solid hsl(var(--border) / 0.55);
+    border: 1px solid hsl(var(--border) / 0.5);
     border-radius: 1.5rem;
     box-shadow:
-      0 1px 0 0 hsl(0 0% 100% / 0.03) inset,
-      0 14px 28px -22px hsl(0 0% 0% / 0.7);
+      inset 0 1px 0 hsl(0 0% 100% / 0.04),
+      0 1px 0 hsl(0 0% 0% / 0.5),
+      0 18px 36px -28px hsl(0 0% 0% / 0.65);
   }
 
   .slab-ember {
     @apply slab;
     border-color: hsl(var(--primary) / 0.45);
     box-shadow:
-      0 1px 0 0 hsl(0 0% 100% / 0.05) inset,
-      0 0 0 1px hsl(var(--primary) / 0.15),
-      0 18px 36px -22px hsl(var(--primary) / 0.35);
+      inset 0 1px 0 hsl(0 0% 100% / 0.06),
+      0 0 0 1px hsl(var(--primary) / 0.12),
+      0 22px 40px -26px hsl(var(--primary) / 0.35);
   }
 
-  /* Flat slab — no shadows, hairline border only */
+  /* Flat slab — no shadows, hairline border only (for dense settings rows) */
   .slab-flat {
     position: relative;
     background: hsl(var(--card));
@@ -256,6 +257,18 @@ All colors MUST be HSL.
   .slab-flat-ember {
     @apply slab-flat;
     border-color: hsl(var(--primary) / 0.55);
+  }
+
+  /* Popover / dropdown / menu — same slab, tighter radius */
+  .slab-popover {
+    background: hsl(var(--popover, var(--card)));
+    color: hsl(var(--popover-foreground, var(--card-foreground)));
+    border: 1px solid hsl(var(--border) / 0.6);
+    border-radius: 1rem;
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.05),
+      0 1px 0 hsl(0 0% 0% / 0.5),
+      0 24px 48px -20px hsl(0 0% 0% / 0.55);
   }
 
 
@@ -552,8 +565,17 @@ All colors MUST be HSL.
 .classic-ui .ios-card,
 .classic-ui .ios-card-modern,
 .classic-ui .card-ios,
-.classic-ui .card-liquid {
+.classic-ui .card-liquid,
+.classic-ui .slab,
+.classic-ui .slab-ember {
   border-radius: 2.25rem;
+  background: hsl(0 0% 11% / 0.6);
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  border: 1px solid hsl(0 0% 100% / 0.08);
+  box-shadow:
+    0 8px 32px -8px hsl(0 0% 0% / 0.55),
+    inset 0 1px 0 hsl(0 0% 100% / 0.08);
 }
 .classic-ui .glass-card::before { content: none; }
 
