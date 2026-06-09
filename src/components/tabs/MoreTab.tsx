@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeftRight, CreditCard, ExternalLink, Landmark, Repeat, Sparkles, Target, User, Users, WalletCards, PieChart, X, Globe, ArrowRightLeft, MessageSquare, CalendarDays, ListOrdered } from 'lucide-react';
+import { ArrowLeftRight, CreditCard, ExternalLink, Landmark, Repeat, Sparkles, Target, User, Users, WalletCards, PieChart, X, Globe, ArrowRightLeft, MessageSquare, CalendarDays, ListOrdered, LucideIcon } from 'lucide-react';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
 import {
   FIXED_BOTTOM_TAB_IDS,
@@ -63,7 +63,7 @@ const TAB_LABELS: Record<string, string> = {
   more: 'More',
 };
 
-const TAB_ICONS: Record<string, any> = {
+const TAB_ICONS: Record<string, LucideIcon> = {
   personal: User,
   transactions: ListOrdered,
   shared: Users,

@@ -35,6 +35,26 @@ import { cn } from '@/lib/utils';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
 import { useBannerAd } from '@/hooks/useBannerAd';
 
+interface LocationState {
+  tabId?: string;
+}
+
+const moreCardTabIds = new Set([
+  'personal',
+  'shared',
+  'transactions',
+  'sms-transactions',
+  'calendar',
+  'links',
+  'categories',
+  'budgets',
+  'accounts',
+  'loans',
+  'goals',
+  'subscriptions',
+  'converter',
+]);
+
 const Index = () => {
   useNightlyBackup();
   const location = useLocation();
@@ -84,7 +104,7 @@ const Index = () => {
     processInvite(window.location.search);
 
     // 2. Deep Link listener for App
-    const handleDeepLink = CapacitorApp.addListener('appUrlOpen', (data: any) => {
+    const handleDeepLink = CapacitorApp.addListener('appUrlOpen', (data: { url: string }) => {
       // url might be like: splitmate://invite?invite_email=...
       const url = new URL(data.url);
       processInvite(url.search);
@@ -167,14 +187,15 @@ const Index = () => {
 
   // Handle cross-page navigation state (e.g., from PersonDetailsPage)
   useEffect(() => {
-    if (location.state && (location.state as any).tabId) {
-       const targetTab = (location.state as any).tabId;
+    const state = location.state as LocationState | null;
+    if (state && state.tabId) {
+       const targetTab = state.tabId;
        if (targetTab !== activeTab) {
          setDirection(0); // No slide for direct external navigation to avoid jumps
          setActiveTab(targetTab);
        }
     }
-  }, [location]); // Removed activeTab to avoid feedback loop when switching tabs manually
+  }, [location, activeTab]);
 
   // ── Swipe navigation ──────────────────────────────────────────
   const swipeNavEnabledRef = useRef(getSwipeNavEnabled());
@@ -252,21 +273,6 @@ const Index = () => {
     }
   }, [activeTab]);
 
-  const moreCardTabIds = new Set([
-    'personal',
-    'shared',
-    'transactions',
-    'sms-transactions',
-    'calendar',
-    'links',
-    'categories',
-    'budgets',
-    'accounts',
-    'loans',
-    'goals',
-    'subscriptions',
-    'converter',
-  ]);
 
   const navigateToTab = useCallback((tabId: string) => {
     if (activeTab === tabId) return;

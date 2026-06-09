@@ -327,7 +327,7 @@ function useInjectStyles(id: string, css: string) {
     }
     el.textContent = css;
     return () => { document.getElementById(id)?.remove(); };
-  }, [css]);
+  }, [id, css]);
 }
 
 export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationProps) => {
@@ -344,7 +344,7 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
   useEffect(() => {
     setTabConfigState(getTabConfig());
     const onChangeTabs = () => setTabConfigState(getTabConfig());
-    const onChangeLiquid = (e: any) => setLiquidGlassEnabled(e.detail);
+    const onChangeLiquid = (e: Event) => setLiquidGlassEnabled((e as CustomEvent<boolean>).detail);
     window.addEventListener('splitmate_tab_config_changed', onChangeTabs);
     window.addEventListener('splitmate_liquid_glass_changed', onChangeLiquid);
     return () => {
@@ -397,7 +397,7 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
     }
 
     onTabChange(tab);
-  }, [activeTab, onTabChange]);
+  }, [activeTab, onTabChange, liquidGlassEnabled]);
 
   return (
     <div

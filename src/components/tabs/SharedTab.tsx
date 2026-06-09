@@ -251,8 +251,9 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
   }, [monthSections, selectedMonthKey]);
 
   useEffect(() => {
-    const handleTriggerAdd = (e: any) => {
-      if (e.detail?.tabId === 'shared') setShowAddModal(true);
+    const handleTriggerAdd = (e: Event) => {
+      const detail = (e as CustomEvent<{ tabId?: string }>).detail;
+      if (detail?.tabId === 'shared') setShowAddModal(true);
     };
     const handleOpenTransaction = (e: Event) => {
       const detail = (e as CustomEvent<{ tabId?: string; transactionId?: string }>).detail;

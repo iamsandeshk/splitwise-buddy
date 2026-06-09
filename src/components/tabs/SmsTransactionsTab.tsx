@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, Check, MessageSquare, Pencil, Send, X } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
@@ -287,7 +287,7 @@ const stripNameTrailingJunk = (raw: string): string =>
     .replace(/\s*\(\s*UPI.*$/i, '')      // remove "(UPI Ref..."
     .replace(/\s*\(\s*Ref.*$/i, '')       // remove "(Ref..."
     .replace(/\bUPI\b.*$/i, '')           // remove stray "UPI ..."
-    .replace(/\s+on\s+[\d\/\-].*$/i, '') // remove " on 20/04..."
+    .replace(/\s+on\s+[\d/-].*$/i, '') // remove " on 20/04..."
     .replace(/\s+via\b.*$/i, '')          // remove " via ..."
     .trim();
 
@@ -318,7 +318,7 @@ const extractCounterparty = (item: SmsTransactionCandidate, direction: Transacti
     }
 
     // ── "to NAME on DATE" — Kotak / generic format ───────────────────────────
-    const toOn = text.match(/\bto\s+([A-Za-z][A-Za-z\s.]{1,60})\s+on\s+[\d\/\-]/i);
+    const toOn = text.match(/\bto\s+([A-Za-z][A-Za-z\s.]{1,60})\s+on\s+[\d/-]/i);
     if (toOn?.[1]) {
       const name = cleanCounterparty(stripNameTrailingJunk(toOn[1]));
       if (name && !isAccountPlaceholderStr(name)) return name;
@@ -351,14 +351,14 @@ const extractCounterparty = (item: SmsTransactionCandidate, direction: Transacti
     }
 
     // ── "from NAME on DATE" ──────────────────────────────────────────────────
-    const fromOn = text.match(/\bfrom\s+([A-Za-z][A-Za-z\s.]{1,60})\s+on\s+[\d\/\-]/i);
+    const fromOn = text.match(/\bfrom\s+([A-Za-z][A-Za-z\s.]{1,60})\s+on\s+[\d/-]/i);
     if (fromOn?.[1]) {
       const name = cleanCounterparty(stripNameTrailingJunk(fromOn[1]));
       if (name && !isAccountPlaceholderStr(name)) return name;
     }
 
     // ── "credited by NAME on DATE" ────────────────────────────────────────────
-    const creditedBy = text.match(/\bcredited\s+by\s+([A-Za-z][A-Za-z\s.]{1,60})\s+on\s+[\d\/\-]/i);
+    const creditedBy = text.match(/\bcredited\s+by\s+([A-Za-z][A-Za-z\s.]{1,60})\s+on\s+[\d/-]/i);
     if (creditedBy?.[1]) {
       const name = cleanCounterparty(stripNameTrailingJunk(creditedBy[1]));
       if (name && !isAccountPlaceholderStr(name)) return name;
@@ -561,8 +561,20 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
     return [...demo, ...items];
   }, [dismissedDemoIds, items, showDemoTransactions]);
 
-  const groups = useMemo(() => getFriendGroups(), [items.length]);
-  const persons = useMemo(() => getUniquePersonNames().filter((name) => name !== 'me'), [items.length]);
+  const groups = useMemo(() => getFriendGroups(), []);
+  const persons = useMemo(() => getUniquePersonNames().filter((name) => name !== 'me'), []);
+
+  const openEditor = useCallback((item: SmsTransactionCandidate) => {
+    setEditing(item);
+    setDraftReason(item.reason);
+    setDraftName(getEditableTransactionName(item));
+    setDraftDirection(inferDirection([item.body, item.reason, item.name, item.sourceAddress].filter(Boolean).join(' ')));
+    setDraftAmount(String(item.amount));
+    setDraftDate(item.date);
+    setTargetTab(item.targetTab || 'personal');
+    setTargetPersonName(item.targetPersonName || persons[0] || '');
+    setTargetGroupId(item.targetGroupId || groups[0]?.id || '');
+  }, [persons, groups]);
   useBackHandler(!!editing, () => setEditing(null));
   useBackHandler(showDisclosure, () => setShowDisclosure(false));
 
@@ -612,7 +624,7 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
       window.removeEventListener('splitmate_sms_transactions_changed', sync);
       window.removeEventListener('splitmate_open_transaction', handleOpenTransaction);
     };
-  }, []);
+  }, [openEditor]);
 
   useEffect(() => {
     localStorage.setItem(SMS_CAPTURE_ENABLED_KEY, String(smsCaptureEnabled));
@@ -685,17 +697,6 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
     setShowDisclosure(true);
   };
 
-  const openEditor = (item: SmsTransactionCandidate) => {
-    setEditing(item);
-    setDraftReason(item.reason);
-    setDraftName(getEditableTransactionName(item));
-    setDraftDirection(inferDirection([item.body, item.reason, item.name, item.sourceAddress].filter(Boolean).join(' ')));
-    setDraftAmount(String(item.amount));
-    setDraftDate(item.date);
-    setTargetTab(item.targetTab || 'personal');
-    setTargetPersonName(item.targetPersonName || persons[0] || '');
-    setTargetGroupId(item.targetGroupId || groups[0]?.id || '');
-  };
 
   const discardItem = () => {
     if (!editing) return;

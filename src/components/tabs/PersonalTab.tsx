@@ -65,7 +65,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
   useBackHandler(showAddModal, () => setShowAddModal(false));
   useBackHandler(showPersonPicker, () => setShowPersonPicker(false));
 
-  const existingPersonNames = useMemo(() => getUniquePersonNames(), [expenses]);
+  const existingPersonNames = useMemo(() => getUniquePersonNames(), []);
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(expense => {
@@ -155,8 +155,9 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
   }, [monthOptions]);
 
   useEffect(() => {
-    const handleTriggerAdd = (e: any) => {
-      if (e.detail?.tabId === 'personal') setShowAddModal(true);
+    const handleTriggerAdd = (e: Event) => {
+      const detail = (e as CustomEvent<{ tabId?: string }>).detail;
+      if (detail?.tabId === 'personal') setShowAddModal(true);
     };
     const handleOpenTransaction = (e: Event) => {
       const detail = (e as CustomEvent<{ tabId?: string; transactionId?: string }>).detail;
@@ -498,7 +499,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
                     <button
                       key={option.id}
                       onClick={() => {
-                        setFilterType(option.id as any);
+                        setFilterType(option.id as 'all' | 'income' | 'expense');
                         setShowFilterMenu(false);
                       }}
                       className={cn(
