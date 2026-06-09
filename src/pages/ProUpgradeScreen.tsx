@@ -104,6 +104,7 @@ export default function ProUpgradeScreen() {
   const { isPro, plan, loading: proLoading } = useProGate();
   const { products, purchaseMonthly, purchaseYearly, purchaseLifetime, restorePurchases, loading, error } = useBilling();
   const [busyPlanId, setBusyPlanId] = useState<ProPlanId | null>(null);
+  const [selectedPlanId, setSelectedPlanId] = useState<ProPlanId>('yearly');
   const [restoring, setRestoring] = useState(false);
   const [refreshSpinning, setRefreshSpinning] = useState(false);
   const isNative = Capacitor.isNativePlatform();
@@ -205,48 +206,78 @@ export default function ProUpgradeScreen() {
 
       <div className="px-5 -mt-4 relative z-20 space-y-10">
         {!isEffectivePro && (
-          <div className="grid grid-cols-1 gap-3">
-            {(Object.keys(PLAN_CONFIG) as ProPlanId[]).map((planId) => (
-              <div
-                key={planId}
-                className={cn(
-                    'group relative p-4 sm:p-5 rounded-xl border overflow-hidden active:scale-95 transition-all duration-300 shadow-sm',
-                  planId === 'yearly' ? 'border-primary bg-primary/5' : 'border-border/70 bg-card',
-                  plan === planId && 'ring-1 ring-primary/20',
-                )}
-              >
-                  <div className="absolute top-0 right-0 p-3">
-                    <div className={cn('px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest italic bg-muted/50 border border-border', planId === 'yearly' ? 'text-amber-500' : 'text-muted-foreground')}>
-                    {PLAN_CONFIG[planId].tag}
-                  </div>
-                </div>
-
-                  <div className="flex items-center justify-between gap-4 pr-0 sm:pr-1 mt-1">
-                    <div className="min-w-0 flex-1 space-y-1.5 pt-2">
-                      <h3 className="text-xs font-semibold text-muted-foreground">{PLAN_CONFIG[planId].title} Access</h3>
-                      <div className="flex flex-col items-start gap-1">
-                        {renderPrice(planId)}
-                        <p className="text-xs text-muted-foreground">{PLAN_CONFIG[planId].cadence}</p>
-                  </div>
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-2.5">
+              {(Object.keys(PLAN_CONFIG) as ProPlanId[]).map((planId) => {
+                const isSelected = selectedPlanId === planId;
+                return (
+                  <button
+                    key={planId}
+                    type="button"
+                    onClick={() => setSelectedPlanId(planId)}
+                    className={cn(
+                      'relative w-full flex items-center justify-between gap-4 px-4 py-3.5 rounded-2xl border transition-all duration-200 active:scale-95 focus:outline-none text-left',
+                      isSelected
+                        ? 'border-primary bg-primary/10 shadow-md shadow-primary/20'
+                        : 'border-border/60 bg-card hover:border-border',
+                    )}
+                  >
+                    {/* Left: plan name + cadence */}
+                    <div className="flex flex-col gap-0.5">
+                      <p className={cn(
+                        'text-sm font-black uppercase tracking-widest leading-none',
+                        isSelected ? 'text-primary' : 'text-foreground'
+                      )}>
+                        {PLAN_CONFIG[planId].title} Access
+                      </p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wide mt-1">
+                        {PLAN_CONFIG[planId].cadence}
+                      </p>
+                      {planId === 'yearly' && (
+                        <span className="mt-1.5 self-start text-[7px] font-black uppercase tracking-widest text-amber-500 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
+                          Best Value
+                        </span>
+                      )}
                     </div>
-                    <div className="shrink-0 flex items-start pt-7 sm:pt-5">
-                      <Button
-                        type="button"
-                        variant={plan === planId ? 'secondary' : 'premium'}
-                        className={cn('h-10 px-4 rounded-full text-xs font-semibold min-w-[96px] shadow-sm', plan === planId && 'bg-white/10 text-white')}
-                        disabled={loading || proLoading || busyPlanId !== null || !isNative}
-                        onClick={() => void handlePurchase(planId)}
-                      >
-                        {busyPlanId === planId ? '...' : 'Get Pro'}
-                      </Button>
-                  </div>
-                </div>
 
-                  <p className="mt-3 text-[10px] font-medium text-muted-foreground/70 uppercase tracking-[0.2em] leading-relaxed max-w-[18rem]">
-                  {getPlanDescription(planId)}
-                </p>
-              </div>
-            ))}
+                    {/* Right: price + radio */}
+                    <div className="flex items-center gap-3 shrink-0">
+                      {(() => {
+                        const item = priceByPlan[planId];
+                        if (!item || item.loading || !item.localizedPrice) {
+                          return <div className="h-6 w-16 rounded-lg bg-muted/40 animate-pulse" />;
+                        }
+                        return (
+                          <p className={cn(
+                            'text-xl font-black italic tracking-tighter leading-none',
+                            isSelected ? 'text-foreground' : 'text-foreground/70'
+                          )}>
+                            {item.localizedPrice}
+                          </p>
+                        );
+                      })()}
+                      <div className={cn(
+                        'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-200 shrink-0',
+                        isSelected ? 'border-primary bg-primary' : 'border-border/50 bg-transparent'
+                      )}>
+                        {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Single Continue button */}
+            <Button
+              type="button"
+              variant="premium"
+              className="w-full h-12 rounded-2xl text-sm font-bold tracking-wide shadow-lg"
+              disabled={loading || proLoading || busyPlanId !== null || !isNative}
+              onClick={() => void handlePurchase(selectedPlanId)}
+            >
+              {busyPlanId ? 'Processing...' : `Continue · ${PLAN_CONFIG[selectedPlanId].title}`}
+            </Button>
           </div>
         )}
 

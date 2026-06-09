@@ -11,7 +11,8 @@ import {
   Pencil, CloudUpload, Home, User, Users, ExternalLink, PieChart,
   WalletCards, Landmark, Target, Repeat, ArrowLeftRight, Globe, Sparkles,
   Calendar, MessageSquare,
-  FileSpreadsheet, HardDrive, Activity, CheckSquare, Plus, RefreshCw, HelpCircle, Bell, Settings, CreditCard, Link as LinkIcon, Crown, Share2, Lock
+  FileSpreadsheet, HardDrive, Activity, CheckSquare, Plus, RefreshCw, HelpCircle, Bell, Settings, CreditCard, Link as LinkIcon, Crown, Share2, Lock,
+  type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NativeAdCard } from '@/components/NativeAdCard';
@@ -188,7 +189,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
 
   const allCategories = useMemo(() => {
     const personal = getPersonalExpenses().map(e => e.category);
-    const shared = getSharedExpenses().map(e => (e as any).category).filter(Boolean);
+    const shared = getSharedExpenses().map(e => (e as { category?: string }).category).filter(Boolean);
     return Array.from(new Set([...personal, ...shared])).sort();
   }, []);
   const dragStartY = useRef(0);
@@ -522,7 +523,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
     more: 'More',
   };
 
-  const TAB_ICONS: Record<string, any> = {
+  const TAB_ICONS: Record<string, LucideIcon> = {
     home: Home,
     personal: User,
     transactions: Activity,
@@ -664,7 +665,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
     saveHomeSettings(next);
   };
 
-  const handleProfileChange = (key: keyof AccountProfile, value: any) => {
+  const handleProfileChange = (key: keyof AccountProfile, value: AccountProfile[keyof AccountProfile]) => {
     setProfile((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -848,7 +849,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
       goals: getGoals().length,
       subscriptions: getSubscriptions().length,
     };
-  }, [showBackupModal]);
+  }, []);
 
   const orderedCurrencies = useMemo(() => {
     const selected = CURRENCIES.find((currency) => currency.code === selectedCurrency);
@@ -1016,114 +1017,127 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
 
       {/* Account Profile */}
       <div>
-        <p className="text-xs text-muted-foreground px-2 mb-2 uppercase"></p>
-        <div className="p-3.5 space-y-4">
-          <div className="flex items-center justify-center pt-2">
-            <button
-              onClick={() => {
-                if (isEditingProfile) avatarInputRef.current?.click();
-                else if (profile.avatar && !avatarLoadFailed) setShowFullScreenAvatar(true);
-              }}
-              className="relative w-32 h-32 rounded-full overflow-hidden flex items-center justify-center"
-              style={{
-                background: 'hsl(var(--secondary))',
-                border: '3px solid hsl(var(--primary) / 0.28)',
-                boxShadow: '0 12px 32px -12px hsl(var(--primary) / 0.65)',
-              }}
-            >
-              {profile.avatar && !avatarLoadFailed ? (
-                <img
-                  src={profile.avatar}
-                  alt="Profile"
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                  onError={() => {
-                    setAvatarLoadFailed(true);
+        <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">Profile</p>
+        <div className="ios-card-modern p-4">
+          {!isEditingProfile ? (
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                {/* Avatar */}
+                <button
+                  onClick={() => {
+                    if (profile.avatar && !avatarLoadFailed) setShowFullScreenAvatar(true);
                   }}
-                />
-              ) : (
-                <UserCircle2 size={64} className="text-muted-foreground" />
-              )}
-            </button>
-            <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-          </div>
-
-          <div className="text-center space-y-1">
-            <div className="flex items-center justify-center gap-1.5">
-              <p className="text-base font-bold truncate">{profile.name || 'Guest'}</p>
-              {isEffectivePro && (
-                <img
-                  src="/assets/pro-verified-gold.png"
-                  alt="Pro verified"
-                  className="w-4 h-4 object-contain"
-                />
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground truncate">{profile.email || 'No email added yet'}</p>
-            {profile.bio && (
-              <p className="text-xs text-muted-foreground/90 line-clamp-2 px-3">{profile.bio}</p>
-            )}
-          </div>
-
-          {!isEditingProfile && !isGoogleConnected && (
-            <div className="pt-2 pb-1 flex flex-col items-center justify-center space-y-3">
-              <div className="flex items-center gap-3 w-full justify-center">
-                <button
-                  onClick={handleEditDetails}
-                  className="w-11 h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95"
-                  style={{ background: 'hsl(var(--secondary))', border: '1px solid hsl(var(--border) / 0.35)' }}
-                  title="Edit Profile"
-                >
-                  <Pencil size={19} className="text-primary" />
-                </button>
-                <button
-                  onClick={handleGoogleSignIn}
-                  disabled={isGoogleAuthBusy}
-                  className="flex-1 max-w-[220px] h-11 rounded-2xl font-semibold flex items-center justify-center gap-2.5 disabled:opacity-60 text-sm"
+                  className="relative w-16 h-16 rounded-full overflow-hidden flex items-center justify-center bg-secondary border border-border/10 shrink-0"
                   style={{
-                    background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
-                    color: 'hsl(var(--primary-foreground))',
-                    boxShadow: '0 8px 20px -8px hsl(var(--primary) / 0.5)',
+                    boxShadow: '0 4px 12px -2px hsl(var(--primary) / 0.15)',
                   }}
                 >
-                  <LogIn size={16} />
-                  {isGoogleAuthBusy ? 'Signing in...' : 'Sign in with Google'}
+                  {profile.avatar && !avatarLoadFailed ? (
+                    <img
+                      src={profile.avatar}
+                      alt="Profile"
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                      onError={() => {
+                        setAvatarLoadFailed(true);
+                      }}
+                    />
+                  ) : (
+                    <UserCircle2 size={36} className="text-muted-foreground" />
+                  )}
                 </button>
+                <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+
+                {/* Name & Email Info */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-base font-bold truncate text-foreground">{profile.name || 'Guest'}</p>
+                    {isEffectivePro && (
+                      <img
+                        src="/assets/pro-verified-gold.png"
+                        alt="Pro verified"
+                        className="w-4 h-4 object-contain"
+                      />
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">{profile.email || 'No email added yet'}</p>
+                  {profile.bio && (
+                    <p className="text-xs text-muted-foreground/80 mt-1 line-clamp-1">{profile.bio}</p>
+                  )}
+                </div>
               </div>
-              <button
-                onClick={() => setShowPrivacy(true)}
-                className="text-[11px] font-medium text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5"
-              >
-                <Shield size={12} />
-                Why do I need to sign in?
-              </button>
-            </div>
-          )}
 
-          {!isEditingProfile && isGoogleConnected && (
-            <div className="pt-2 pb-1 flex items-center justify-center gap-3">
-              <button
-                onClick={handleEditDetails}
-                className="w-11 h-11 rounded-2xl flex items-center justify-center transition-all active:scale-95"
-                style={{ background: 'hsl(var(--secondary))', border: '1px solid hsl(var(--border) / 0.35)' }}
-                title="Edit Profile"
-              >
-                <Pencil size={19} className="text-primary" />
-              </button>
-              <button
-                onClick={triggerSignOutFlow}
-                disabled={isGoogleAuthBusy}
-                className="h-11 px-5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-xs text-destructive hover:bg-destructive/10 transition-colors"
-                style={{ background: 'transparent', border: '1px solid hsl(var(--destructive) / 0.3)' }}
-              >
-                <LogOut size={16} />
-                Sign Out
-              </button>
+              {/* Action Buttons on the right */}
+              <div className="flex items-center gap-2 shrink-0">
+                {isGoogleConnected ? (
+                  // Google Connected: Only Sign Out, no edit details button
+                  <button
+                    onClick={triggerSignOutFlow}
+                    disabled={isGoogleAuthBusy}
+                    className="h-10 px-4 rounded-2xl font-bold flex items-center justify-center gap-2 text-xs text-destructive hover:bg-destructive/10 transition-colors"
+                    style={{ background: 'transparent', border: '1px solid hsl(var(--destructive) / 0.3)' }}
+                  >
+                    <LogOut size={14} />
+                    Sign Out
+                  </button>
+                ) : (
+                  // Guest: Edit details and Google Sign-in
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleEditDetails}
+                      className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95 bg-secondary border border-border/10"
+                      title="Edit Profile"
+                    >
+                      <Pencil size={16} className="text-primary" />
+                    </button>
+                    <button
+                      onClick={handleGoogleSignIn}
+                      disabled={isGoogleAuthBusy}
+                      className="h-10 px-4 rounded-2xl font-semibold flex items-center justify-center gap-2 disabled:opacity-60 text-xs text-primary-foreground"
+                      style={{
+                        background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
+                        boxShadow: '0 4px 12px -4px hsl(var(--primary) / 0.5)',
+                      }}
+                    >
+                      <LogIn size={14} />
+                      {isGoogleAuthBusy ? '...' : 'Sign In'}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-          )}
+          ) : (
+            // Editing details (only available to Guest accounts since edit button is hidden/removed for Google accounts)
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="relative w-16 h-16 rounded-full overflow-hidden flex items-center justify-center bg-secondary border border-border/10 cursor-pointer group shrink-0"
+                >
+                  {profile.avatar && !avatarLoadFailed ? (
+                    <img
+                      src={profile.avatar}
+                      alt="Profile"
+                      className="w-full h-full object-cover group-hover:opacity-75 transition-opacity"
+                      referrerPolicy="no-referrer"
+                      onError={() => {
+                        setAvatarLoadFailed(true);
+                      }}
+                    />
+                  ) : (
+                    <UserCircle2 size={36} className="text-muted-foreground group-hover:opacity-75 transition-opacity" />
+                  )}
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Pencil size={14} className="text-white" />
+                  </div>
+                </button>
+                <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-foreground">Edit Account Details</p>
+                  <p className="text-xs text-muted-foreground">Change name, email or custom bio</p>
+                </div>
+              </div>
 
-          {isEditingProfile ? (
-            <>
               <div className="space-y-2">
                 <input
                   type="text"
@@ -1135,11 +1149,9 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                   placeholder="Your name"
                   className="w-full h-11 px-3 rounded-xl text-sm"
                   style={{
-                    background: isGoogleConnected ? 'hsl(var(--secondary) / 0.3)' : 'hsl(var(--secondary) / 0.45)',
+                    background: 'hsl(var(--secondary) / 0.45)',
                     border: '1px solid hsl(var(--border) / 0.3)',
-                    opacity: isGoogleConnected ? 0.75 : 1,
                   }}
-                  disabled={isGoogleConnected}
                 />
                 <input
                   type="email"
@@ -1150,11 +1162,9 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                   placeholder="Email (optional)"
                   className="w-full h-11 px-3 rounded-xl text-sm"
                   style={{
-                    background: isGoogleConnected ? 'hsl(var(--secondary) / 0.3)' : 'hsl(var(--secondary) / 0.45)',
+                    background: 'hsl(var(--secondary) / 0.45)',
                     border: '1px solid hsl(var(--border) / 0.3)',
-                    opacity: isGoogleConnected ? 0.75 : 1,
                   }}
-                  disabled={isGoogleConnected}
                 />
                 <textarea
                   value={profile.bio}
@@ -1164,14 +1174,9 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                   className="w-full px-3 py-2 rounded-xl text-sm resize-none"
                   style={{ background: 'hsl(var(--secondary) / 0.45)', border: '1px solid hsl(var(--border) / 0.3)' }}
                 />
-                {isGoogleConnected && (
-                  <p className="text-[11px] text-muted-foreground px-1">
-                    Name and email are managed by Google account.
-                  </p>
-                )}
               </div>
 
-              {isProfileDirty && (
+              {isProfileDirty ? (
                 <div className="flex gap-2.5">
                   <button
                     onClick={handleCancelProfileEdit}
@@ -1191,8 +1196,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                     Save Changes
                   </button>
                 </div>
-              )}
-              {!isProfileDirty && (
+              ) : (
                 <button
                   onClick={handleCancelProfileEdit}
                   className="w-full px-4 py-3 rounded-2xl font-semibold text-sm border border-border bg-secondary/50"
@@ -1200,32 +1204,43 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                   Close Editor
                 </button>
               )}
-            </>
-          ) : null}
+            </div>
+          )}
         </div>
+
+        {/* Google explanation link for guests */}
+        {!isEditingProfile && !isGoogleConnected && (
+          <div className="flex justify-center pt-2">
+            <button
+              onClick={() => setShowPrivacy(true)}
+              className="text-[11px] font-medium text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5"
+            >
+              <Shield size={12} />
+              Why do I need to sign in?
+            </button>
+          </div>
+        )}
       </div>
 
       <div>
         <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">PRO</p>
-        <div className="ios-card-modern p-1.5 overflow-hidden mb-4">
+        <div className="ios-card-modern overflow-hidden">
+
+          {/* Pro Features row */}
           <button
             onClick={() => navigate('/pro')}
-            className="w-full flex items-center gap-3.5 px-4 py-4 rounded-[2rem] transition-all relative overflow-hidden group active:scale-[0.98]"
+            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all relative overflow-hidden group active:scale-[0.98]"
             style={{
               background: isEffectivePro
                 ? 'linear-gradient(135deg, hsl(var(--card)), hsl(var(--muted) / 0.55))'
                 : 'linear-gradient(135deg, hsl(var(--card)), hsl(var(--muted) / 0.35))',
-              border: '1px solid hsl(var(--border) / 0.2)',
-              boxShadow: '0 4px 12px -6px hsl(var(--primary) / 0.25)',
             }}
           >
-            <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-primary/10 border border-primary/15 transition-transform duration-300">
-              <img
-                src="/assets/pro-verified-gold.png"
-                alt="Pro verified"
-                className="w-6 h-6 object-contain"
-              />
-            </div>
+            <img
+              src="/assets/pro-verified-gold.png"
+              alt="Pro verified"
+              className="w-7 h-7 object-contain shrink-0"
+            />
             <div className="flex-1 text-left">
               <h2 className="font-semibold text-sm text-foreground mb-0.5">
                 Pro Features
@@ -1238,177 +1253,151 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
               <ChevronRight size={18} className="text-muted-foreground/60 group-hover:text-primary transition-colors" />
             </div>
           </button>
-        </div>
-      </div>
 
-      {/* Ads Section - Rewarded */}
-      {!isEffectivePro && <div className="ios-card-modern p-1.5 overflow-hidden">
-        <div
-          className="w-full flex items-center gap-3.5 px-4 py-4 rounded-[2rem] transition-all relative"
-          style={{
-            background: isAdFree
-              ? 'linear-gradient(165deg, hsl(var(--card)), hsl(142 70% 45% / 0.04))'
-              : 'linear-gradient(160deg, hsl(var(--card)), hsl(var(--primary) / 0.03))',
-          }}
-        >
-          <div className="relative">
-            <div className={cn(
-              "w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-700",
-              isAdFree
-                ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20 shadow-[0_0_20px_-5px_rgba(16,185,129,0.3)]"
-                : "bg-primary/10 text-primary border-primary/20"
-            )}
-              style={{ border: '1.2px solid currentColor' }}>
-              {isAdFree ? <Crown size={20} className="animate-pulse" /> : <EyeOff size={20} />}
-            </div>
-            {isAdFree && (
-              <svg className="absolute -inset-1.5 w-14 h-14 -rotate-90 pointer-events-none opacity-40">
-                <circle cx="28" cy="28" r="25" fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-500/10" />
-                <circle cx="28" cy="28" r="25" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={157} strokeDashoffset={adFreeOffset} className="text-emerald-500 transition-all duration-1000" strokeLinecap="round" />
-              </svg>
-            )}
-          </div>
-          <div className="flex-1 text-left min-w-0">
-            <div className="flex items-center gap-1.5">
-              <h2 className={cn("font-black text-[13px] uppercase tracking-tighter italic", isAdFree ? "text-emerald-500" : "text-foreground")}>
-                {isAdFree ? 'Premium Ad-Free Active' : 'Remove Advertisements'}
-              </h2>
-              {isAdFree && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />}
-            </div>
-            <p className="text-[10px] text-muted-foreground font-bold leading-none mt-1.5 uppercase tracking-widest opacity-60">
-              {isAdFree ? `Clean UI for the next ${remainingTime}` : 'Go Ad-Free for 24 Hours'}
-            </p>
-          </div>
-          {!isAdFree && (
-            <button
-              onClick={async () => {
-                const success = await showRewardAd();
-                if (success) {
-                  toast({ title: "Reward Earned! 💎", description: "Ads have been successfully disabled for 24 hours. Enjoy your premium experience!" });
-                }
-              }}
-              className="h-9 px-4 rounded-xl bg-primary text-white text-[9px] font-black uppercase tracking-widest shadow-xl shadow-primary/30 active:scale-95 transition-all border border-white/10 flex items-center gap-2 group"
-            >
-              <Sparkles size={12} className="group-hover:rotate-12 transition-transform" />
-              Watch Ad
-            </button>
+          {/* Divider + Ads row — only when not Pro */}
+          {!isEffectivePro && (
+            <>
+              <div className="h-px bg-border/20 mx-4" />
+              <button
+                className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all relative active:scale-[0.985] group"
+                style={{
+                  background: isAdFree
+                    ? 'linear-gradient(165deg, hsl(var(--card)), hsl(142 70% 45% / 0.04))'
+                    : 'linear-gradient(160deg, hsl(var(--card)), hsl(var(--primary) / 0.03))',
+                }}
+                onClick={async () => {
+                  if (isAdFree) return;
+                  const success = await showRewardAd();
+                  if (success) {
+                    toast({ title: "Reward Earned! 💎", description: "Ads have been successfully disabled for 24 hours. Enjoy your premium experience!" });
+                  }
+                }}
+              >
+                <div className={cn(
+                  "shrink-0 transition-all duration-700",
+                  isAdFree ? "text-emerald-500" : "text-primary"
+                )}>
+                  {isAdFree ? <Crown size={20} className="animate-pulse" /> : <EyeOff size={20} />}
+                </div>
+                <div className="flex-1 text-left min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <h2 className={cn("font-black text-[13px] uppercase tracking-tighter italic", isAdFree ? "text-emerald-500" : "text-foreground")}>
+                      {isAdFree ? 'Premium Ad-Free Active' : 'Remove Advertisements'}
+                    </h2>
+                    {isAdFree && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground font-bold leading-none mt-1.5 uppercase tracking-widest opacity-60">
+                    {isAdFree ? `Clean UI for the next ${remainingTime}` : 'Go Ad-Free for 24 Hours'}
+                  </p>
+                </div>
+                {isAdFree ? (
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <div className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 shadow-inner">
+                      <span className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">{remainingTime}</span>
+                    </div>
+                    <span className="text-[8px] font-bold text-muted-foreground/40 uppercase tracking-[0.2em] pr-0.5">Expires</span>
+                  </div>
+                ) : (
+                  <ChevronRight size={16} className="text-muted-foreground/60 group-hover:text-primary transition-colors shrink-0" />
+                )}
+              </button>
+            </>
           )}
-          {isAdFree && (
-            <div className="flex flex-col items-end gap-1">
-              <div className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 shadow-inner">
-                <span className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">{remainingTime}</span>
-              </div>
-              <span className="text-[8px] font-bold text-muted-foreground/40 uppercase tracking-[0.2em] pr-0.5">Expires</span>
-            </div>
-          )}
-        </div>
-      </div>}
 
-      <div>
-        <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">PREFERENCES</p>
-        <div className="space-y-3">
-
-          {/* Customization */}
-          <div className="ios-card-modern p-1.5 overflow-hidden">
-            <button
-              onClick={() => setShowCustomize(true)}
-              className="w-full flex items-center gap-3.5 px-4 py-4 rounded-[2rem] transition-all active:scale-[0.985] group"
-              style={{
-                background: 'linear-gradient(160deg, hsl(var(--card)), hsl(var(--primary) / 0.03))',
-              }}
-            >
-              <div className="w-11 h-11 rounded-2xl flex items-center justify-center transition-transform group-active:scale-95"
-                style={{ background: 'hsl(var(--primary) / 0.12)', border: '1px solid hsl(var(--primary) / 0.15)' }}>
-                <Palette size={20} className="text-primary" />
-              </div>
-              <div className="flex-1 text-left">
-                <h2 className="font-bold text-sm">Customization</h2>
-                <p className="text-[11px] text-muted-foreground">Theme, Currency & Bottom Tabs</p>
-              </div>
-              <div className="w-8 h-8 rounded-full flex items-center justify-center bg-secondary/50 border border-border/30">
-                <ChevronRight size={16} className="text-muted-foreground" />
-              </div>
-            </button>
-          </div>
-
-          {!isEffectivePro && <NativeAdCard />}
-
-          {/* Animation */}
-          <div className="ios-card-modern p-1.5 overflow-hidden">
-            <button
-              onClick={() => setShowAnimationMenu(true)}
-              className="w-full flex items-center gap-3.5 px-4 py-4 rounded-[2rem] transition-all active:scale-[0.985] group"
-              style={{
-                background: 'linear-gradient(160deg, hsl(var(--card)), hsl(45 90% 50% / 0.03))',
-              }}
-            >
-              <div className="w-11 h-11 rounded-2xl flex items-center justify-center transition-transform group-active:scale-95"
-                style={{ background: 'hsl(45 90% 50% / 0.12)', border: '1px solid hsl(45 90% 50% / 0.15)' }}>
-                <Sparkles size={20} className="text-amber-500" />
-              </div>
-              <div className="flex-1 text-left">
-                <h2 className="font-bold text-sm">Animation</h2>
-                <p className="text-[11px] text-muted-foreground">Motion & transition effects</p>
-              </div>
-              <div className="w-8 h-8 rounded-full flex items-center justify-center bg-secondary/50 border border-border/30">
-                <ChevronRight size={16} className="text-muted-foreground" />
-              </div>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Pro Toggle - Testing */}
-      <div>
-        <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">DATA</p>
-        <div className="space-y-3">
+          {/* Test Free Mode — dev only */}
           {isDevOverrideEmail(profile?.email) && (
-            <div className="ios-card-modern p-1.5 overflow-hidden">
+            <>
+              <div className="h-px bg-border/20 mx-4" />
               <div
                 onClick={() => {
                   const next = proOverrideMode === 'on' ? 'off' : 'on';
                   setProOverride(next === 'on' ? 'on' : null);
                   setProOverrideMode(next);
-
                   if (next === 'on') {
                     localStorage.removeItem('ad_free_until');
                     setAdsEnabledState(true);
                     setAdsEnabled(true);
                     window.dispatchEvent(new Event('splitmate_ads_changed'));
                   }
-
                   toast({
                     title: next === 'on' ? 'Test Free Enabled' : 'Test Free Disabled',
                     description: next === 'on' ? 'Pro access is forced off locally, including lifetime plans.' : 'Real subscription access is restored.',
                   });
                 }}
-                className="w-full flex items-center gap-3.5 px-4 py-4 rounded-[2rem] transition-all bg-card border border-border cursor-pointer active:scale-[0.985] group shadow-sm"
+                className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all cursor-pointer active:scale-[0.985] group"
               >
                 <div className={cn(
-                  "w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-500",
-                  proOverrideMode === 'on' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-muted/10 text-muted-foreground border-border"
-                )}
-                  style={{ border: '1.2px solid currentColor' }}>
+                  "shrink-0 transition-colors duration-300",
+                  proOverrideMode === 'on' ? "text-emerald-500" : "text-muted-foreground"
+                )}>
                   {proOverrideMode === 'on' ? <Lock size={20} /> : <Crown size={20} />}
                 </div>
                 <div className="flex-1 text-left">
                   <h2 className="font-bold text-sm">Test Free Mode</h2>
-                  <p className="text-[11px] text-muted-foreground">Force local free-tier behavior for QA testing</p>
+                  <p className="text-[11px] text-muted-foreground">Force local free-tier behavior</p>
                 </div>
                 <div className={cn(
-                  "w-12 h-6 rounded-full relative transition-all duration-300 border border-border shadow-inner",
-                  proOverrideMode === 'on' ? "bg-emerald-500/20" : "bg-secondary/60"
+                  "w-12 h-6 rounded-full relative transition-all duration-300 border shrink-0",
+                  proOverrideMode === 'on' ? "bg-emerald-500/20" : "bg-secondary"
                 )}>
                   <div className={cn(
-                    "absolute top-1 w-4 h-4 rounded-full transition-all duration-300 shadow-sm",
+                    "absolute top-1 w-4 h-4 rounded-full transition-all duration-300",
                     proOverrideMode === 'on' ? "left-7 bg-emerald-500" : "left-1 bg-muted-foreground"
                   )} />
                 </div>
               </div>
-            </div>
+            </>
           )}
+
         </div>
       </div>
+
+      <div>
+        <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">PREFERENCES</p>
+        <div className="ios-card-modern overflow-hidden">
+
+          {/* Customization */}
+          <button
+            onClick={() => setShowCustomize(true)}
+            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
+            style={{
+              background: 'linear-gradient(160deg, hsl(var(--card)), hsl(var(--primary) / 0.03))',
+            }}
+          >
+            <Palette size={20} className="text-white shrink-0" />
+            <div className="flex-1 text-left">
+              <h2 className="font-bold text-sm">Customization</h2>
+              <p className="text-[11px] text-muted-foreground">Theme, Currency &amp; Bottom Tabs</p>
+            </div>
+            <ChevronRight size={16} className="text-muted-foreground" />
+          </button>
+
+          {/* Divider */}
+          <div className="h-px bg-border/20 mx-4" />
+
+          {!isEffectivePro && <NativeAdCard variant="inline" />}
+
+          {!isEffectivePro && <div className="h-px bg-border/20 mx-4" />}
+
+          {/* Animation */}
+          <button
+            onClick={() => setShowAnimationMenu(true)}
+            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
+            style={{
+              background: 'linear-gradient(160deg, hsl(var(--card)), hsl(45 90% 50% / 0.03))',
+            }}
+          >
+            <Sparkles size={20} className="text-white shrink-0" />
+            <div className="flex-1 text-left">
+              <h2 className="font-bold text-sm">Animation</h2>
+              <p className="text-[11px] text-muted-foreground">Motion &amp; transition effects</p>
+            </div>
+            <ChevronRight size={16} className="text-muted-foreground" />
+          </button>
+
+        </div>
+      </div>
+
 
       {/* Animation Settings Modal */}
       {createPortal(
@@ -1427,7 +1416,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: "100%", opacity: 0 }}
                 transition={{ type: "spring", damping: 28, stiffness: 220 }}
-                className="relative w-full max-w-md bg-card border border-border/10 rounded-[3rem] shadow-2xl z-[120] overflow-hidden flex flex-col max-h-[75vh] mb-4 pointer-events-auto"
+                className="relative w-full max-w-md bg-card border border-border/10 rounded-[1.5rem] shadow-2xl z-[120] overflow-hidden flex flex-col max-h-[75vh] mb-4 pointer-events-auto"
               >
                 {/* Drag Indicator */}
                 <div className="flex justify-center pt-3 pb-0">
@@ -1553,7 +1542,9 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
 
 
       {/* Backup & Restore */}
-      <div className="ios-card-modern p-3.5 space-y-3">
+      <div>
+        <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">DATA</p>
+        <div className="ios-card-modern p-3.5 space-y-3">
         <div className="flex items-center justify-between gap-4 mb-1">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 bg-secondary rounded-xl flex items-center justify-center">
@@ -1702,98 +1693,51 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
             </label>
           </div>
         </div>
+        </div>
       </div>
 
       {/* Danger Zone */}
-      <div className="ios-card-modern p-1.5 overflow-hidden" style={{ border: '1px solid hsl(var(--danger) / 0.25)' }}>
+      <div className="ios-card-modern overflow-hidden" style={{ border: '1px solid hsl(var(--danger) / 0.25)' }}>
         <button
           onClick={() => {
             setDeleteStep('select');
             setDeleteSelections({ personal: false, shared: false, links: false, more: false });
           }}
-          className="w-full flex items-center gap-3.5 px-4 py-4 rounded-[2rem] transition-all active:scale-[0.985] group"
+          className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
           style={{
             background: 'linear-gradient(160deg, hsl(var(--card)), hsl(var(--danger) / 0.03))',
           }}
         >
-          <div className="w-11 h-11 rounded-2xl flex items-center justify-center transition-transform group-active:scale-95"
-            style={{ background: 'hsl(var(--danger) / 0.12)', border: '1px solid hsl(var(--danger) / 0.15)' }}>
-            <Trash2 size={20} style={{ color: 'hsl(var(--danger))' }} />
-          </div>
+          <Trash2 size={20} className="text-white shrink-0" />
           <div className="flex-1 text-left">
-            <h2 className="font-bold text-sm" style={{ color: 'hsl(var(--danger))' }}>Danger Zone</h2>
+            <h2 className="font-bold text-sm" style={{ color: 'hsl(var(--danger))' }}>Delete All Data</h2>
             <p className="text-[11px] text-muted-foreground">Permanently delete app data</p>
           </div>
-          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-danger/10 border border-danger/20">
-            <ChevronRight size={16} style={{ color: 'hsl(var(--danger))' }} />
-          </div>
+          <ChevronRight size={16} style={{ color: 'hsl(var(--danger))' }} />
         </button>
       </div>
 
       <div>
         <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">ABOUT</p>
-        <div className="space-y-3">
-          {/* About Developer */}
-          <div className="ios-card-modern p-1.5 overflow-hidden"
-            style={{ border: '1px solid hsl(var(--primary) / 0.15)', background: 'hsl(var(--primary) / 0.02)' }}>
-            <div className="p-3.5 space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'hsl(var(--primary) / 0.12)' }}>
-                  <UserCircle2 size={20} className="text-primary" />
-                </div>
-                <div>
-                  <h2 className="font-bold text-sm">About Developer</h2>
-                  <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">Meet the creator</p>
-                </div>
-              </div>
-
-              <div className="space-y-3 px-1">
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  Hi, I'm Sandesh! I build privacy-first apps to simplify your digital life.
-                </p>
-              </div>
-
-              <div className="flex gap-2.5">
-                <a
-                  href="https://x.com/The1UX"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full h-12 flex items-center justify-center gap-2.5 rounded-2xl font-black uppercase tracking-tighter text-[11px] no-underline active:scale-[0.98] transition-all bg-foreground text-background border border-foreground/5 shadow-lg shadow-foreground/5"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.25h-6.657l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                  </svg>
-                  THE1UX
-                </a>
-              </div>
-
-              <p className="text-[10px] text-muted-foreground text-center font-medium opacity-60 italic">
-                Thank you for being part of the SplitMate journey! ❤️
-              </p>
+        <div className="ios-card-modern overflow-hidden">
+          <a
+            href="https://x.com/The1UX"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group no-underline"
+          >
+            <UserCircle2 size={20} className="text-white shrink-0" />
+            <div className="flex-1 text-left min-w-0">
+              <h2 className="font-bold text-sm text-foreground">About Developer</h2>
+              <p className="text-[11px] text-muted-foreground">Hi, I'm Sandesh! Privacy-first apps.</p>
             </div>
-          </div>
-
-          {/* About */}
-          <div className="ios-card-modern p-1.5 overflow-hidden">
-            <div className="p-3.5 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
-                style={{
-                  background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
-                  boxShadow: '0 8px 20px -10px hsl(var(--primary) / 0.5)'
-                }}>
-                <Smartphone size={22} color="white" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <p className="font-bold text-sm">SplitMate - Expense Tracker</p>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-secondary text-muted-foreground">v{APP_VERSION}</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">
-                  100% Private & Secure. All data is stored locally on your device.
-                </p>
-              </div>
+            <div className="h-8 px-3 rounded-xl bg-foreground text-background text-[10px] font-black uppercase tracking-tighter flex items-center gap-1.5 shrink-0 shadow-sm">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.25h-6.657l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+              </svg>
+              Follow
             </div>
-          </div>
+          </a>
         </div>
       </div>
 
@@ -1833,7 +1777,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
 
           <div className="flex-1 overflow-y-auto px-5 pb-8 space-y-5">
             {/* Theme section */}
-            <div className="bg-card p-6 rounded-[3rem] border border-border/10 shadow-sm space-y-5">
+            <div className="bg-card p-6 rounded-[1.5rem] border border-border/10 shadow-sm space-y-5">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
                   <Sun size={15} className="text-primary" />
@@ -1877,7 +1821,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
             </div>
 
             {/* Currency section */}
-            <div className="bg-card p-6 rounded-[3rem] border border-border/10 shadow-sm space-y-5">
+            <div className="bg-card p-6 rounded-[1.5rem] border border-border/10 shadow-sm space-y-5">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
                   <Coins size={15} className="text-primary" />
@@ -1934,7 +1878,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
             </div>
 
             {/* Home Dashboard section */}
-            <div className="bg-card p-6 rounded-[3rem] border border-border/10 shadow-sm space-y-5">
+            <div className="bg-card p-6 rounded-[1.5rem] border border-border/10 shadow-sm space-y-5">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
                   <LayoutGrid size={15} className="text-primary" />
@@ -1980,7 +1924,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          toggleHomeSetting(item.settingKey as any);
+                          toggleHomeSetting(item.settingKey as keyof Omit<HomeTabSettings, 'currencyRateCodes' | 'sectionOrder'>);
                         }}
                         className="flex-1 flex items-center gap-3 text-left min-w-0"
                       >
@@ -2007,7 +1951,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setActivePicker(item.id as any);
+                            setActivePicker(item.id as 'goals' | 'subs' | 'links' | 'balances' | 'categories');
                           }}
                           className="w-8 h-8 rounded-lg bg-secondary/30 flex items-center justify-center hover:bg-secondary/50 active:scale-90 transition-all ml-1 shrink-0"
                         >
@@ -2056,7 +2000,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                       animate={{ y: 0, opacity: 1 }}
                       exit={{ y: "100%", opacity: 0 }}
                       transition={{ type: "spring", damping: 28, stiffness: 220 }}
-                      className="relative w-full max-w-md bg-card border border-border/10 rounded-[3rem] shadow-2xl z-[120] overflow-hidden flex flex-col max-h-[75vh] mb-4 pointer-events-auto"
+                      className="relative w-full max-w-md bg-card border border-border/10 rounded-[1.5rem] shadow-2xl z-[120] overflow-hidden flex flex-col max-h-[75vh] mb-4 pointer-events-auto"
                     >
                       {/* Drag Indicator */}
                       <div className="flex justify-center pt-3 pb-0">
@@ -2084,7 +2028,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                               key={goal.id}
                               onClick={() => toggleSelectedItem('goals', goal.id)}
                               className={cn(
-                                "p-4 rounded-[1.75rem] border transition-all flex items-center justify-between",
+                                "p-4 rounded-2xl border transition-all flex items-center justify-between",
                                 isSelected ? "bg-primary/10 border-primary/20 shadow-sm" : "bg-secondary/10 border-transparent opacity-70"
                               )}
                             >
@@ -2101,7 +2045,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                               key={sub.id}
                               onClick={() => toggleSelectedItem('subs', sub.id)}
                               className={cn(
-                                "p-4 rounded-[1.75rem] border transition-all flex items-center justify-between",
+                                "p-4 rounded-2xl border transition-all flex items-center justify-between",
                                 isSelected ? "bg-primary/10 border-primary/20 shadow-sm" : "bg-secondary/10 border-transparent opacity-70"
                               )}
                             >
@@ -2118,7 +2062,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                               key={link.id}
                               onClick={() => toggleSelectedItem('links', link.id)}
                               className={cn(
-                                "p-4 rounded-[1.75rem] border transition-all flex items-center justify-between",
+                                "p-4 rounded-2xl border transition-all flex items-center justify-between",
                                 isSelected ? "bg-primary/10 border-primary/20 shadow-sm" : "bg-secondary/10 border-transparent opacity-70"
                               )}
                             >
@@ -2135,7 +2079,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                               key={person}
                               onClick={() => toggleSelectedItem('balances', person)}
                               className={cn(
-                                "p-4 rounded-[1.75rem] border transition-all flex items-center justify-between",
+                                "p-4 rounded-2xl border transition-all flex items-center justify-between",
                                 isSelected ? "bg-primary/10 border-primary/20 shadow-sm" : "bg-secondary/10 border-transparent opacity-70"
                               )}
                             >
@@ -2152,7 +2096,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                               key={cat}
                               onClick={() => toggleSelectedItem('categories', cat)}
                               className={cn(
-                                "p-4 rounded-[1.75rem] border transition-all flex items-center justify-between",
+                                "p-4 rounded-2xl border transition-all flex items-center justify-between",
                                 isSelected ? "bg-primary/10 border-primary/20 shadow-sm" : "bg-secondary/10 border-transparent opacity-70"
                               )}
                             >
@@ -2186,7 +2130,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
             <div className="h-px" style={{ background: 'hsl(var(--border) / 0.3)' }} />
 
             {/* Bottom Tabs section */}
-            <div className="bg-card p-6 rounded-[3rem] border border-border/10 shadow-sm space-y-5">
+            <div className="bg-card p-6 rounded-[1.5rem] border border-border/10 shadow-sm space-y-5">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
                   <LayoutGrid size={15} className="text-primary" />
@@ -2207,7 +2151,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                     <div
                       key={tab.id}
                       className={cn(
-                        "h-14 flex items-center gap-3 p-2 rounded-[1.75rem] transition-all bg-secondary/30 border border-border/5 active:scale-[0.98]",
+                        "h-14 flex items-center gap-3 p-2 rounded-2xl transition-all bg-secondary/30 border border-border/5 active:scale-[0.98]",
                         tab.id === 'home' && "border-l-2 border-l-primary"
                       )}
                       ref={(el) => {

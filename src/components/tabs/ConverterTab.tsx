@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ArrowRightLeft, RefreshCw, TrendingUp, Globe, ArrowDownRight, ArrowUpRight, Search, Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -37,7 +37,7 @@ export function ConverterTab({ onOpenAccount, onBack, bannerAdActive = true }: C
   const [selectingType, setSelectingType] = useState<'from' | 'to' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const fetchRates = async () => {
+  const fetchRates = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch(`https://api.exchangerate-api.com/v4/latest/${fromCurrency}`);
@@ -49,12 +49,12 @@ export function ConverterTab({ onOpenAccount, onBack, bannerAdActive = true }: C
     } finally {
       setLoading(false);
     }
-  };
+  }, [fromCurrency]);
 
   useEffect(() => {
     fetchRates();
     setSearchQuery('');
-  }, [fromCurrency]);
+  }, [fetchRates]);
 
   const convertedAmount = rates[toCurrency] 
     ? (parseFloat(amount || '0') * rates[toCurrency]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -144,7 +144,7 @@ export function ConverterTab({ onOpenAccount, onBack, bannerAdActive = true }: C
 
              <button 
                 onClick={swapCurrencies}
-                className="w-14 h-14 rounded-2xl bg-primary text-white flex items-center justify-center shadow-xl shadow-primary/20 flex-shrink-0 active:scale-90 transition-all hover:rotate-180 duration-500 z-10"
+                className="w-14 h-14 rounded-2xl bg-primary text-white flex items-center justify-center shadow-md flex-shrink-0 active:scale-90 transition-all hover:rotate-180 duration-500 z-10"
              >
                 <ArrowRightLeft size={20} strokeWidth={2.5} />
              </button>

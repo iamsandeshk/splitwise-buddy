@@ -551,7 +551,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
                 className={cn(
                   "px-4 py-2 rounded-[1.25rem] text-[10px] font-bold whitespace-nowrap border uppercase tracking-wider transition-all duration-300",
                   isActive
-                    ? "bg-primary text-white border-primary shadow-lg shadow-primary/15"
+                    ? "bg-primary text-white border-primary"
                     : "bg-card text-muted-foreground/60 border-border/10"
                 )}
               >

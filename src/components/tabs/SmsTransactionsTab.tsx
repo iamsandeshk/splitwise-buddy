@@ -829,25 +829,13 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
         {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
       </div>
 
-      <div className={cn(
-        'relative overflow-hidden border-b border-border/10 py-3 transition-all duration-200',
-        smsCaptureEnabled ? 'bg-transparent' : 'bg-transparent',
-      )}>
-        <div className="relative flex items-center justify-between gap-2.5">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className={cn(
-              'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border',
-              smsCaptureEnabled
-                ? 'border-emerald-500/10 bg-emerald-500/5 text-emerald-500'
-                : 'border-border/10 bg-background/70 text-muted-foreground',
-            )}>
-              <MessageSquare size={15} strokeWidth={2.2} />
-            </div>
+      <div className="ios-card-modern p-3.5 space-y-4">
+        {/* SMS Capture Row */}
+        <div className="flex items-center justify-between gap-2.5">
+          <div className="flex min-w-0 items-center gap-3.5">
+            <MessageSquare size={20} className="text-white shrink-0" />
             <div className="min-w-0">
-              <p className={cn(
-                'text-xs font-medium',
-                smsCaptureEnabled ? 'text-emerald-500' : 'text-muted-foreground',
-              )}>
+              <p className="text-xs font-bold text-foreground">
                 SMS capture
               </p>
               <p className="mt-0.5 text-[11px] text-muted-foreground/80 font-medium leading-tight">
@@ -866,7 +854,7 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
             className={cn(
               'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border px-1 transition-all duration-200',
               smsCaptureEnabled
-                ? 'border-emerald-500/25 bg-emerald-500/15'
+                ? 'border-white/25 bg-white/20'
                 : 'border-border/15 bg-background/70',
             )}
           >
@@ -874,7 +862,58 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
               className={cn(
                 'relative z-10 inline-flex h-5 w-5 items-center justify-center rounded-full shadow-sm transition-transform duration-200',
                 smsCaptureEnabled
-                  ? 'translate-x-5 bg-emerald-500'
+                  ? 'translate-x-5 bg-white'
+                  : 'translate-x-0 bg-muted-foreground/70',
+              )}
+            />
+          </button>
+        </div>
+
+        {/* Divider */}
+        <div className="h-px bg-border/5 my-1" />
+
+        {/* Auto Approve Row */}
+        <div className={cn(
+          'flex items-center justify-between gap-2.5 transition-all duration-200',
+          !smsCaptureEnabled && 'opacity-50'
+        )}>
+          <div className="flex min-w-0 items-center gap-3.5">
+            <Check size={20} className="text-white shrink-0" />
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-foreground">
+                Auto approve transactions
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground/80 font-medium leading-tight">
+                {smsCaptureEnabled
+                  ? 'Send captured SMS entries straight to Personal. Credits are counted as income.'
+                  : 'Enable SMS capture first to use auto approval.'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            role="switch"
+            aria-checked={smsAutoApproveEnabled}
+            disabled={!smsCaptureEnabled}
+            onClick={() => {
+              if (!smsCaptureEnabled) return;
+              setSmsAutoApproveEnabled((value) => !value);
+            }}
+            className={cn(
+              'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border px-1 transition-all duration-200',
+              !smsCaptureEnabled
+                ? 'cursor-not-allowed border-border/10 bg-background/40'
+                : smsAutoApproveEnabled
+                  ? 'border-white/25 bg-white/20'
+                  : 'border-border/15 bg-background/70',
+            )}
+          >
+            <span
+              className={cn(
+                'relative z-10 inline-flex h-5 w-5 items-center justify-center rounded-full shadow-sm transition-transform duration-200',
+                smsAutoApproveEnabled
+                  ? 'translate-x-5 bg-white'
                   : 'translate-x-0 bg-muted-foreground/70',
               )}
             />
@@ -893,69 +932,6 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
           </p>
         </div>
       )}
-
-      <div className={cn(
-        'relative overflow-hidden border-b border-border/10 py-3 transition-all duration-200',
-        smsCaptureEnabled
-          ? smsAutoApproveEnabled
-            ? 'bg-transparent'
-            : 'bg-transparent'
-          : 'bg-transparent opacity-70',
-      )}>
-        <div className="relative flex items-center justify-between gap-2.5">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className={cn(
-              'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border',
-              smsCaptureEnabled && smsAutoApproveEnabled
-                ? 'border-primary/10 bg-primary/5 text-primary'
-                : 'border-border/10 bg-background/70 text-muted-foreground',
-            )}>
-              <Check size={15} strokeWidth={2.3} />
-            </div>
-            <div className="min-w-0">
-            <p className={cn(
-              'text-xs font-medium',
-              smsCaptureEnabled && smsAutoApproveEnabled ? 'text-primary' : 'text-muted-foreground',
-            )}>
-              Auto approve transactions
-            </p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground/80 font-medium leading-tight">
-              {smsCaptureEnabled
-                ? 'Send captured SMS entries straight to Personal. Credits are counted as income.'
-                : 'Enable SMS capture first to use auto approval.'}
-            </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            role="switch"
-            aria-checked={smsAutoApproveEnabled}
-            disabled={!smsCaptureEnabled}
-            onClick={() => {
-              if (!smsCaptureEnabled) return;
-              setSmsAutoApproveEnabled((value) => !value);
-            }}
-            className={cn(
-              'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border px-1 transition-all duration-200',
-              !smsCaptureEnabled
-                ? 'cursor-not-allowed border-border/10 bg-background/40'
-                : smsAutoApproveEnabled
-                  ? 'border-primary/25 bg-primary/12'
-                  : 'border-border/15 bg-background/70',
-            )}
-          >
-            <span
-              className={cn(
-                'relative z-10 inline-flex h-5 w-5 items-center justify-center rounded-full shadow-sm transition-transform duration-200',
-                smsAutoApproveEnabled
-                  ? 'translate-x-5 bg-primary'
-                  : 'translate-x-0 bg-muted-foreground/70',
-              )}
-            />
-          </button>
-        </div>
-      </div>
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">

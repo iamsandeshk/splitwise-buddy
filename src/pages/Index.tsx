@@ -610,7 +610,7 @@ const Index = () => {
               className="w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-2xl active:scale-90 transition-all hover:scale-110"
               style={{
                 background: 'linear-gradient(135deg, #8B5CF6, #6D28D9)',
-                boxShadow: '0 8px 32px -8px rgba(139, 92, 246, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15)',
+                boxShadow: '0 8px 24px -6px hsl(var(--glass-shadow) / 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15)',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
               }}
               title="Add Group Expense"
@@ -644,7 +644,7 @@ const Index = () => {
               className="w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-2xl active:scale-90 transition-all hover:scale-110"
               style={{
                 background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
-                boxShadow: '0 8px 32px -8px hsl(var(--primary) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.15)',
+                boxShadow: '0 8px 24px -6px hsl(var(--glass-shadow) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.15)',
                 border: '1px solid hsl(var(--glass-border))',
               }}
             >

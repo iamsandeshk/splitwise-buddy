@@ -7,7 +7,7 @@ import { getAdsEnabled } from '@/lib/storage';
 
 interface NativeAdCardProps {
   className?: string;
-  variant?: 'list' | 'grid' | 'toolbox';
+  variant?: 'list' | 'grid' | 'toolbox' | 'inline';
 }
 
 /**
@@ -64,7 +64,9 @@ export function NativeAdCard({ className = '', variant = 'list' }: NativeAdCardP
   const handleCtaClick = async () => {
     try {
       await NativeAd.recordAdClick();
-    } catch (_) { }
+    } catch (err) {
+      console.warn('[NativeAdCard] Click registration failed:', err);
+    }
   };
 
   // Don't render anything if failed or still loading (seamless experience)
@@ -203,6 +205,62 @@ export function NativeAdCard({ className = '', variant = 'list' }: NativeAdCardP
     );
   }
 
+  // ── Inline variant: no card shell, sits flush inside a parent container ──
+  if (variant === 'inline') {
+    return (
+      <div
+        role="button"
+        onClick={handleCtaClick}
+        className={cn(
+          'w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] cursor-pointer group relative',
+          className
+        )}
+      >
+        {/* Ad icon */}
+        <div
+          className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 overflow-hidden text-sm font-bold border border-border/10"
+          style={{
+            background: 'linear-gradient(135deg, hsl(var(--primary) / 0.15), hsl(var(--primary) / 0.05))',
+            color: 'hsl(var(--primary))',
+          }}
+        >
+          {adData.icon ? (
+            <img
+              src={adData.icon}
+              alt={adData.advertiser}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
+          ) : (
+            adData.advertiser?.charAt(0).toUpperCase() || 'A'
+          )}
+        </div>
+
+        {/* Labels */}
+        <div className="flex-1 min-w-0 text-left">
+          <p className="font-bold text-sm text-foreground truncate group-hover:text-primary transition-colors">
+            {adData.headline}
+          </p>
+          <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-bold uppercase tracking-[0.1em]">
+            <span className="text-primary italic">{adData.advertiser || 'Sponsored'}</span>
+            <span className="w-1 h-1 rounded-full bg-muted-foreground/20" />
+            <span className="px-1.5 py-0.5 rounded-md bg-secondary border border-border/10 text-[8px] font-black text-foreground/70 tracking-widest italic">AD</span>
+          </div>
+        </div>
+
+        {/* Chevron */}
+        <div className="w-8 h-8 rounded-full flex items-center justify-center text-primary bg-primary/5 border border-primary/10 shrink-0">
+          <ChevronRight size={16} strokeWidth={3} />
+        </div>
+
+        {/* Click overlay */}
+        <div className="absolute inset-0 z-[20] cursor-pointer active:bg-primary/5 transition-colors" onClick={handleCtaClick} />
+      </div>
+    );
+  }
+
   return (
     <div
       role="button"
@@ -232,8 +290,11 @@ export function NativeAdCard({ className = '', variant = 'list' }: NativeAdCardP
                 alt={adData.advertiser}
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  (e.target as any).style.display = 'none';
-                  (e.target as any).parentElement.textContent = adData.advertiser?.charAt(0).toUpperCase() || 'A';
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  if (target.parentElement) {
+                    target.parentElement.textContent = adData.advertiser?.charAt(0).toUpperCase() || 'A';
+                  }
                 }}
               />
             ) : (

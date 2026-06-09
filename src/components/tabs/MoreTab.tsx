@@ -379,7 +379,6 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
       <div className="pt-6 pb-2 flex items-start justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-3xl font-black tracking-tight leading-none">More</h1>
-          <p className="text-sm text-muted-foreground font-medium max-w-[200px] leading-tight opacity-70">Customizable hub for all productivity subsystems</p>
         </div>
         <AccountQuickButton onClick={onOpenAccount} />
       </div>
@@ -415,11 +414,11 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
                       }
                       onOpenFeatureTab(card.id);
                     }}
-                       className="group relative flex flex-col p-5 rounded-[2.25rem] transition-all duration-300 active:scale-[0.96] text-left overflow-hidden cursor-pointer"
+                       className="group relative flex flex-col p-5 rounded-[1.75rem] transition-all duration-300 active:scale-[0.96] text-left overflow-hidden cursor-pointer"
                        style={{ 
                           background: 'hsl(var(--card))',
                           border: `1.2px solid ${card.border}`,
-                          boxShadow: '0 8px 24px -18px hsl(var(--foreground) / 0.2)'
+                          boxShadow: 'none'
                        }}
                        role="button"
                        tabIndex={0}
@@ -472,7 +471,7 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
       </div>
 
       {cardsInMore.length === 0 && (
-        <div className="p-10 text-center rounded-[3rem] bg-secondary/15 border border-dashed border-border/20">
+        <div className="p-10 text-center rounded-[1.75rem] bg-secondary/15 border border-dashed border-border/20">
            <ArrowLeftRight className="mx-auto mb-3 text-primary/20" size={40} />
            <p className="text-sm font-bold text-muted-foreground/40 italic">Pinned features are managed in your bottom navigation bar.</p>
         </div>
@@ -490,7 +489,7 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
           onClick={() => setSwapTabId(null)}
         >
           <div
-            className="w-full max-w-md bg-card rounded-[2.5rem] overflow-hidden animate-in slide-in-from-bottom-10 duration-300 shadow-2xl"
+            className="w-full max-w-md bg-card rounded-[1.5rem] overflow-hidden animate-in slide-in-from-bottom-10 duration-300 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-6 border-b border-border/10">
@@ -512,7 +511,7 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
               {canAddWithoutSwap && (
                 <button
                   onClick={handleAddBeforeMore}
-                  className="w-full p-6 rounded-[2rem] text-left transition-all active:scale-[0.98] flex items-center justify-between group"
+                  className="w-full p-6 rounded-2xl text-left transition-all active:scale-[0.98] flex items-center justify-between group"
                   style={{ background: 'hsl(var(--primary) / 0.1)', border: '1px solid hsl(var(--primary) / 0.15)' }}
                 >
                   <div>
@@ -532,7 +531,7 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
                   <button
                     key={tab.id}
                     onClick={() => handleSwapWithBottom(tab.id)}
-                    className="w-full p-6 rounded-[2rem] text-left bg-secondary/30 border border-border/5 hover:bg-secondary/50 transition-all active:scale-[0.98] flex items-center gap-5 group"
+                    className="w-full p-6 rounded-2xl text-left bg-secondary/30 border border-border/5 hover:bg-secondary/50 transition-all active:scale-[0.98] flex items-center gap-5 group"
                   >
                     <div className={cn("w-12 h-12 rounded-2xl bg-white flex items-center justify-center shadow-sm flex-shrink-0 group-hover:scale-110 transition-transform", targetColor)}>
                        <TargetIcon size={22} strokeWidth={2.5} />

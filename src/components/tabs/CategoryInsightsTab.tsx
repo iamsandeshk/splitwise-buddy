@@ -221,7 +221,7 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
           <div className="absolute left-2 top-1/2 -translate-y-1/2 z-20">
              <button
                onClick={handleJumpToCurrentMonth}
-               className="w-8 h-8 rounded-full bg-primary/20 backdrop-blur-md border border-primary/40 flex items-center justify-center text-primary shadow-lg shadow-primary/20 animate-pulse"
+               className="w-8 h-8 rounded-full bg-primary/20 backdrop-blur-md border border-primary/40 flex items-center justify-center text-primary shadow-md animate-pulse"
              >
                <ChevronLeft size={16} strokeWidth={3} />
              </button>
@@ -244,7 +244,7 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
                 className={cn(
                    "px-5 py-2.5 rounded-[1.25rem] text-[11px] font-black uppercase tracking-[0.1em] whitespace-nowrap transition-all duration-300 flex-shrink-0 border-2",
                    isActive 
-                   ? "bg-primary text-primary-foreground border-primary shadow-xl shadow-primary/20 scale-105" 
+                   ? "bg-primary text-primary-foreground border-primary scale-105" 
                    : "bg-card text-muted-foreground/60 border-transparent hover:border-border/30 hover:bg-secondary/30"
                 )}
               >
@@ -258,7 +258,7 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
           <div className="absolute right-2 top-1/2 -translate-y-1/2 z-20">
              <button
                onClick={handleJumpToCurrentMonth}
-               className="w-8 h-8 rounded-full bg-primary/20 backdrop-blur-md border border-primary/40 flex items-center justify-center text-primary shadow-lg shadow-primary/20 animate-pulse"
+               className="w-8 h-8 rounded-full bg-primary/20 backdrop-blur-md border border-primary/40 flex items-center justify-center text-primary shadow-md animate-pulse"
              >
                <ChevronRight size={16} strokeWidth={3} />
              </button>

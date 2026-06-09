@@ -146,7 +146,7 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
           background: 'linear-gradient(135deg, hsl(var(--primary) / 0.15) 0%, hsl(var(--card) / 0.95) 50%, hsl(var(--accent) / 0.1) 100%)',
           border: '1px solid hsl(var(--primary) / 0.15)',
           borderRadius: '1.75rem',
-          boxShadow: '0 8px 32px -8px hsl(var(--primary) / 0.2), inset 0 1px 0 hsl(0 0% 100% / 0.06)',
+          boxShadow: '0 2px 16px -4px hsl(var(--glass-shadow) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.06)',
         }}
       >
         <div className="absolute top-2 right-2 opacity-[0.08] rotate-12">
@@ -203,7 +203,7 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
           style={{
             background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
             color: 'hsl(var(--primary-foreground))',
-            boxShadow: '0 6px 20px -6px hsl(var(--primary) / 0.45), inset 0 1px 0 hsl(0 0% 100% / 0.15)',
+            boxShadow: '0 2px 12px -4px hsl(var(--glass-shadow) / 0.3), inset 0 1px 0 hsl(0 0% 100% / 0.15)',
             transition: 'transform 0.2s ease, box-shadow 0.2s ease',
           }}
         >

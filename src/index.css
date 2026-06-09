@@ -289,7 +289,7 @@ All colors MUST be HSL.
   .ios-card-modern {
     background: hsl(var(--card) / 0.9);
     border: 1px solid hsl(var(--border) / 0.5);
-    border-radius: 2.25rem;
+    border-radius: 1.5rem;
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     box-shadow: 
@@ -310,7 +310,7 @@ All colors MUST be HSL.
   .card-ios {
     background: hsl(var(--card) / 0.9);
     border: 1px solid hsl(var(--border) / 0.5);
-    border-radius: 2.25rem;
+    border-radius: 1.5rem;
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     box-shadow: 0 2px 16px -4px hsl(var(--glass-shadow) / 0.5);
