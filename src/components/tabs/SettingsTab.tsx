@@ -60,7 +60,7 @@ import {
   type HomeTabSettings
 } from '@/lib/storage';
 import { getStoredTheme, setStoredTheme, type ThemeMode } from '@/lib/theme';
-import { getStoredUiStyle, setStoredUiStyle, type UiStyle } from '@/lib/uiStyle';
+import { getStoredAccentColor, setStoredAccentColor, type AccentColor } from '@/lib/accentColor';
 import { getGooglePhotoUrl, signInWithGoogle, signOutGoogle, subscribeGoogleAuth } from '@/integrations/firebase/auth';
 import { getCurrentGoogleUser } from '@/integrations/firebase/auth';
 import { loadBackupForCurrentUser, saveBackupForCurrentUser } from '@/integrations/firebase/backup';
@@ -101,7 +101,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(getStoredTheme());
-  const [uiStyle, setUiStyleState] = useState<UiStyle>(getStoredUiStyle());
+  const [accentColor, setAccentColorState] = useState<AccentColor>(getStoredAccentColor());
   const [deleteStep, setDeleteStep] = useState<DeleteStep>('closed');
   const [deleteSelections, setDeleteSelections] = useState({ personal: false, shared: false, links: false, more: false });
   const [selectedCurrency, setSelectedCurrency] = useState(getCurrency().code);
@@ -578,10 +578,12 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
     setCurrency(defaultCurrency);
     setTheme('system');
     setStoredTheme('system');
+    setAccentColorState('orange');
+    setStoredAccentColor('orange');
     updateTabConfig(DEFAULT_TAB_LAYOUT);
     toast({
       title: 'Customization Reset',
-      description: 'Theme, currency, and tab layout were reset to defaults.',
+      description: 'Theme, currency, accent color, and tab layout were reset to defaults.',
     });
   };
 
@@ -1011,12 +1013,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
             </button>
           )}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="mono-label">SETTINGS</span>
-            </div>
-
             <h1 className="text-[28px] font-bold leading-none tracking-tight">Settings<span className="text-primary">.</span></h1>
-            <p className="text-xs text-muted-foreground mt-1.5 tracking-wide">Profile · preferences · data</p>
           </div>
         </div>
         <hr className="rule-dashed mt-4" />
@@ -1769,8 +1766,8 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
           onMouseUp={() => { handleLongPressCancel(); handleDragEnd(); }}
         >
           {/* Header — editorial */}
-          <div className="px-5 pt-12 pb-5">
-            <div className="flex items-center gap-3 mb-4">
+          <div className="px-5 pt-12 pb-4">
+            <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowCustomize(false)}
                 className="w-10 h-10 rounded-2xl bg-secondary/60 border border-border/55 flex items-center justify-center active:scale-95 transition-all"
@@ -1778,16 +1775,8 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
               >
                 <ChevronLeft size={18} strokeWidth={2.5} />
               </button>
-              <span className="mono-label">Settings / Customize</span>
+              <h1 className="text-xl font-bold tracking-tight text-foreground">Customization</h1>
             </div>
-            <h1 className="text-[2rem] font-black tracking-tight text-foreground leading-[1.05]">
-              Make it<br/>
-              <span className="text-primary">yours.</span>
-            </h1>
-            <p className="text-sm text-muted-foreground mt-2 leading-snug">
-              Pick a look, choose your currency, and arrange the screens the way you actually use them.
-            </p>
-            <hr className="rule-dashed mt-5" />
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 pb-8 space-y-6">
@@ -1828,43 +1817,38 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
               </div>
             </section>
 
-            {/* UI Style — Crafted vs Classic */}
+            {/* Accent Color Section */}
             <section>
               <div className="section-head mb-3">
-                <h2>Interface Style</h2>
-                <span className="mono-label">02 / Look</span>
+                <h2>Accent Color</h2>
+                <span className="mono-label">02 / Color</span>
               </div>
-              <div className="slab-flat p-5 space-y-4">
-                <p className="text-[13px] text-muted-foreground leading-snug">
-                  <span className="text-foreground font-semibold">Crafted</span> is the new tactile look. <span className="text-foreground font-semibold">Classic</span> brings back the original glassy theme.
-                </p>
-                <div className="grid grid-cols-2 gap-3">
+              <div className="slab-flat p-5">
+                <div className="flex items-center justify-between px-2 py-1">
                   {([
-                    { mode: 'crafted' as UiStyle, label: 'Crafted', sub: 'New · tactile + ember' },
-                    { mode: 'classic' as UiStyle, label: 'Classic', sub: 'Old · glassy + gradient' },
-                  ]).map(({ mode, label, sub }) => {
-                    const active = uiStyle === mode;
+                    { id: 'orange' as AccentColor, label: 'Orange', bgClass: 'bg-[#ff6b35]' },
+                    { id: 'purple' as AccentColor, label: 'Purple', bgClass: 'bg-[#8b5cf6]' },
+                    { id: 'green' as AccentColor, label: 'Green', bgClass: 'bg-[#10b981]' },
+                    { id: 'blue' as AccentColor, label: 'Blue', bgClass: 'bg-[#3b82f6]' },
+                    { id: 'red' as AccentColor, label: 'Red', bgClass: 'bg-[#f43f5e]' },
+                  ]).map(({ id, label, bgClass }) => {
+                    const active = accentColor === id;
                     return (
                       <button
-                        key={mode}
+                        key={id}
                         onClick={() => {
-                          if (uiStyle === mode) return;
-                          setUiStyleState(mode);
-                          setStoredUiStyle(mode);
-                          toast({ title: 'Interface Updated', description: `${label} UI is now active.` });
+                          if (accentColor === id) return;
+                          setAccentColorState(id);
+                          setStoredAccentColor(id);
+                          toast({ title: 'Accent Color Updated', description: `${label} theme is now active.` });
                         }}
                         className={cn(
-                          "p-4 rounded-2xl border text-left transition-all active:scale-[0.98]",
-                          active
-                            ? "bg-primary/10 border-primary/50"
-                            : "bg-secondary/40 border-border/55"
+                          "w-12 h-12 rounded-full flex items-center justify-center relative active:scale-90 transition-all border-2",
+                          active ? "border-primary bg-primary/10" : "border-transparent hover:border-border/40"
                         )}
+                        title={label}
                       >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className={cn("text-sm font-bold", active ? "text-primary" : "text-foreground")}>{label}</span>
-                          {active && <span className="w-2 h-2 rounded-full bg-primary" />}
-                        </div>
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground leading-tight block">{sub}</span>
+                        <div className={cn("w-8 h-8 rounded-full shrink-0 shadow-sm", bgClass)} />
                       </button>
                     );
                   })}

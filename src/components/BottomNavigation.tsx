@@ -242,9 +242,9 @@ const GLASS_STYLES = `
 
   /* ── LIGHT active icon — ember */
   .light .lg-icon.active {
-    color: hsl(14 79% 48%);
+    color: hsl(var(--primary));
     transform: scale(1.10) translateY(-1px);
-    filter: drop-shadow(0 2px 6px hsl(14 79% 50% / 0.35));
+    filter: drop-shadow(0 2px 6px hsl(var(--primary) / 0.35));
     transition:
       color 0.22s ease,
       transform 0.42s cubic-bezier(0.34,1.56,0.64,1),
@@ -253,9 +253,9 @@ const GLASS_STYLES = `
 
   /* ── DARK active icon — ember glow */
   :root:not(.light) .lg-icon.active {
-    color: hsl(14 92% 67%);
+    color: hsl(var(--primary-glow));
     transform: scale(1.10) translateY(-1px);
-    filter: drop-shadow(0 0 10px hsl(14 92% 60% / 0.55));
+    filter: drop-shadow(0 0 10px hsl(var(--primary) / 0.55));
     transition:
       color 0.22s ease,
       transform 0.42s cubic-bezier(0.34,1.56,0.64,1),
@@ -285,7 +285,7 @@ const GLASS_STYLES = `
     font-weight: 600;
   }
   .light .lg-label.active {
-    color: hsl(14 79% 45%);
+    color: hsl(var(--primary));
     font-weight: 700;
   }
 
@@ -295,7 +295,7 @@ const GLASS_STYLES = `
     font-weight: 600;
   }
   :root:not(.light) .lg-label.active {
-    color: hsl(14 92% 70%);
+    color: hsl(var(--primary-glow));
     font-weight: 700;
   }
 

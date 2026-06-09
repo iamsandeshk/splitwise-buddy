@@ -365,10 +365,6 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
               </button>
             )}
             <div className="min-w-0">
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="mono-label">SPLIT</span>
-              </div>
-
               <h1 className="text-[28px] font-bold leading-none tracking-tight">Split<span className="text-primary">.</span></h1>
               <p className="text-xs text-muted-foreground mt-1.5 tracking-wide">Shared expenses ledger</p>
             </div>
