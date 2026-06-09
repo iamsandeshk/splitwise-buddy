@@ -113,25 +113,23 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
   }, []);
 
   return (
-    <div className="p-4 pb-40 space-y-5">
-      {/* Header */}
-      <div className="pt-4 pb-2 flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm text-muted-foreground font-medium">{greeting}</p>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <h1 className="text-2xl font-bold"
-              style={{
-                background: 'linear-gradient(135deg, hsl(var(--foreground)), hsl(var(--muted-foreground)))',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
-              }}
-            >{displayName}</h1>
+    <div className="px-5 pb-40 space-y-6">
+      {/* Header — editorial slab */}
+      <div className="pt-5 pb-1 flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-muted-foreground">
+            {greeting.replace(/o/gi, 'o').toLowerCase()} ·
+            <span className="text-primary"> {new Date().toLocaleDateString('en', { weekday: 'short', day: '2-digit', month: 'short' })}</span>
+          </p>
+          <div className="flex items-baseline gap-2 mt-1">
+            <h1 className="font-heading text-[34px] font-extrabold tracking-[-0.035em] leading-none text-foreground truncate">
+              {displayName}.
+            </h1>
             {isEffectivePro && (
               <img
                 src="/assets/pro-verified-gold.png"
                 alt="Pro verified"
-                className="w-4 h-4 object-contain"
+                className="w-4 h-4 object-contain shrink-0"
               />
             )}
           </div>
@@ -139,9 +137,9 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
         <AccountQuickButton onClick={onOpenAccount} />
       </div>
 
-      {/* Net Balance Card - hero */}
+      {/* Balance — flat tactile slab with hairline rule */}
       <div
-        className="p-6 relative overflow-hidden"
+        className="relative px-5 py-6"
         style={{
           background: 'linear-gradient(135deg, hsl(var(--primary) / 0.15) 0%, hsl(var(--card) / 0.95) 50%, hsl(var(--accent) / 0.1) 100%)',
           border: '1px solid hsl(var(--primary) / 0.15)',
@@ -149,86 +147,102 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
           boxShadow: '0 2px 16px -4px hsl(var(--glass-shadow) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.06)',
         }}
       >
-        <div className="absolute top-2 right-2 opacity-[0.08] rotate-12">
-          <Wallet size={72} className="text-primary" />
+        {/* Corner code tag */}
+        <div className="absolute top-3 right-4 font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground/70">
+          NET · {new Date().toLocaleDateString('en', { month: 'short', year: '2-digit' }).toUpperCase()}
         </div>
-        <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full opacity-[0.06]"
-          style={{ background: 'radial-gradient(circle, hsl(var(--primary)), transparent)' }} />
 
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3" style={{ letterSpacing: '0.08em' }}>
-          Total Balance
-        </p>
-        <MoneyDisplay
-          amount={stats.netTotalBalance}
-          size="xl"
-          showSign={true}
-          className="block"
-        />
-        <p className="text-xs text-muted-foreground mt-2">
-          {stats.netTotalBalance > 0 ? "You are in the green"
-            : stats.netTotalBalance < 0 ? "You have total outgoing"
-              : "All perfectly balanced! ⚖️"}
+        <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-muted-foreground mb-3">
+          Total balance
         </p>
 
-        {/* Incoming / Outgoing breakdown */}
+        <div className="flex items-baseline gap-1">
+          <MoneyDisplay
+            amount={stats.netTotalBalance}
+            size="xl"
+            showSign={true}
+            className="font-heading tracking-[-0.04em]"
+          />
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <span
+            className="inline-block w-1.5 h-1.5 rounded-full"
+            style={{
+              background: stats.netTotalBalance > 0 ? 'hsl(var(--success))'
+                : stats.netTotalBalance < 0 ? 'hsl(var(--danger))'
+                : 'hsl(var(--muted-foreground))'
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            {stats.netTotalBalance > 0 ? 'In the green'
+              : stats.netTotalBalance < 0 ? 'Net outgoing this cycle'
+                : 'Squared up.'}
+          </p>
+        </div>
+
         {(stats.owedToYou > 0 || stats.totalOutgoing > 0) && (
-          <div className="flex gap-3 mt-4 pt-4" style={{ borderTop: '1px solid hsl(var(--border) / 0.15)' }}>
-            <div className="flex items-center gap-2 flex-1">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'hsl(var(--success) / 0.15)' }}>
-                <ArrowDownRight size={13} className="text-success" />
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground">Incoming</p>
-                <p className="text-sm font-bold text-success">{currency.symbol}{stats.owedToYou.toLocaleString(currency.locale)}</p>
+          <div
+            className="mt-5 pt-4 grid grid-cols-2 gap-0 divide-x"
+            style={{ borderTop: '1px dashed hsl(var(--border) / 0.5)', borderColor: 'hsl(var(--border) / 0.4)' }}
+          >
+            <div className="pr-4">
+              <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground mb-1.5">In</p>
+              <div className="flex items-center gap-1.5">
+                <ArrowDownRight size={14} className="text-success" />
+                <p className="font-heading text-lg font-bold text-success tabular-nums tracking-tight">
+                  {currency.symbol}{stats.owedToYou.toLocaleString(currency.locale)}
+                </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-1">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'hsl(var(--danger) / 0.15)' }}>
-                <ArrowUpRight size={13} className="text-danger" />
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground">Outgoing (Total)</p>
-                <p className="text-sm font-bold text-danger">{currency.symbol}{stats.totalOutgoing.toLocaleString(currency.locale)}</p>
+            <div className="pl-4">
+              <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground mb-1.5">Out</p>
+              <div className="flex items-center gap-1.5">
+                <ArrowUpRight size={14} className="text-danger" />
+                <p className="font-heading text-lg font-bold text-danger tabular-nums tracking-tight">
+                  {currency.symbol}{stats.totalOutgoing.toLocaleString(currency.locale)}
+                </p>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Quick Add Buttons */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Action row — asymmetric primary / ghost */}
+      <div className="grid grid-cols-5 gap-3">
         <button
           onClick={onAddPersonal}
-          className="group h-[68px] flex items-center gap-3 px-4 rounded-2xl relative overflow-hidden font-semibold text-sm"
+          className="col-span-3 group h-[64px] flex items-center justify-between px-5 rounded-[1.25rem] font-heading font-bold tracking-tight relative overflow-hidden active:scale-[0.98] transition-transform"
           style={{
-            background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
+            background: 'hsl(var(--primary))',
             color: 'hsl(var(--primary-foreground))',
             boxShadow: '0 2px 12px -4px hsl(var(--glass-shadow) / 0.3), inset 0 1px 0 hsl(0 0% 100% / 0.15)',
             transition: 'transform 0.2s ease, box-shadow 0.2s ease',
           }}
         >
-          <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0">
-            <Plus size={18} />
+          <span className="flex flex-col items-start leading-none">
+            <span className="font-mono text-[9px] uppercase tracking-[0.3em] opacity-70 mb-1">+ log</span>
+            <span className="text-base">Personal</span>
+          </span>
+          <div className="w-9 h-9 rounded-full flex items-center justify-center"
+            style={{ background: 'hsl(0 0% 0% / 0.22)' }}>
+            <Plus size={18} strokeWidth={3} />
           </div>
-          <span className="text-left leading-tight">Add<br />Personal</span>
         </button>
 
         <button
           onClick={onAddShared}
-          className="group h-[68px] flex items-center gap-3 px-4 rounded-2xl font-semibold text-sm"
+          className="col-span-2 group h-[64px] flex flex-col items-start justify-center px-4 rounded-[1.25rem] font-heading font-bold tracking-tight active:scale-[0.98] transition-transform"
           style={{
-            background: 'hsl(var(--card) / 0.95)',
+            background: 'transparent',
             color: 'hsl(var(--foreground))',
-            border: '1px solid hsl(var(--border) / 0.4)',
-            boxShadow: '0 2px 12px -4px hsl(var(--glass-shadow) / 0.3)',
-            transition: 'transform 0.2s ease, border-color 0.2s ease',
+            border: '1px dashed hsl(var(--border))',
           }}
         >
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{ background: 'hsl(var(--primary) / 0.12)' }}>
-            <Users size={16} className="text-primary" />
-          </div>
-          <span className="text-left leading-tight">Add<br />Split</span>
+          <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.3em] text-muted-foreground mb-1">
+            <Users size={11} className="text-primary" /> split
+          </span>
+          <span className="text-base">New tab</span>
         </button>
       </div>
 
@@ -237,38 +251,38 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
         switch (sectionId) {
           case 'stats':
             return settings.showStats && (
-              <div key="stats" className="grid grid-cols-3 gap-3">
-                <div className="ios-card-modern p-4 text-center space-y-1">
-                  <div className="w-8 h-8 mx-auto rounded-xl flex items-center justify-center" style={{ background: 'hsl(211 100% 58% / 0.12)' }}>
-                    <TrendingUp size={14} className="text-blue-400" />
+              <div key="stats" className="grid grid-cols-3 gap-2">
+                {[
+                  { label: 'Spent', sub: 'this month', value: `${currency.symbol}${stats.thisMonthPersonal.toLocaleString(currency.locale)}`, accent: 'danger' },
+                  { label: 'Txn', sub: 'all-time', value: String(stats.totalTransactions), accent: 'foreground' },
+                  { label: 'People', sub: 'unsettled', value: String(stats.activePeople), accent: 'primary' },
+                ].map((s, i) => (
+                  <div
+                    key={s.label}
+                    className="relative px-3.5 py-4"
+                    style={{
+                      background: 'hsl(var(--card) / 0.6)',
+                      border: '1px solid hsl(var(--border) / 0.45)',
+                      borderRadius: '1.1rem',
+                    }}
+                  >
+                    <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground mb-2">
+                      0{i + 1} · {s.label}
+                    </p>
+                    <p className={`font-heading text-xl font-extrabold tracking-[-0.03em] tabular-nums leading-none ${s.accent === 'primary' ? 'text-primary' : s.accent === 'danger' ? 'text-foreground' : 'text-foreground'}`}>
+                      {s.value}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-1.5">{s.sub}</p>
                   </div>
-                  <p className="text-lg font-bold text-foreground">{currency.symbol}{stats.thisMonthPersonal.toLocaleString(currency.locale)}</p>
-                  <p className="text-[10px] text-muted-foreground">This Month</p>
-                </div>
-                <div className="ios-card-modern p-4 text-center space-y-1">
-                  <div className="w-8 h-8 mx-auto rounded-xl flex items-center justify-center" style={{ background: 'hsl(270 50% 60% / 0.12)' }}>
-                    <Activity size={14} className="text-purple-400" />
-                  </div>
-                  <p className="text-lg font-bold text-foreground">{stats.totalTransactions}</p>
-                  <p className="text-[10px] text-muted-foreground">Transactions</p>
-                </div>
-                <div className="ios-card-modern p-4 text-center space-y-1">
-                  <div className="w-8 h-8 mx-auto rounded-xl flex items-center justify-center" style={{ background: 'hsl(var(--warning) / 0.12)' }}>
-                    <Users size={14} className="text-warning" />
-                  </div>
-                  <p className="text-lg font-bold text-foreground">{stats.activePeople}</p>
-                  <p className="text-[10px] text-muted-foreground">Active</p>
-                </div>
+                ))}
               </div>
             );
           case 'spending':
             return settings.showSpendingBreakdown && stats.categoryData.length > 0 && (
               <div key="spending" className="ios-card-modern p-5 space-y-3">
-                <h3 className="font-semibold text-sm flex items-center gap-2">
-                  <div className="w-8 h-8 bg-purple-400/15 rounded-xl flex items-center justify-center">
-                    <PieChart size={15} className="text-purple-400" />
-                  </div>
-                  Spending Breakdown
+                <h3 className="font-heading font-bold text-sm flex items-center gap-2 tracking-tight">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-primary">§</span>
+                  Spending breakdown
                 </h3>
                 <ExpenseChart data={stats.categoryData} type="pie" height={200} />
               </div>
@@ -281,18 +295,16 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
             return settings.showTopBalances && displayPeople.length > 0 && (
               <div key="balances" className="ios-card-modern p-5 pb-6 space-y-4">
                 <div className="flex items-center justify-between mb-1">
-                  <h3 className="font-semibold text-sm flex items-center gap-2">
-                    <div className="w-8 h-8 bg-orange-400/15 rounded-xl flex items-center justify-center">
-                      <TrendingDown size={15} className="text-orange-400" />
-                    </div>
-                    Top Balances
+                  <h3 className="font-heading font-bold text-sm flex items-center gap-2 tracking-tight">
+                    <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-primary">§</span>
+                    Top balances
                   </h3>
                   {stats.topPeople.length > 2 && (
                     <button
                       onClick={() => onNavigateToTab('shared')}
-                      className="text-[10px] font-bold text-primary uppercase tracking-wider px-2 py-1 rounded-lg hover:bg-primary/5 transition-colors"
+                      className="font-mono text-[9px] font-bold text-primary uppercase tracking-[0.22em] px-2 py-1 rounded-lg hover:bg-primary/5 transition-colors"
                     >
-                      View All
+                      View all →
                     </button>
                   )}
                 </div>

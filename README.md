@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-=======
-
->>>>>>> 8ca6ae36fb9f55c9fb59014f0a9370cdaa9c8942
 # SplitMate
 
 SplitMate is a personal and shared expense tracker built with React, TypeScript, Vite, Tailwind, and Capacitor.

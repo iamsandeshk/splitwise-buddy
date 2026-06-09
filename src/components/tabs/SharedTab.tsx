@@ -350,36 +350,39 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
         />
       )}
 
-      {/* Header */}
+      {/* Header — crafted */}
       <div className="pt-4 pb-1">
-        <div className="flex items-center justify-between">
-          <div className="flex items-start gap-2.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5 min-w-0">
             {onBack && (
               <button
                 type="button"
                 onClick={onBack}
-                className="w-11 h-11 rounded-2xl bg-secondary/80 border border-border/10 flex items-center justify-center active:scale-90 transition-all shadow-sm mt-0.5"
+                className="w-11 h-11 rounded-2xl slab flex items-center justify-center active:scale-90 transition-all mt-0.5"
                 aria-label="Back"
               >
                 <ChevronLeft size={20} strokeWidth={2.5} />
               </button>
             )}
-            <div>
-              <h1 className="text-2xl font-bold">Split</h1>
-              <p className="text-sm text-muted-foreground">Split expenses with others</p>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="mono-label">SPLIT</span>
+              </div>
+
+              <h1 className="text-[28px] font-bold leading-none tracking-tight">Split<span className="text-primary">.</span></h1>
+              <p className="text-xs text-muted-foreground mt-1.5 tracking-wide">Shared expenses ledger</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {personBalances.length > 0 && (
               <button
                 onClick={() => { setShowSearch(!showSearch); if (showSearch) setSearchQuery(''); }}
-                className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-200"
-                style={{
-                  background: showSearch ? 'hsl(var(--primary) / 0.15)' : 'hsl(var(--secondary))',
-                  border: `1px solid ${showSearch ? 'hsl(var(--primary) / 0.3)' : 'hsl(var(--border) / 0.4)'}`,
-                }}
+                className={cn(
+                  "w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-150",
+                  showSearch ? "slab-ember text-primary" : "slab text-muted-foreground"
+                )}
               >
-                {showSearch ? <X size={16} className="text-primary" /> : <Search size={16} className="text-muted-foreground" />}
+                {showSearch ? <X size={16} /> : <Search size={16} />}
               </button>
             )}
             {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
@@ -393,50 +396,46 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
           <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             autoFocus
-            placeholder="Search people..."
+            placeholder="Search people…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 h-11 rounded-2xl text-sm bg-card/50 border border-border/30 outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15 transition-all"
+            className="input-liquid pl-10 h-11 text-sm"
           />
         </div>
       )}
 
-      {/* Balance Overview Card */}
+      {/* Balance Overview — flat tactile slab */}
       {!isSearching && (
-        <div
-          className="p-5 relative overflow-hidden"
-          style={{
-            background: netBalance >= 0
-              ? 'linear-gradient(135deg, hsl(var(--success) / 0.1) 0%, hsl(var(--card) / 0.95) 60%)'
-              : 'linear-gradient(135deg, hsl(var(--danger) / 0.1) 0%, hsl(var(--card) / 0.95) 60%)',
-            border: `1px solid ${netBalance >= 0 ? 'hsl(var(--success) / 0.15)' : 'hsl(var(--danger) / 0.15)'}`,
-            borderRadius: '2.25rem',
-            boxShadow: `0 8px 28px -8px ${netBalance >= 0 ? 'hsl(var(--success) / 0.15)' : 'hsl(var(--danger) / 0.15)'}`,
-          }}
-        >
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2" style={{ letterSpacing: '0.08em' }}>
-            Overall Balance
-          </p>
-          <MoneyDisplay amount={netBalance} size="lg" showSign={true} />
-          <p className="text-xs text-muted-foreground mt-1.5">
-            {netBalance > 0 ? "You have incoming overall" : netBalance < 0 ? "You have outgoing overall" : "All balanced! 🎉"}
-          </p>
-
-          {/* Mini breakdown */}
-          <div className="flex gap-3 mt-4 pt-3" style={{ borderTop: '1px solid hsl(var(--border) / 0.12)' }}>
-            <div className="flex items-center gap-2 flex-1 px-3 py-2 rounded-xl" style={{ background: 'hsl(var(--success) / 0.08)' }}>
-              <ArrowDownRight size={13} className="text-success" />
-              <div>
-                <p className="text-[10px] text-muted-foreground">Incoming</p>
-                <p className="text-xs font-bold text-success">{currency.symbol}{owedToYou.toLocaleString(currency.locale)}</p>
+        <div className={cn("relative p-5 pt-4", netBalance >= 0 ? "slab-ember" : "slab")}>
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <span className="mono-label">NET BALANCE</span>
+              <div className="mt-2">
+                <MoneyDisplay amount={netBalance} size="lg" showSign={true} />
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-1 px-3 py-2 rounded-xl" style={{ background: 'hsl(var(--danger) / 0.08)' }}>
-              <ArrowUpRight size={13} className="text-danger" />
-              <div>
-                <p className="text-[10px] text-muted-foreground">Outgoing</p>
-                <p className="text-xs font-bold text-danger">{currency.symbol}{youOwe.toLocaleString(currency.locale)}</p>
+            <span className={cn("mono-tag", netBalance >= 0 ? "ember-tag" : "")}>
+              {netBalance > 0 ? "+ IN" : netBalance < 0 ? "− OUT" : "= EVEN"}
+            </span>
+          </div>
+          <p className="text-[11px] text-muted-foreground tracking-wide mb-4">
+            {netBalance > 0 ? "Others owe you overall" : netBalance < 0 ? "You owe others overall" : "All balanced"}
+          </p>
+          <hr className="rule-dashed" />
+          <div className="grid grid-cols-2 gap-0 mt-3 divide-x divide-dashed divide-border/70">
+            <div className="pr-4">
+              <div className="flex items-center gap-1.5">
+                <ArrowDownRight size={11} className="text-success" />
+                <span className="mono-label">IN</span>
               </div>
+              <p className="text-base font-bold tabular text-success mt-1">{currency.symbol}{owedToYou.toLocaleString(currency.locale)}</p>
+            </div>
+            <div className="pl-4">
+              <div className="flex items-center gap-1.5">
+                <ArrowUpRight size={11} className="text-danger" />
+                <span className="mono-label">OUT</span>
+              </div>
+              <p className="text-base font-bold tabular text-danger mt-1">{currency.symbol}{youOwe.toLocaleString(currency.locale)}</p>
             </div>
           </div>
         </div>
@@ -458,22 +457,23 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
 
       {/* Groups & People List */}
       {sortedBalances.length === 0 && groupBalances.length === 0 ? (
-        <div className="ios-card-modern p-10 text-center mt-4">
-          <div className="w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-4"
-            style={{ background: 'hsl(var(--muted) / 0.5)' }}>
-            <Users size={28} className="text-muted-foreground" />
+        <div className="slab p-10 text-center mt-4">
+          <span className="mono-label">EMPTY / 00</span>
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mt-3 mb-3 border border-dashed border-border">
+            <Users size={24} className="text-muted-foreground" />
           </div>
-          <p className="text-foreground font-semibold">No shared expenses yet</p>
-          <p className="text-sm text-muted-foreground mt-1">Tap + to add your first shared expense</p>
+          <p className="font-semibold tracking-tight">No shared expenses</p>
+          <p className="text-xs text-muted-foreground mt-1 tracking-wide">Tap + to log your first split</p>
         </div>
       ) : (
         <div className="space-y-6 pt-2">
           {/* Groups Section */}
           {!isSearching && groupBalances.length > 0 && (
             <div className="space-y-3">
-              <h3 className="font-semibold text-muted-foreground text-[10px] uppercase tracking-[0.2em] px-1 opacity-70">
-                Active Groups ({groupBalances.length})
-              </h3>
+              <div className="section-head">
+                <h3>Active Groups</h3>
+                <span className="mono-label">{String(groupBalances.length).padStart(2,'0')} / GRP</span>
+              </div>
               <div className="grid grid-cols-1 gap-3">
                 {groupBalances.map((group, index) => {
                   const isLockedGroup = !isPro && index >= FREE_LIMITS.MAX_SHARED_GROUPS;
@@ -569,9 +569,10 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
           )}
 
           <div className="space-y-3 pb-4">
-            <h3 className="font-semibold text-muted-foreground text-[10px] uppercase tracking-[0.2em] px-1 opacity-70">
-              Individual Balances ({sortedBalances.length})
-            </h3>
+            <div className="section-head">
+              <h3>Individual Balances</h3>
+              <span className="mono-label">{String(sortedBalances.length).padStart(2,'0')} / PPL</span>
+            </div>
             {sortedBalances.map((person, index) => {
               const isLockedPerson = !isPro && index >= FREE_LIMITS.MAX_PERSONS;
               return (
