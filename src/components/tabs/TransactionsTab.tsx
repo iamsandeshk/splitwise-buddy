@@ -7,6 +7,7 @@ import { useBackHandler } from '@/hooks/useBackHandler';
 import { useBannerAd } from '@/hooks/useBannerAd';
 import { cn } from '@/lib/utils';
 import { type AppTransactionItem, getAllAppTransactions } from '@/lib/transactions';
+import { syncDemoTransactions } from '@/lib/storage';
 import { NativeAdCard } from '@/components/NativeAdCard';
 
 interface TransactionsTabProps {
@@ -29,6 +30,12 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
   const [viewing, setViewing] = useState<AppTransactionItem | null>(null);
 
   useBackHandler(!!viewing, () => setViewing(null));
+
+  useEffect(() => {
+    const storedValue = localStorage.getItem('splitmate_sms_auto_approve_enabled');
+    const autoApprove = storedValue === null ? true : storedValue === 'true';
+    syncDemoTransactions(autoApprove);
+  }, []);
 
   useEffect(() => {
     const sync = () => setItems(getAllAppTransactions());

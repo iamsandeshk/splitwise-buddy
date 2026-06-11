@@ -70,7 +70,7 @@ import { useAdFree } from '@/hooks/useAdFree';
 import { useProGate } from '@/hooks/useProGate';
 import { getProOverride, isDevOverrideEmail, isProUserCached, setProOverride } from '@/lib/proAccess';
 
-const APP_VERSION = '4.6';
+const APP_VERSION = '4.7';
 
 type DeleteStep = 'closed' | 'select' | 'confirm';
 

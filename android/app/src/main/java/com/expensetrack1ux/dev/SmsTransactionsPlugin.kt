@@ -29,11 +29,16 @@ class SmsTransactionsPlugin : Plugin() {
     private val BACKFILL_WINDOW_MS = 30L * 24L * 60L * 60L * 1000L
     private val financialSenderHints = listOf(
         "BANK", "BNK", "HDFC", "ICICI", "SBI", "KOTAK", "AXIS", "YESBANK", "PNB",
-        "IDFC", "CANARA", "BOB", "UNION", "PAYTM", "PHONEPE", "GPAY", "UPI", "CRED"
+        "IDFC", "CANARA", "BOB", "UNION", "PAYTM", "PHONEPE", "GPAY", "UPI", "CRED",
+        "BOI", "HSBC", "STANCHAR", "INDUSIND", "FEDERAL", "SCB", "RBL", "DBS", "BANDHAN",
+        "POSTPE", "SLICE", "JUPITER", "FI", "ONECARD", "MOBIKWIK", "AMEX"
     )
     private val financialBodyHints = listOf(
         "debited", "credited", "sent", "received", "upi", "imps", "neft", "rtgs",
-        "txn", "transaction", "withdrawn", "spent", "paid", "payment", "bank"
+        "txn", "transaction", "withdrawn", "withdrew", "spent", "paid", "payment", "bank",
+        "charge", "charged", "transfer", "transferred", "added", "deducted",
+        "deposited", "deposit", "reversal", "reversed", "refunded", "refund",
+        "cashback", "salary", "pay", "bought", "purchased", "declined", "failed"
     )
 
     @PluginMethod
@@ -163,36 +168,21 @@ class SmsTransactionsPlugin : Plugin() {
     private fun extractAmount(body: String): Double {
         val normalized = body.lowercase(Locale.US)
         val transactionMarkers = listOf(
-            "debited",
-            "credited",
-            "credit",
-            "received",
-            "spent",
-            "purchase",
-            "txn",
-            "transferred",
-            "transfer",
-            "paid",
-            "payment",
-            "withdrawn",
-            "withdrawal",
-            "charge",
-            "charged",
-            "dr ",
-            " dr",
-            "upi",
-            "imps",
-            "neft",
-            "rtgs"
+            "debited", "credited", "credit", "received", "spent", "purchase", "txn",
+            "transferred", "transfer", "paid", "payment", "withdrawn", "withdrawal",
+            "charge", "charged", "dr ", " dr", "upi", "imps", "neft", "rtgs",
+            "withdrew", "added", "deducted", "deposited", "deposit", "reversal",
+            "reversed", "refunded", "refund", "cashback", "salary", "pay", "bought",
+            "purchased", "declined", "failed"
         )
 
         if (transactionMarkers.none { normalized.contains(it) }) {
             return 0.0
         }
 
-        val regex = Regex("(?:rs\\.?|inr|₹)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)", RegexOption.IGNORE_CASE)
+        val regex = Regex("(?:rs\\.?|inr|₹|usd|eur|\\$|£)\\s*([0-9,]+(?:\\.[0-9]{1,2})?)", RegexOption.IGNORE_CASE)
         val match = regex.find(body)
-            ?: Regex("([0-9,]+(?:\\.[0-9]{1,2})?)\\s*(?:rs\\.?|inr|₹)", RegexOption.IGNORE_CASE).find(body)
+            ?: Regex("([0-9,]+(?:\\.[0-9]{1,2})?)\\s*(?:rs\\.?|inr|₹|usd|eur|\\$|£)", RegexOption.IGNORE_CASE).find(body)
             ?: return 0.0
         val raw = match.groupValues[1].replace(",", "").trim()
         return raw.toDoubleOrNull() ?: 0.0

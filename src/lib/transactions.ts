@@ -29,20 +29,23 @@ const inferSmsDirection = (text: string): AppTransactionDirection => {
 export function getAllAppTransactions(): AppTransactionItem[] {
   const groupsById = new Map(getFriendGroups().map((group) => [group.id, group.name]));
 
-  const personal = getPersonalExpenses().map<AppTransactionItem>((item) => ({
-    id: `personal:${item.id}`,
-    type: 'personal',
-    direction: item.isIncome ? 'incoming' : 'outgoing',
-    amount: Math.abs(Number(item.amount || 0)),
-    reason: item.reason || 'Personal Transaction',
-    date: item.date,
-    createdAt: item.createdAt || item.date,
-    sourceTab: 'personal',
-    sourceId: item.id,
-    sourceLabel: 'Personal',
-    subtitle: item.category || 'General',
-    status: item.isIncome ? 'Income' : 'Expense',
-  }));
+  const personal = getPersonalExpenses().map<AppTransactionItem>((item) => {
+    const isSms = item.source === 'sms';
+    return {
+      id: `personal:${item.id}`,
+      type: isSms ? 'sms' : 'personal',
+      direction: item.isIncome ? 'incoming' : 'outgoing',
+      amount: Math.abs(Number(item.amount || 0)),
+      reason: item.reason || 'Personal Transaction',
+      date: item.date,
+      createdAt: item.createdAt || item.date,
+      sourceTab: 'personal',
+      sourceId: item.id,
+      sourceLabel: isSms ? 'SMS (Auto Approved)' : 'Personal',
+      subtitle: isSms ? `Auto Approved • ${item.category || 'General'}` : (item.category || 'General'),
+      status: isSms ? 'Approved' : (item.isIncome ? 'Income' : 'Expense'),
+    };
+  });
 
   const shared = getSharedExpenses().map<AppTransactionItem>((item) => {
     const isGroup = Boolean(item.groupId);

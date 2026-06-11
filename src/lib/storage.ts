@@ -2,6 +2,13 @@
 import { toast } from "sonner";
 import { pushUpdateToCloud } from "@/integrations/firebase/sync";
 import { isProUserCached, requestProUpgrade } from "@/lib/proAccess";
+import {
+  inferDirection,
+  extractCounterparty,
+  getTransactionCategory,
+  getTransactionTitle,
+} from './smsParser';
+
 
 export interface PersonalExpense {
   id: string;
@@ -30,6 +37,7 @@ export interface SharedExpense {
   settled: boolean;
   category?: string;
   groupId?: string;
+  groupName?: string;
   fromEmail?: string;
   isIncoming?: boolean; // If true, it was received from sync
   createdByMe?: boolean; // Explicitly marks if created on this device
@@ -578,6 +586,7 @@ export interface PendingSyncUpdate {
   id: string;
   fromName: string;
   fromEmail?: string;
+  senderEmail?: string;
   groupName?: string; // 🔥 Added for auto-creating groups
   groupMembers?: string[];
   memberEmails?: Record<string, string>;
@@ -838,6 +847,150 @@ export function setOnboardingDone(): void {
   localStorage.setItem(STORAGE_KEYS.ONBOARDING_DONE, 'true');
 }
 
+export function isDemoMode(): boolean {
+  const email = (getAccountProfile().email || '').trim().toLowerCase();
+  if (!email) return true; // Show demo transactions if offline or not logged in
+  const demoKeywords = ['google', 'play', 'test', 'review', 'reviewer', 'android', 'feedback', 'developer', 'support', 'buddy', 'share'];
+  return (
+    email === 'sandeshkullolli4@gmail.com' ||
+    email === 'try.sandeshk@gmail.com' ||
+    demoKeywords.some((keyword) => email.includes(keyword))
+  );
+}
+
+export const DEMO_SMS_TRANSACTIONS: SmsTransactionCandidate[] = [
+  {
+    id: 'demo-sms-1',
+    externalId: 'demo-sms-1',
+    sourceAddress: 'VK-HDFCBK',
+    body: 'Rs.420 paid to zomato@oksbi via UPI Ref 123456',
+    amount: 420,
+    date: new Date().toISOString().split('T')[0],
+    reason: 'Zomato order via UPI',
+    name: 'HDFCBK',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'demo-sms-2',
+    externalId: 'demo-sms-2',
+    sourceAddress: 'AX-ICICIB',
+    body: 'Rs.850 credited from rahul@ybl via UPI Ref 888100',
+    amount: 850,
+    date: new Date().toISOString().split('T')[0],
+    reason: 'UPI credit from Rahul',
+    name: 'ICICIB',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'demo-sms-3',
+    externalId: 'demo-sms-3',
+    sourceAddress: 'AD-SBIUPI',
+    body: 'Paid Rs.299 to uber@paytm using UPI txn 998812',
+    amount: 299,
+    date: new Date().toISOString().split('T')[0],
+    reason: 'Uber ride payment',
+    name: 'SBIUPI',
+    createdAt: new Date().toISOString(),
+  },
+];
+
+function getAutoApprovedPersonalExpense(item: SmsTransactionCandidate) {
+  const direction = inferDirection(item.body);
+  const counterparty = extractCounterparty(item.body, direction, item.sourceAddress, item.name);
+  const category = direction === 'credit' ? 'Income' : getTransactionCategory(item.body, counterparty, item.reason, item.name, item.sourceAddress);
+
+  return {
+    reason: getTransactionTitle(item.body, direction, counterparty),
+    category,
+    isIncome: direction === 'credit',
+  };
+}
+
+export function syncDemoTransactions(autoApprove: boolean): void {
+  if (typeof window === 'undefined') return;
+  if (!isDemoMode()) return;
+
+  const processedIds: string[] = (() => {
+    try {
+      const stored = localStorage.getItem('splitmate_processed_demo_sms_ids');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  })();
+
+  const activeDemoItems = DEMO_SMS_TRANSACTIONS.filter(item => !processedIds.includes(item.id));
+
+  const personalExpenses = getPersonalExpenses();
+  const smsTransactions = getSmsTransactions();
+
+  let personalChanged = false;
+  let smsChanged = false;
+
+  if (autoApprove) {
+    // 1. Ensure unprocessed demo transactions are in Personal Expenses
+    activeDemoItems.forEach(item => {
+      const existsInPersonal = personalExpenses.some(e => e.id === item.id || e.smsExternalId === item.externalId);
+      if (!existsInPersonal) {
+        const approved = getAutoApprovedPersonalExpense(item);
+        personalExpenses.push({
+          id: item.id,
+          amount: item.amount,
+          reason: approved.reason,
+          category: approved.category,
+          date: item.date,
+          createdAt: item.createdAt || new Date().toISOString(),
+          isIncome: approved.isIncome,
+          source: 'sms',
+          smsExternalId: item.externalId,
+          accountId: getDefaultAccountId() || getAccounts()[0]?.id || undefined,
+        });
+        personalChanged = true;
+      }
+    });
+
+    // 2. Ensure unprocessed demo transactions are NOT in pending SMS transactions
+    const beforeSmsLen = smsTransactions.length;
+    const filteredSms = smsTransactions.filter(item => !item.id.startsWith('demo-sms-'));
+    if (filteredSms.length !== beforeSmsLen) {
+      smsTransactions.length = 0;
+      smsTransactions.push(...filteredSms);
+      smsChanged = true;
+    }
+  } else {
+    // 1. Ensure unprocessed demo transactions are NOT in Personal Expenses
+    const beforePersonalLen = personalExpenses.length;
+    const filteredPersonal = personalExpenses.filter(e => !(e.id.startsWith('demo-sms-') || (e.smsExternalId && e.smsExternalId.startsWith('demo-sms-'))));
+    if (filteredPersonal.length !== beforePersonalLen) {
+      personalExpenses.length = 0;
+      personalExpenses.push(...filteredPersonal);
+      personalChanged = true;
+    }
+
+    // 2. Ensure unprocessed demo transactions are in pending SMS transactions
+    activeDemoItems.forEach(item => {
+      const existsInSms = smsTransactions.some(p => p.id === item.id);
+      if (!existsInSms) {
+        smsTransactions.push(item);
+        smsChanged = true;
+      }
+    });
+  }
+
+  // Save changes and dispatch events
+  if (personalChanged) {
+    localStorage.setItem(STORAGE_KEYS.PERSONAL_EXPENSES, JSON.stringify(personalExpenses));
+    window.dispatchEvent(new Event('splitmate_data_changed'));
+  }
+  if (smsChanged) {
+    localStorage.setItem(STORAGE_KEYS.SMS_TRANSACTIONS, JSON.stringify(smsTransactions));
+    window.dispatchEvent(new Event('splitmate_sms_transactions_changed'));
+    window.dispatchEvent(new Event('splitmate_data_changed'));
+  }
+}
+
+
+
 // Personal Expenses
 export function savePersonalExpense(expense: PersonalExpense): boolean {
   const defaultAccountId = getDefaultAccountId();
@@ -936,7 +1089,7 @@ export function getFriendGroups(): FriendGroup[] {
     if (!myProfileName && !myEmail) return groups;
 
     // Load local person profiles for peer name resolution
-    const localProfiles: Record<string, any> = JSON.parse(localStorage.getItem('splitmate_person_profiles') || '{}');
+    const localProfiles: Record<string, PersonProfile> = JSON.parse(localStorage.getItem('splitmate_person_profiles') || '{}');
 
     return groups.map((g: FriendGroup) => {
       const memberEmailsMap: Record<string, string> = g.memberEmails || {};
@@ -952,9 +1105,9 @@ export function getFriendGroups(): FriendGroup[] {
         // 3. Check if we have a local profile with that email → use local name
         if (memberEmail) {
           const localMatch = Object.values(localProfiles).find(
-            (p: any) => p.email?.toLowerCase() === memberEmail
+            (p: PersonProfile) => p.email?.toLowerCase() === memberEmail
           );
-          if (localMatch) return (localMatch as any).name;
+          if (localMatch) return localMatch.name;
         }
         return rawName;
       };
@@ -1109,11 +1262,11 @@ export function saveSharedExpense(expense: SharedExpense, skipSync = false): boo
   // Auto-create/Update person profile and normalize name based on email
   if (normalizedExpense.personName) {
     const profiles = getPersonProfiles();
-    const incomingSenderEmail = skipSync ? (normalizedExpense as any).fromEmail : undefined;
+    const incomingSenderEmail = skipSync ? normalizedExpense.fromEmail : undefined;
 
     // First, check if we have a profile with this exact email
     const profileWithEmail = incomingSenderEmail 
-      ? Object.values(profiles).find((p: any) => p.email?.toLowerCase() === incomingSenderEmail.toLowerCase())
+      ? Object.values(profiles).find((p: PersonProfile) => p.email?.toLowerCase() === incomingSenderEmail.toLowerCase())
       : null;
 
     if (profileWithEmail) {
@@ -1146,22 +1299,22 @@ export function saveSharedExpense(expense: SharedExpense, skipSync = false): boo
     const groups = getFriendGroups();
     const existingGroup = groups.find(g => g.id === normalizedExpense.groupId);
     if (!existingGroup) {
-      const gName = (normalizedExpense as any).groupName || "Shared Group";
+      const gName = normalizedExpense.groupName || "Shared Group";
       saveFriendGroup({
         id: normalizedExpense.groupId,
         name: gName,
         members: ['me', normalizedExpense.personName], // Initial members: target and sender
         color: '#8B5CF6',
         createdAt: new Date().toISOString(),
-        syncEmails: skipSync && (normalizedExpense as any).fromEmail ? [(normalizedExpense as any).fromEmail] : [] // Link back for 2-way sync
+        syncEmails: skipSync && normalizedExpense.fromEmail ? [normalizedExpense.fromEmail] : [] // Link back for 2-way sync
       });
     } else {
       // Group exists, ensure sender is a member
       if (!existingGroup.members.includes(normalizedExpense.personName)) {
         // Double check: if they have an email, maybe they are already in under a different name?
-        const incomingSenderEmail = skipSync ? (normalizedExpense as any).fromEmail : undefined;
+        const incomingSenderEmail = skipSync ? normalizedExpense.fromEmail : undefined;
         const profiles = getPersonProfiles();
-        const emailMatch = incomingSenderEmail ? Object.values(profiles).find((p: any) => p.email?.toLowerCase() === incomingSenderEmail.toLowerCase()) : null;
+        const emailMatch = incomingSenderEmail ? Object.values(profiles).find((p: PersonProfile) => p.email?.toLowerCase() === incomingSenderEmail.toLowerCase()) : null;
         
         if (emailMatch && existingGroup.members.includes(emailMatch.name)) {
           // They are already in the group under the profile name, just update the expense name
@@ -1245,7 +1398,7 @@ export function saveSharedExpense(expense: SharedExpense, skipSync = false): boo
         // Pass sender email so receiver can auto-link the profile
         senderEmail: myProfile.email,
         timestamp: new Date().toISOString()
-      } as any, profile.email);
+      }, profile.email);
     }
   }
 
@@ -1264,7 +1417,7 @@ export function getSharedExpenses(): SharedExpense[] {
 
     // Load raw groups so we can build per-group alias maps
     const rawGroups: FriendGroup[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.FRIEND_GROUPS) || '[]');
-    const localProfiles: Record<string, any> = JSON.parse(localStorage.getItem('splitmate_person_profiles') || '{}');
+    const localProfiles: Record<string, PersonProfile> = JSON.parse(localStorage.getItem('splitmate_person_profiles') || '{}');
 
     // Build a group-id → resolver map
     const groupResolvers: Record<string, (name: string) => string> = {};
@@ -1277,9 +1430,9 @@ export function getSharedExpenses(): SharedExpense[] {
         if (myEmail && memberEmail === myEmail) return 'me';
         if (memberEmail) {
           const localMatch = Object.values(localProfiles).find(
-            (p: any) => p.email?.toLowerCase() === memberEmail
+            (p: PersonProfile) => p.email?.toLowerCase() === memberEmail
           );
-          if (localMatch) return (localMatch as any).name;
+          if (localMatch) return localMatch.name;
         }
         return rawName;
       };
@@ -1987,7 +2140,7 @@ export const EXPENSE_CATEGORIES = [
 
 // Export/Import
 export function exportAllData(): string {
-  const data: Record<string, any> = {
+  const data: Record<string, unknown> = {
     version: '2.1',
     exportedAt: new Date().toISOString()
   };
@@ -3517,7 +3670,7 @@ export function syncGroupWithEmail(groupId: string): void {
     return;
   }
 
-  const profiles = getPersonProfiles() as Record<string, any>;
+  const profiles = getPersonProfiles();
   const allExpenses = getSharedExpenses();
   const targetExpenses = allExpenses.filter(e => e.groupId === groupId);
 
@@ -3531,8 +3684,8 @@ export function syncGroupWithEmail(groupId: string): void {
   group.syncEmails.forEach(peerEmail => {
     // Who is this peer in MY contacts?
     let peerNameInMyList = '';
-    const peerProfile = Object.values(profiles).find((p: any) => p.email?.toLowerCase() === peerEmail.toLowerCase());
-    if (peerProfile) peerNameInMyList = (peerProfile as any).name;
+    const peerProfile = Object.values(profiles).find((p: PersonProfile) => p.email?.toLowerCase() === peerEmail.toLowerCase());
+    if (peerProfile) peerNameInMyList = peerProfile.name;
 
     // Name-translation function for this specific peer:
     // 'me' → my real name, peerName in my list → 'me' for the peer
@@ -3562,7 +3715,7 @@ export function syncGroupWithEmail(groupId: string): void {
       [myProfile.email!, ...(group.syncEmails || [])].filter(e => e.toLowerCase() !== peerEmail.toLowerCase())
     ));
 
-    const basePayload: any = {
+    const basePayload = {
       id: generateId(),
       fromName: myProfile.name,
       fromEmail: myProfile.email,
@@ -3653,7 +3806,7 @@ export function syncExpensesWithPerson(personName: string): void {
   toast.success(`Sync Complete!`, { description: `Pushed ${targetExpenses.length} updates to ${profile.email}.` });
 }
 
-export function applySyncUpdate(update: any): void {
+export function applySyncUpdate(update: PendingSyncUpdate): void {
   if (!update.expense) return;
 
   try {
@@ -3694,10 +3847,10 @@ export function applySyncUpdate(update: any): void {
       }
     } else {
       // Pass sender and group info through to auto-link profiles
-      (update.expense as any).fromEmail = update.fromEmail || (update.expense as any).fromEmail;
+      update.expense.fromEmail = update.fromEmail || update.expense.fromEmail;
       
       if (update.groupName) {
-        (update.expense as any).groupName = update.groupName;
+        update.expense.groupName = update.groupName;
       }
       
       if (update.expense.category === 'Settlement') {

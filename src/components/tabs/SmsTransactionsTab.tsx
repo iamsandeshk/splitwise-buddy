@@ -20,6 +20,9 @@ import {
   saveSharedExpense,
   getDefaultAccountId,
   getAccounts,
+  isDemoMode,
+  syncDemoTransactions,
+  DEMO_SMS_TRANSACTIONS,
   type SmsTargetTab,
   type SmsTransactionCandidate,
 } from '@/lib/storage';
@@ -36,13 +39,19 @@ const SMS_CAPTURE_ENABLED_KEY = 'splitmate_sms_capture_enabled';
 const SMS_AUTO_APPROVE_KEY = 'splitmate_sms_auto_approve_enabled';
 const SMS_DEMO_EMAIL = 'sandeshkullolli4@gmail.com';
 
+import {
+  extractAmount,
+  inferDirection,
+  extractCounterparty,
+  getTransactionTitle,
+  getPaymentAppLabel,
+  getMerchantIcon,
+  getTransactionCategory,
+  type TransactionDirection,
+  type SmsCategory,
+} from '@/lib/smsParser';
+
 type PermissionStatus = 'unknown' | 'granted' | 'denied';
-
-type TransactionDirection = 'credit' | 'debit';
-type SmsCategory = 'Food' | 'Transport' | 'Shopping' | 'Utilities' | 'Entertainment' | 'Income' | 'Cash' | 'Transfer' | 'Other';
-
-const CREDIT_KEYWORDS = ['credited', 'received', 'credit'];
-const DEBIT_KEYWORDS = ['debited', 'sent', 'debit', 'paid'];
 
 const CATEGORY_STYLES: Record<SmsCategory, string> = {
   Food: 'bg-orange-500/10 text-orange-600 border-orange-500/15',
@@ -68,382 +77,29 @@ const CATEGORY_BADGE_LABELS: Record<SmsCategory, string> = {
   Other: 'Other 📋',
 };
 
-const CATEGORY_ORDER: Array<{ category: SmsCategory; keywords: RegExp }> = [
-  { category: 'Food', keywords: /\b(zomato|swiggy|food)\b/i },
-  { category: 'Transport', keywords: /\b(uber|ola|rapido|petrol)\b/i },
-  { category: 'Shopping', keywords: /\b(amazon|flipkart|myntra)\b/i },
-  { category: 'Utilities', keywords: /\b(electricity|gas|water|bill)\b/i },
-  { category: 'Entertainment', keywords: /\b(netflix|spotify|prime)\b/i },
-  { category: 'Income', keywords: /\b(salary|payroll)\b/i },
-  { category: 'Cash', keywords: /\b(atm|cash)\b/i },
-];
-
-const SMART_LABELS: Record<string, string> = {
-  zomato: 'Order 🍔',
-  swiggy: 'Order 🍔',
-  uber: 'Ride 🚗',
-  ola: 'Ride 🚗',
-  amazon: 'Purchase 📦',
-  flipkart: 'Purchase 📦',
-};
-
-const MERCHANT_ICONS: Record<string, string> = {
-  zomato: '🍔',
-  swiggy: '🍔',
-  uber: '🚗',
-  ola: '🚗',
-  rapido: '🛵',
-  amazon: '📦',
-  flipkart: '📦',
-  myntra: '🛍️',
-  netflix: '🎬',
-  spotify: '🎵',
-  paytm: '💳',
-  phonepe: '💳',
-  gpay: '💳',
-  'google pay': '💳',
-  bhim: '💳',
-  cred: '💳',
-};
-
 const formatCurrencyAmount = (amount: number) => new Intl.NumberFormat('en-IN', {
   maximumFractionDigits: 0,
 }).format(amount);
 
-const normalizeBodyForSignature = (value: string) => value
-  .toLowerCase()
-  .replace(/\s+/g, ' ')
-  .replace(/[^a-z0-9\s]/g, '')
-  .trim();
-
-const buildSmsSignature = (item: { amount: number; sourceAddress: string; date: string; body: string }) => {
-  const source = (item.sourceAddress || '').toLowerCase().replace(/\s+/g, '');
-  const body = normalizeBodyForSignature(item.body || '').slice(0, 64);
-  return `${Math.round(item.amount)}|${source}|${item.date}|${body}`;
-};
-
-const DEMO_SMS_TRANSACTIONS: SmsTransactionCandidate[] = [
-  {
-    id: 'demo-sms-1',
-    externalId: 'demo-sms-1',
-    sourceAddress: 'VK-HDFCBK',
-    body: 'Rs.420 paid to zomato@oksbi via UPI Ref 123456',
-    amount: 420,
-    date: new Date().toISOString().split('T')[0],
-    reason: 'Zomato order via UPI',
-    name: 'HDFCBK',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'demo-sms-2',
-    externalId: 'demo-sms-2',
-    sourceAddress: 'AX-ICICIB',
-    body: 'Rs.850 credited from rahul@ybl via UPI Ref 888100',
-    amount: 850,
-    date: new Date().toISOString().split('T')[0],
-    reason: 'UPI credit from Rahul',
-    name: 'ICICIB',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'demo-sms-3',
-    externalId: 'demo-sms-3',
-    sourceAddress: 'AD-SBIUPI',
-    body: 'Paid Rs.299 to uber@paytm using UPI txn 998812',
-    amount: 299,
-    date: new Date().toISOString().split('T')[0],
-    reason: 'Uber ride payment',
-    name: 'SBIUPI',
-    createdAt: new Date().toISOString(),
-  },
-];
-
-const titleCase = (value: string) => value
-  .split(/\s+/)
-  .filter(Boolean)
-  .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-  .join(' ');
-
-const cleanCounterparty = (value: string): string => {
-  const compact = value.replace(/[^a-zA-Z0-9@._&\-\s]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (!compact) return '';
-
-  const token = compact.replace(/^(from|to|at|via)\s+/i, '').trim();
-  if (!token) return '';
-
-  const upiMatch = token.match(/^([a-z0-9._&-]+)@([a-z0-9._-]+)$/i);
-  if (upiMatch) {
-    const name = upiMatch[1]
-      .replace(/[0-9]+$/, '')
-      .replace(/[._-]+/g, ' ')
-      .trim();
-
-    if (!name) return '';
-    return titleCase(name);
-  }
-
-  const identifier = token.replace(/\s+/g, '');
-  if (/^[A-Z0-9]{6,}$/.test(identifier) && !/[a-z]/.test(identifier)) {
-    return '';
-  }
-
-  const merchantLike = token.replace(/@.*$/, '').trim();
-  if (merchantLike && merchantLike.length <= 2) {
-    return '';
-  }
-
-  return titleCase(merchantLike.replace(/[._-]+/g, ' '));
-};
-
-const PAYMENT_APP_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
-  { label: 'Google Pay', pattern: /\b(gpay|google\s*pay|tez)\b/i },
-  { label: 'PhonePe', pattern: /\b(phonepe)\b/i },
-  { label: 'Paytm', pattern: /\b(paytm)\b/i },
-  { label: 'BHIM UPI', pattern: /\b(bhim)\b/i },
-  { label: 'Amazon Pay', pattern: /\b(amazon\s*pay|amznpay)\b/i },
-  { label: 'WhatsApp Pay', pattern: /\b(whatsapp\s*pay)\b/i },
-  { label: 'CRED', pattern: /\b(cred)\b/i },
-  { label: 'MobiKwik', pattern: /\b(mobikwik|mobi\s*kwik)\b/i },
-  { label: 'YONO', pattern: /\b(yono)\b/i },
-  { label: 'Freecharge', pattern: /\b(freecharge)\b/i },
-  { label: 'UPI', pattern: /\b(upi)\b/i },
-  { label: 'Bank', pattern: /\b(imps|neft|rtgs|bank)\b/i },
-];
-
-const getPaymentAppLabel = (item: SmsTransactionCandidate): string => {
-  const text = [item.body, item.reason, item.name, item.sourceAddress].filter(Boolean).join(' ');
-  for (const entry of PAYMENT_APP_PATTERNS) {
-    if (entry.pattern.test(text)) return entry.label;
-  }
-
-  return 'SMS';
-};
-
-const getMerchantIcon = (counterparty: string, paymentApp: string): string => {
-  const normalizedCounterparty = counterparty.toLowerCase();
-  const matchedMerchant = Object.entries(MERCHANT_ICONS).find(([key]) => normalizedCounterparty.includes(key));
-  if (matchedMerchant) return matchedMerchant[1];
-
-  const normalizedApp = paymentApp.toLowerCase();
-  const matchedApp = Object.entries(MERCHANT_ICONS).find(([key]) => normalizedApp.includes(key));
-  if (matchedApp) return matchedApp[1];
-
-  if (normalizedApp.includes('upi')) return '💸';
-  if (normalizedApp.includes('bank')) return '🏦';
-  return '🧾';
-};
-
-const inferDirection = (text: string): TransactionDirection => {
-  const lowered = text.toLowerCase();
-  const hasCredit = CREDIT_KEYWORDS.some((keyword) => lowered.includes(keyword));
-  const hasDebit = DEBIT_KEYWORDS.some((keyword) => lowered.includes(keyword));
-
-  if (hasCredit && !hasDebit) return 'credit';
-  if (hasDebit && !hasCredit) return 'debit';
-  if (hasCredit) return 'credit';
-  return 'debit';
-};
-
-// UPI ref → name cache helpers (mirrors useSmsCapture.ts)
-const SMS_UPI_REF_NAME_MAP_KEY = 'splitmate_sms_upi_ref_name_map';
-
-const getUpiRefNameCache = (): Record<string, string> => {
-  try {
-    const raw = localStorage.getItem(SMS_UPI_REF_NAME_MAP_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, string>;
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-};
-
-const setUpiRefNameCache = (cache: Record<string, string>) => {
-  localStorage.setItem(SMS_UPI_REF_NAME_MAP_KEY, JSON.stringify(cache));
-};
-
-const extractUpiRefFromText = (text: string): string => {
-  const match = text.match(/\b(?:upi\s*ref(?:\s*no)?|upi\s*rrn|rrn|utr|ref\s*id|txn\s*id|txn\s*ref)\s*[:.#-]?\s*(\d{8,20})\b/i);
-  return match?.[1] || '';
-};
-
-const rememberNameForRef = (text: string, name: string) => {
-  const ref = extractUpiRefFromText(text);
-  if (!ref || !name) return;
-  const cache = getUpiRefNameCache();
-  cache[ref] = name;
-  setUpiRefNameCache(cache);
-};
-
-const lookupNameFromRef = (text: string): string => {
-  const ref = extractUpiRefFromText(text);
-  if (!ref) return '';
-  return getUpiRefNameCache()[ref] || '';
-};
-
-// Strip common trailing junk from a captured name (e.g. "(UPI", "Ref", account placeholders)
-const stripNameTrailingJunk = (raw: string): string =>
-  raw
-    .replace(/\s*\(\s*UPI.*$/i, '')      // remove "(UPI Ref..."
-    .replace(/\s*\(\s*Ref.*$/i, '')       // remove "(Ref..."
-    .replace(/\bUPI\b.*$/i, '')           // remove stray "UPI ..."
-    .replace(/\s+on\s+[\d/-].*$/i, '') // remove " on 20/04..."
-    .replace(/\s+via\b.*$/i, '')          // remove " via ..."
-    .trim();
-
-const isAccountPlaceholderStr = (s: string) => /^X{2,}[\dX]*$/i.test(s.replace(/\s/g, ''));
-
-const extractCounterparty = (item: SmsTransactionCandidate, direction: TransactionDirection): string => {
-  const text = [item.body, item.reason, item.name, item.sourceAddress].filter(Boolean).join(' ');
-
-  // ── Special-case labels ──────────────────────────────────────────────────
-  if (/\binterest\b.*\bfixed\s*deposit\b|\bfixed\s*deposit\b.*\binterest\b/i.test(text)) return 'Monthly Interest';
-  if (/\bsalary\b/i.test(text)) return 'Salary';
-  if (/\brefund\b/i.test(text)) return 'Refund';
-  if (/\bcashback\b/i.test(text)) return 'Cashback';
-
-  // ── VPA handle (name@bank) ───────────────────────────────────────────────
-  const upiHandle = text.match(/\b([a-z0-9._&-]{3,})@([a-z0-9._-]{2,})\b/i);
-  if (upiHandle?.[1]) {
-    const merchant = cleanCounterparty(upiHandle[1]);
-    if (merchant && !/^(upi|ref|txn|pay|payment|https?)$/i.test(merchant)) return merchant;
-  }
-
-  if (direction === 'debit') {
-    // ── "to NAME (UPI Ref" — Slice format ───────────────────────────────────
-    const toUpiRef = text.match(/\bto\s+([A-Za-z][A-Za-z\s.]{1,60})\s*\(\s*UPI\s*Ref/i);
-    if (toUpiRef?.[1]) {
-      const name = cleanCounterparty(stripNameTrailingJunk(toUpiRef[1]));
-      if (name && !isAccountPlaceholderStr(name)) return name;
-    }
-
-    // ── "to NAME on DATE" — Kotak / generic format ───────────────────────────
-    const toOn = text.match(/\bto\s+([A-Za-z][A-Za-z\s.]{1,60})\s+on\s+[\d/-]/i);
-    if (toOn?.[1]) {
-      const name = cleanCounterparty(stripNameTrailingJunk(toOn[1]));
-      if (name && !isAccountPlaceholderStr(name)) return name;
-    }
-
-    // ── "sent/paid/debited to NAME via/ref/on" — generic ────────────────────
-    const sentTo = text.match(/(?:sent|paid|debited?|transferred)\s+(?:to|at)\s+([^,.(\n]+?)(?=\s+(?:on|via|using|through|ref|utr|txn|transaction|avl|bal|\())/i);
-    if (sentTo?.[1]) {
-      const name = cleanCounterparty(stripNameTrailingJunk(sentTo[1]));
-      if (name && !isAccountPlaceholderStr(name)) return name;
-    }
-
-    // ── "to NAME via" ────────────────────────────────────────────────────────
-    const toVia = text.match(/\bto\s+([A-Za-z][A-Za-z\s.]{1,60})\s+via\b/i);
-    if (toVia?.[1]) {
-      const name = cleanCounterparty(stripNameTrailingJunk(toVia[1]));
-      if (name && !isAccountPlaceholderStr(name)) return name;
-    }
-
-    // ── "to credit a/c" — KGB style, no person name ─────────────────────────
-    if (/to\s+credit\s+a\/c/i.test(text)) return 'Account Transfer';
-  }
-
-  if (direction === 'credit') {
-    // ── "from NAME via UPI" — Slice received format ──────────────────────────
-    const fromVia = text.match(/\bfrom\s+([A-Za-z][A-Za-z\s.]{1,60})\s+via\b/i);
-    if (fromVia?.[1]) {
-      const name = cleanCounterparty(stripNameTrailingJunk(fromVia[1]));
-      if (name && !isAccountPlaceholderStr(name)) return name;
-    }
-
-    // ── "from NAME on DATE" ──────────────────────────────────────────────────
-    const fromOn = text.match(/\bfrom\s+([A-Za-z][A-Za-z\s.]{1,60})\s+on\s+[\d/-]/i);
-    if (fromOn?.[1]) {
-      const name = cleanCounterparty(stripNameTrailingJunk(fromOn[1]));
-      if (name && !isAccountPlaceholderStr(name)) return name;
-    }
-
-    // ── "credited by NAME on DATE" ────────────────────────────────────────────
-    const creditedBy = text.match(/\bcredited\s+by\s+([A-Za-z][A-Za-z\s.]{1,60})\s+on\s+[\d/-]/i);
-    if (creditedBy?.[1]) {
-      const name = cleanCounterparty(stripNameTrailingJunk(creditedBy[1]));
-      if (name && !isAccountPlaceholderStr(name)) return name;
-    }
-
-    // ── UPI ref cache lookup (e.g. KGB credit with no sender name) ───────────
-    const cachedName = lookupNameFromRef(text);
-    if (cachedName) return cachedName;
-  }
-
-  // ── Fallback: use source address if it looks like a person/merchant ───────
-  const senderLike = cleanCounterparty(item.name || '');
-  const senderCodeLike = (item.name || '').replace(/[^A-Za-z]/g, '');
-  if (
-    senderLike
-    && !/^(sms|alert|bank|transaction)$/i.test(senderLike)
-    && !(senderCodeLike && /^[A-Z]{5,}$/.test(senderCodeLike))
-  ) {
-    return senderLike;
-  }
-
-  if (/\b(neft|imps|rtgs)\b/i.test(text)) return 'Bank Transfer';
-
-  return 'Unknown';
-};
-
-const getTransactionCategory = (item: SmsTransactionCandidate, counterparty: string): SmsCategory => {
-  const text = [item.body, item.reason, item.name, item.sourceAddress, counterparty].filter(Boolean).join(' ');
-  for (const entry of CATEGORY_ORDER) {
-    if (entry.keywords.test(text)) return entry.category;
-  }
-
-  if (counterparty !== 'Unknown' && counterparty !== 'Bank Transfer') {
-    return 'Transfer';
-  }
-
-  return 'Other';
-};
-
-const getTransactionTitle = (item: SmsTransactionCandidate) => {
-  const text = [item.body, item.reason, item.name, item.sourceAddress].filter(Boolean).join(' ');
-  const direction = inferDirection(text);
-  const counterparty = extractCounterparty(item, direction);
-
-  // Remember the resolved name for UPI ref-based lookup across SMS
-  // Don't cache generic fallback labels
-  const SKIP_CACHE = ['Unknown', 'Bank Transfer', 'Account Transfer', 'Bank Transaction', 'Monthly Interest', 'Salary', 'Refund', 'Cashback'];
-  if (!SKIP_CACHE.includes(counterparty)) {
-    rememberNameForRef(text, counterparty);
-  }
-
-  if (counterparty === 'Unknown') return 'Bank Transaction';
-  if (counterparty === 'Bank Transfer') return 'Bank Transfer';
-  if (counterparty === 'Account Transfer') return 'Account Transfer';
-  // Special labels that stand alone
-  if (['Monthly Interest', 'Salary', 'Refund', 'Cashback'].includes(counterparty)) return counterparty;
-
-  const counterpartyKey = counterparty.toLowerCase();
-  const smartEntry = Object.entries(SMART_LABELS).find(([key]) => counterpartyKey.includes(key));
-  if (smartEntry) {
-    return direction === 'credit'
-      ? `From ${counterparty}`
-      : `${counterparty} ${smartEntry[1]}`;
-  }
-
-  return direction === 'credit' ? `From ${counterparty}` : `To ${counterparty}`;
-};
 
 const getEditableTransactionName = (item: SmsTransactionCandidate) => {
-  const title = getTransactionTitle(item);
+  const direction = inferDirection(item.body);
+  const counterparty = extractCounterparty(item.body, direction, item.sourceAddress, item.name);
+  const title = getTransactionTitle(item.body, direction, counterparty);
   return title.replace(/^(From|To)\s+/i, '');
 };
 
 const getTransactionDisplayMeta = (item: SmsTransactionCandidate) => {
-  const text = [item.body, item.reason, item.name, item.sourceAddress].filter(Boolean).join(' ');
-  const direction = inferDirection(text);
-  const counterparty = extractCounterparty(item, direction);
-  const category = getTransactionCategory(item, counterparty);
-  const paymentApp = getPaymentAppLabel(item);
+  const direction = inferDirection(item.body);
+  const counterparty = extractCounterparty(item.body, direction, item.sourceAddress, item.name);
+  const category = getTransactionCategory(item.body, counterparty, item.reason, item.name, item.sourceAddress);
+  const paymentApp = getPaymentAppLabel(item.body, item.reason, item.name, item.sourceAddress);
   const merchantIcon = getMerchantIcon(counterparty, paymentApp);
   const amountPrefix = direction === 'credit' ? '+' : '-';
   const amountClassName = direction === 'credit' ? 'text-green-500' : 'text-red-500';
 
   return {
-    title: getTransactionTitle(item),
+    title: getTransactionTitle(item.body, direction, counterparty),
     category,
     categoryLabel: CATEGORY_BADGE_LABELS[category],
     categoryClassName: CATEGORY_STYLES[category],
@@ -457,13 +113,12 @@ const getTransactionDisplayMeta = (item: SmsTransactionCandidate) => {
 };
 
 const getAutoApprovedPersonalExpense = (item: SmsTransactionCandidate) => {
-  const text = [item.body, item.reason, item.name, item.sourceAddress].filter(Boolean).join(' ');
-  const direction = inferDirection(text);
-  const counterparty = extractCounterparty(item, direction);
-  const category = direction === 'credit' ? 'Income' : getTransactionCategory(item, counterparty);
+  const direction = inferDirection(item.body);
+  const counterparty = extractCounterparty(item.body, direction, item.sourceAddress, item.name);
+  const category = direction === 'credit' ? 'Income' : getTransactionCategory(item.body, counterparty, item.reason, item.name, item.sourceAddress);
 
   return {
-    reason: getTransactionTitle(item),
+    reason: getTransactionTitle(item.body, direction, counterparty),
     category,
     isIncome: direction === 'credit',
   };
@@ -524,6 +179,7 @@ const formatTransactionDate = (dateValue: string) => {
   });
 };
 
+
 export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = true }: SmsTransactionsTabProps) {
   useBannerAd(bannerAdActive);
   const { isAdFree } = useAdFree();
@@ -549,17 +205,7 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
   const [draftDirection, setDraftDirection] = useState<TransactionDirection>('debit');
   const [draftAmount, setDraftAmount] = useState('');
   const [draftDate, setDraftDate] = useState('');
-  const [dismissedDemoIds, setDismissedDemoIds] = useState<string[]>([]);
-
-  const accountEmail = (getAccountProfile().email || '').trim().toLowerCase();
-  const showDemoTransactions = accountEmail === SMS_DEMO_EMAIL;
-
-  const visibleItems = useMemo(() => {
-    if (!showDemoTransactions) return items;
-
-    const demo = DEMO_SMS_TRANSACTIONS.filter((item) => !dismissedDemoIds.includes(item.id));
-    return [...demo, ...items];
-  }, [dismissedDemoIds, items, showDemoTransactions]);
+  const visibleItems = items;
 
   const groups = useMemo(() => getFriendGroups(), []);
   const persons = useMemo(() => getUniquePersonNames().filter((name) => name !== 'me'), []);
@@ -638,6 +284,7 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
   useEffect(() => {
     localStorage.setItem(SMS_AUTO_APPROVE_KEY, String(smsAutoApproveEnabled));
     window.dispatchEvent(new Event('splitmate_sms_auto_approve_changed'));
+    syncDemoTransactions(smsAutoApproveEnabled);
   }, [smsAutoApproveEnabled]);
 
   const requestPermissionAndEnable = async () => {
@@ -702,9 +349,16 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
     if (!editing) return;
 
     if (editing.id.startsWith('demo-sms-')) {
-      setDismissedDemoIds((prev) => (prev.includes(editing.id) ? prev : [...prev, editing.id]));
-      setEditing(null);
-      return;
+      try {
+        const stored = localStorage.getItem('splitmate_processed_demo_sms_ids');
+        const ids = stored ? JSON.parse(stored) : [];
+        if (!ids.includes(editing.id)) {
+          ids.push(editing.id);
+          localStorage.setItem('splitmate_processed_demo_sms_ids', JSON.stringify(ids));
+        }
+      } catch (e) {
+        console.error(e);
+      }
     }
 
     removeSmsTransaction(editing.id);
@@ -796,10 +450,18 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
     }
 
     if (editing.id.startsWith('demo-sms-')) {
-      setDismissedDemoIds((prev) => (prev.includes(editing.id) ? prev : [...prev, editing.id]));
-    } else {
-      removeSmsTransaction(editing.id);
+      try {
+        const stored = localStorage.getItem('splitmate_processed_demo_sms_ids');
+        const ids = stored ? JSON.parse(stored) : [];
+        if (!ids.includes(editing.id)) {
+          ids.push(editing.id);
+          localStorage.setItem('splitmate_processed_demo_sms_ids', JSON.stringify(ids));
+        }
+      } catch (e) {
+        console.error(e);
+      }
     }
+    removeSmsTransaction(editing.id);
 
     setEditing(null);
     refresh();
@@ -957,10 +619,10 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
 
               return (
                 <div key={item.id} className="flex flex-col gap-2">
-                  <div className="relative overflow-hidden rounded-2xl bg-card px-3 py-2.5 shadow-sm transition-all duration-200">
-                    <div className="relative flex items-start gap-2.5">
+                  <div className="relative overflow-hidden rounded-2xl bg-card px-3 py-3 shadow-sm transition-all duration-200 border border-border/10">
+                    <div className="relative flex items-start gap-3">
                       <div className={cn(
-                        'self-center flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border',
+                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border',
                         meta.direction === 'credit'
                           ? 'border-emerald-500/10 bg-emerald-500/5 text-emerald-500'
                           : 'border-rose-500/10 bg-rose-500/5 text-rose-500',
@@ -972,33 +634,65 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 flex items-center gap-1.5">
                             <span className="text-sm leading-none" aria-hidden="true">{meta.merchantIcon}</span>
-                            <p className="text-[15px] font-medium text-foreground truncate">
+                            <p className="text-[15px] font-semibold text-foreground truncate">
                               {meta.title}
                             </p>
                           </div>
                         </div>
 
+                        {/* From & To analysis */}
+                        <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground/80 font-medium">
+                          <span>From:</span>
+                          <span className="text-foreground font-semibold">
+                            {meta.direction === 'credit' ? meta.counterparty : (meta.paymentApp !== 'SMS' ? meta.paymentApp : (item.name || 'My Account'))}
+                          </span>
+                          <span className="text-muted-foreground/30 mx-0.5">➔</span>
+                          <span>To:</span>
+                          <span className="text-foreground font-semibold">
+                            {meta.direction === 'debit' ? meta.counterparty : (meta.paymentApp !== 'SMS' ? meta.paymentApp : (item.name || 'My Account'))}
+                          </span>
+                        </div>
+
+                        {/* Badges row */}
                         <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                          <span className="inline-flex items-center rounded-full border border-border/10 bg-background/70 px-2 py-0.5 text-[11px] text-muted-foreground">
+                          <span className={cn(
+                            'inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider',
+                            meta.direction === 'credit'
+                              ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/15'
+                              : 'bg-rose-500/10 text-rose-500 border border-rose-500/15'
+                          )}>
+                            {meta.direction === 'credit' ? 'Received' : 'Sent'}
+                          </span>
+                          <span className="inline-flex items-center rounded-full border border-border/10 bg-background/70 px-2 py-0.5 text-[9px] font-bold text-muted-foreground/95">
                             {meta.paymentApp}
                           </span>
+                          {item.id.startsWith('demo-sms-') && (
+                            <span className="inline-flex items-center rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-500">
+                              Demo SMS
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Original SMS text preview */}
+                        <div className="mt-2 text-[10.5px] leading-relaxed text-muted-foreground/70 italic border-l border-border/20 pl-2 py-0.5 bg-secondary/20 rounded-r-md pr-1.5">
+                          "{item.body}"
                         </div>
                       </div>
 
-                      <div className="relative flex shrink-0 flex-col items-end gap-1 pt-0.5">
-                        <span className={cn('text-[15px] font-semibold tracking-tight tabular-nums', meta.amountClassName)}>
+                      <div className="relative flex shrink-0 flex-col items-end gap-1.5 pt-0.5">
+                        <span className={cn('text-[15px] font-bold tracking-tight tabular-nums', meta.amountClassName)}>
                           {meta.amountLabel}
                         </span>
                         <div className="flex items-center gap-2">
-                          <span className="text-[11px] text-muted-foreground">
+                          <span className="text-[11px] text-muted-foreground/70">
                             {formatTransactionDate(item.date)}
                           </span>
                           <button
                             type="button"
                             onClick={() => openEditor(item)}
-                            className="grid h-8 w-8 place-items-center rounded-full border border-border/20 bg-transparent text-foreground/70 opacity-70 transition-opacity hover:opacity-100"
+                            className="grid h-7 w-7 place-items-center rounded-lg border border-border/20 bg-transparent text-foreground/70 opacity-70 transition-opacity hover:opacity-100"
                           >
-                            <Pencil size={12} />
+                            <Pencil size={11} />
                           </button>
                         </div>
                       </div>
@@ -1015,6 +709,7 @@ export function SmsTransactionsTab({ onOpenAccount, onBack, bannerAdActive = tru
           </div>
         )}
       </div>
+
 
       {editing && createPortal(
         <div className="fixed inset-0 z-[10003] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setEditing(null)}>

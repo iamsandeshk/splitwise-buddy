@@ -4,7 +4,7 @@ import { saveBackupForCurrentUser } from '@/integrations/firebase/backup';
 import { getAccountProfile, exportAllData } from '@/lib/storage';
 import { isProUserCached } from '@/lib/proAccess';
 
-const APP_VERSION = '4.2';
+const APP_VERSION = '4.7';
 
 /**
  * Hook to automatically perform a cloud backup once per day (targeting midnight/00:00).
