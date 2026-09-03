@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, Fragment } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search, Trash2, Calendar, X, Target, Save, AlertCircle, PieChart, CheckCircle2, Pencil, Check, Edit3, SlidersHorizontal, MessageSquare } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search, Trash2, Calendar, X, Target, Save, AlertCircle, PieChart, CheckCircle2, Pencil, Check, Edit3, SlidersHorizontal, MessageSquare, Image as ImageIcon } from 'lucide-react';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
-import { getPersonalExpenses, deletePersonalExpense, updatePersonalExpense, saveSharedExpense, generateId, getUniquePersonNames, type PersonalExpense, type SharedExpense, EXPENSE_CATEGORIES } from '@/lib/storage';
+import { getPersonalExpenses, deletePersonalExpense, updatePersonalExpense, saveSharedExpense, generateId, getUniquePersonNames, type PersonalExpense, type SharedExpense, EXPENSE_CATEGORIES, getTransactionAttachment, saveTransactionAttachment, resizeImageToDataUrl, deleteTransactionAttachment } from '@/lib/storage';
 import { AddPersonalExpenseModal } from '@/components/modals/AddPersonalExpenseModal';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
 import { ExpenseChart } from '@/components/ExpenseChart';
@@ -24,9 +24,10 @@ interface PersonalTabProps {
   onOpenAccount: () => void;
   onBack?: () => void;
   bannerAdActive?: boolean;
+  onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
 }
 
-export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: PersonalTabProps) {
+export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true, onScroll }: PersonalTabProps) {
   useBannerAd(bannerAdActive);
   const { toast } = useToast();
   const currency = useCurrency();
@@ -44,12 +45,15 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [viewingExpense, setViewingExpense] = useState<PersonalExpense | null>(null);
   const [isEditingReason, setIsEditingReason] = useState(false);
-  const [editedReason, setEditedReason] = useState("");
-  const [editedAmount, setEditedAmount] = useState("");
-  const [editedDate, setEditedDate] = useState("");
-  const [editedCategory, setEditedCategory] = useState('Other');
+  const [editedReason, setEditedReason] = useState('');
+  const [showFullImage, setShowFullImage] = useState(false);
+  const [editedAmount, setEditedAmount] = useState('');
+  const [editedDate, setEditedDate] = useState('');
+  const [editedCategory, setEditedCategory] = useState('');
   const [editedType, setEditedType] = useState<'income' | 'expense'>('expense');
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [viewingAttachment, setViewingAttachment] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [showPersonPicker, setShowPersonPicker] = useState(false);
   const [filterType, setFilterType] = useState<'all' | 'expense' | 'income'>('all');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
@@ -69,6 +73,10 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(expense => {
+      // Ignore leftover demo data
+      const isDemo = expense.id.startsWith('demo-sms-') || (expense.smsExternalId && expense.smsExternalId.startsWith('demo-sms-'));
+      if (isDemo) return false;
+
       const matchesSearch = expense.reason.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesFilter = filterType === 'all' 
         ? true 
@@ -155,6 +163,21 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
   }, [monthOptions]);
 
   useEffect(() => {
+    if (viewingExpense) {
+      const attachKey = viewingExpense.attachmentId || viewingExpense.id;
+      if (attachKey) {
+        getTransactionAttachment(attachKey).then(data => {
+          setViewingAttachment(data);
+        });
+      } else {
+        setViewingAttachment(null);
+      }
+    } else {
+      setViewingAttachment(null);
+    }
+  }, [viewingExpense]);
+
+  useEffect(() => {
     const handleTriggerAdd = (e: Event) => {
       const detail = (e as CustomEvent<{ tabId?: string }>).detail;
       if (detail?.tabId === 'personal') setShowAddModal(true);
@@ -174,7 +197,10 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
       setIsEditingReason(false);
       setShowCategoryPicker(false);
       setShowPersonPicker(false);
+      setShowFullImage(false);
     };
+
+
     const sync = () => setExpenses(getPersonalExpenses());
     window.addEventListener('splitmate_trigger_add', handleTriggerAdd);
     window.addEventListener('splitmate_data_changed', sync);
@@ -363,13 +389,13 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
 
   return (
     <div
-      className="p-4 space-y-4 font-sans"
-      style={{ paddingBottom: showAddModal ? '0' : '160px' }}
+      className="w-full h-full overflow-y-auto pb-40 scroll-smooth font-sans"
       onTouchStart={handleMonthSwipeStart}
       onTouchEnd={handleMonthSwipeEnd}
+      onScroll={onScroll}
     >
-      {/* Header */}
-      <div className="pt-4 pb-1 flex items-start justify-between gap-3">
+      {/* Header — sticky */}
+      <div className="sticky top-0 z-30 bg-background px-4 pt-4 pb-3 flex items-start justify-between gap-3 border-b border-border/5">
         <div className="flex items-start gap-4">
           {onBack && (
             <button
@@ -389,12 +415,10 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
         {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
       </div>
 
+      <div className="p-4 space-y-4" style={{ paddingBottom: showAddModal ? '0' : '160px' }}>
+
       {/* Unified Spend Dashboard */}
-      <div className="relative z-10 overflow-hidden p-8 rounded-[3rem] bg-card border border-border/10 shadow-sm space-y-8"
-        style={{
-          background: 'linear-gradient(135deg, hsl(var(--primary) / 0.04) 0%, hsl(var(--card)) 100%)',
-        }}
-      >
+      <div className="relative z-0 overflow-hidden p-8 rounded-[1.75rem] bg-card border border-border/10 shadow-sm space-y-8">
         {/* Total Burn Header */}
         <div className="flex items-center justify-between gap-4">
            {/* Total Burn Header */}
@@ -424,7 +448,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
 
       {/* Category Breakdown Chart */}
       {chartData.length > 0 && (
-        <div className="ios-card-modern p-5 space-y-4 rounded-[3rem] bg-card border border-border/10">
+        <div className="ios-card-modern p-5 space-y-4 rounded-[1.75rem] bg-card border border-border/10">
           <div className="flex items-center justify-between px-1">
             <h3 className="font-black text-[12px] uppercase tracking-widest flex items-center gap-2.5">
               <div className="w-9 h-9 bg-purple-500/10 rounded-xl flex items-center justify-center text-purple-600 shadow-inner">
@@ -584,7 +608,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
         <div className="space-y-4">
           <div className="flex flex-col gap-3.5">
             {visibleExpenses.map((expense, idx) => (
-              <Fragment key={expense.id}>
+              <div key={expense.id} className="contents">
                 <div
                   onClick={() => setViewingExpense(expense)}
                   className="ios-card-modern px-5 py-4 group active:scale-[0.98] transition-all overflow-hidden border border-border/10 transform-gpu cursor-pointer"
@@ -631,8 +655,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
                     </div>
                   </div>
                 </div>
-                {(idx + 4) % 5 === 0 && <NativeAdCard />}
-              </Fragment>
+              </div>
             ))}
           </div>
         </div>
@@ -873,14 +896,89 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
                 )}
               </div>
 
+              {/* Image Attachment (Below Date) */}
+              {(viewingAttachment || isEditingReason) && (
+                <div className="space-y-3 pt-1">
+                  {isEditingReason && (
+                    <input
+                      type="file"
+                      accept="image/*"
+                      ref={fileInputRef}
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          try {
+                            const dataUrl = await resizeImageToDataUrl(file);
+                            setViewingAttachment(dataUrl);
+                          } catch (err) {
+                            toast({ title: 'Error', description: 'Could not attach image', variant: 'destructive' });
+                          }
+                        }
+                      }}
+                    />
+                  )}
+                  
+                  {!viewingAttachment && isEditingReason ? (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full h-12 flex items-center justify-center gap-2 rounded-[1.5rem] bg-secondary/30 border border-border/10 border-dashed text-muted-foreground/60 text-[11px] font-black uppercase tracking-widest hover:bg-secondary/50 hover:text-primary transition-all"
+                    >
+                      <ImageIcon size={16} />
+                      Attach Proof / Bill
+                    </button>
+                  ) : viewingAttachment ? (
+                    <div className="relative w-full h-32 rounded-[1.5rem] overflow-hidden border border-border/20 group cursor-pointer" onClick={() => !isEditingReason && setShowFullImage(true)}>
+                      <img src={viewingAttachment} alt="Attachment" className="w-full h-full object-cover" />
+                      {isEditingReason && (
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setViewingAttachment(null);
+                            }}
+                            className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-red-500 transition-colors"
+                          >
+                            <X size={18} />
+                          </button>
+                        </div>
+                      )}
+                      {!isEditingReason && (
+                        <div className="absolute inset-0 flex items-end p-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span className="text-[10px] font-bold text-white uppercase tracking-widest px-2">Proof Attached</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
               {/* SAVE BUTTON FOR ALL EDITS */}
               {isEditingReason && (
                 <div className="pt-2 px-4">
                   <button 
-                    onClick={() => {
+                    onClick={async () => {
                       const finalAmount = parseFloat(editedAmount) || viewingExpense.amount;
                       const finalIsIncome = editedType === 'income';
                       const finalCategory = finalIsIncome ? 'Income' : editedCategory;
+                      let finalAttachmentId = viewingExpense.attachmentId;
+                      
+                      // Handle attachment changes
+                      if (viewingAttachment && viewingAttachment.startsWith('data:image') && viewingAttachment.length > 100) {
+                        try {
+                          finalAttachmentId = await saveTransactionAttachment(viewingAttachment, viewingExpense.id);
+                          if (viewingExpense.attachmentId) {
+                            await deleteTransactionAttachment(viewingExpense.attachmentId);
+                          }
+                        } catch (e) {
+                          toast({ title: 'Warning', description: 'Could not save the new image, continuing with old.', variant: 'destructive' });
+                        }
+                      } else if (!viewingAttachment && viewingExpense.attachmentId) {
+                         await deleteTransactionAttachment(viewingExpense.attachmentId);
+                         finalAttachmentId = undefined;
+                      }
                       
                       // Using the new robust updatePersonalExpense function
                       updatePersonalExpense(viewingExpense.id, { 
@@ -889,6 +987,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
                         date: editedDate || viewingExpense.date,
                         category: finalCategory,
                         isIncome: finalIsIncome,
+                        attachmentId: finalAttachmentId,
                       });
 
                       setViewingExpense({ 
@@ -898,6 +997,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
                         date: editedDate || viewingExpense.date,
                         category: finalCategory,
                         isIncome: finalIsIncome,
+                        attachmentId: finalAttachmentId,
                       });
                       
                       setIsEditingReason(false);
@@ -916,7 +1016,6 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
             <div className="flex items-center justify-center pt-1">
               <span className="text-[8px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40">Personal Transaction Verified</span>
             </div>
-
             {showPersonPicker && (
               <div className="absolute inset-0 z-20 bg-card/95 backdrop-blur-sm rounded-[3rem] p-5 pt-14 flex flex-col">
                 <div className="flex items-center justify-between mb-4">
@@ -955,6 +1054,28 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
         document.body
       )}
 
+      {/* Full Screen Image Viewer */}
+      {showFullImage && viewingAttachment && createPortal(
+        <div 
+          className="fixed inset-0 z-[10005] flex items-center justify-center bg-black/90 backdrop-blur-xl animate-in fade-in duration-300"
+          onClick={() => setShowFullImage(false)}
+        >
+          <button
+            className="absolute top-6 right-6 w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors"
+            onClick={() => setShowFullImage(false)}
+          >
+            <X size={24} />
+          </button>
+          <img 
+            src={viewingAttachment} 
+            alt="Full Attachment" 
+            className="max-w-full max-h-[90vh] object-contain px-4" 
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>,
+        document.body
+      )}
+
       {/* Delete Confirmation Sheet */}
       {deletingId && createPortal(
         <div className="fixed inset-0 z-[10002] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setDeletingId(null)}>
@@ -981,7 +1102,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
               </button>
               <button
                 onClick={confirmDelete}
-                className="h-14 rounded-2xl bg-destructive text-white font-bold uppercase tracking-wider text-[11px] shadow-lg shadow-destructive/20 active:scale-95 transition-all"
+                className="h-14 rounded-2xl bg-destructive text-white font-bold uppercase tracking-wider text-[11px] active:scale-95 transition-all"
               >
                 DELETE
               </button>
@@ -990,6 +1111,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true }: Pe
         </div>,
         document.body
       )}
+    </div>
     </div>
   );
 }

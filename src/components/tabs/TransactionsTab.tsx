@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState, Fragment } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDownRight, ArrowLeft, ArrowLeftRight, ArrowUpRight, CircleArrowOutUpRight, MessageSquare, User, Users, X } from 'lucide-react';
+import { ArrowDownRight, ArrowLeft, ArrowLeftRight, ArrowUpRight, CircleArrowOutUpRight, MessageSquare, User, Users, X, Trash2, ChevronLeft } from 'lucide-react';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
 import { useBackHandler } from '@/hooks/useBackHandler';
 import { useBannerAd } from '@/hooks/useBannerAd';
 import { cn } from '@/lib/utils';
 import { type AppTransactionItem, getAllAppTransactions } from '@/lib/transactions';
-import { syncDemoTransactions } from '@/lib/storage';
 import { NativeAdCard } from '@/components/NativeAdCard';
+import { deletePersonalExpense, deleteSharedExpense, getTransactionAttachment } from '@/lib/storage';
 
 interface TransactionsTabProps {
   onOpenAccount: () => void;
@@ -21,29 +21,33 @@ const typeMeta: Record<AppTransactionItem['type'], { label: string; Icon: typeof
   personal: { label: 'Personal', Icon: User },
   'split-person': { label: 'Split', Icon: ArrowLeftRight },
   group: { label: 'Group', Icon: Users },
-  sms: { label: 'SMS', Icon: MessageSquare },
 };
 
 export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, bannerAdActive = true }: TransactionsTabProps) {
   useBannerAd(bannerAdActive);
   const [items, setItems] = useState<AppTransactionItem[]>(() => getAllAppTransactions());
   const [viewing, setViewing] = useState<AppTransactionItem | null>(null);
+  const [viewingAttachment, setViewingAttachment] = useState<string | null>(null);
+  const [deletingItem, setDeletingItem] = useState<AppTransactionItem | null>(null);
 
   useBackHandler(!!viewing, () => setViewing(null));
+  useBackHandler(!!deletingItem, () => setDeletingItem(null));
 
   useEffect(() => {
-    const storedValue = localStorage.getItem('splitmate_sms_auto_approve_enabled');
-    const autoApprove = storedValue === null ? true : storedValue === 'true';
-    syncDemoTransactions(autoApprove);
-  }, []);
+    if (viewing) {
+      getTransactionAttachment(viewing.sourceId).then(data => {
+        setViewingAttachment(data);
+      });
+    } else {
+      setViewingAttachment(null);
+    }
+  }, [viewing]);
 
   useEffect(() => {
     const sync = () => setItems(getAllAppTransactions());
     window.addEventListener('splitmate_data_changed', sync);
-    window.addEventListener('splitmate_sms_transactions_changed', sync);
     return () => {
       window.removeEventListener('splitmate_data_changed', sync);
-      window.removeEventListener('splitmate_sms_transactions_changed', sync);
     };
   }, []);
 
@@ -64,44 +68,79 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
     onNavigateToTab(item.sourceTab);
   };
 
+  const confirmDelete = () => {
+    if (!deletingItem) return;
+    if (deletingItem.sourceTab === 'personal') {
+      deletePersonalExpense(deletingItem.sourceId);
+    } else {
+      deleteSharedExpense(deletingItem.sourceId);
+    }
+    setDeletingItem(null);
+  };
+
   return (
-    <div className="p-4 pb-40 space-y-5">
-      <div className="pt-4 pb-1 flex items-start justify-between gap-3">
+    <div className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col">
+      {/* Header — sticky */}
+      <div className="sticky top-0 z-30 bg-background px-4 pt-4 pb-3 flex items-start justify-between gap-3 border-b border-border/5">
         <div className="flex items-start gap-4">
           {onBack && (
             <button
               type="button"
               onClick={onBack}
-              className="w-11 h-11 rounded-2xl flex items-center justify-center mt-1 bg-secondary/80 border border-border/10 active:scale-95 transition-all shadow-sm"
+              className="w-11 h-11 rounded-2xl slab flex items-center justify-center active:scale-90 transition-all mt-0.5"
               aria-label="Back"
             >
-              <ArrowLeft size={18} strokeWidth={2.5} />
+              <ChevronLeft size={20} strokeWidth={2.5} />
             </button>
           )}
           <div className="space-y-0.5">
-            <h1 className="text-2xl font-bold tracking-tight leading-none">Transactions</h1>
-            <p className="text-[13px] text-muted-foreground font-medium opacity-80 max-w-[320px] leading-tight">
-              Incoming, outgoing, personal, split, group, and SMS transactions in one place.
-            </p>
+            <h1 className="text-[28px] font-bold leading-none tracking-tight">Transactions<span className="text-primary">.</span></h1>
+            <p className="text-xs text-muted-foreground mt-1.5 tracking-wide">All your transactions in one place</p>
           </div>
         </div>
         {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
       </div>
 
+      <div className="p-4 space-y-5">
+
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-600/70 font-bold">Incoming</p>
+        <div
+          className="p-5 flex flex-col justify-between"
+          style={{
+            background: 'hsl(var(--card))',
+            border: '1px solid hsl(var(--border) / 0.15)',
+            borderRadius: '1.75rem',
+            boxShadow: '0 2px 16px -4px hsl(var(--glass-shadow) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.06)',
+          }}
+        >
+          <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-500/70 font-bold">Incoming</p>
           <MoneyDisplay amount={summary.incoming} size="sm" className="text-emerald-500 font-black mt-1" />
         </div>
-        <div className="rounded-2xl border border-rose-500/15 bg-rose-500/5 p-4">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-rose-600/70 font-bold">Outgoing</p>
+        <div
+          className="p-5 flex flex-col justify-between"
+          style={{
+            background: 'hsl(var(--card))',
+            border: '1px solid hsl(var(--border) / 0.15)',
+            borderRadius: '1.75rem',
+            boxShadow: '0 2px 16px -4px hsl(var(--glass-shadow) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.06)',
+          }}
+        >
+          <p className="text-[10px] uppercase tracking-[0.2em] text-rose-500/70 font-bold">Outgoing</p>
           <MoneyDisplay amount={summary.outgoing} size="sm" className="text-rose-500 font-black mt-1" />
         </div>
       </div>
 
       <div className="space-y-3">
         {items.length === 0 ? (
-          <div className="rounded-2xl border border-border/10 bg-card p-6 text-center text-sm text-muted-foreground">
+          <div
+            className="p-6 text-center text-sm text-muted-foreground"
+            style={{
+              background: 'hsl(var(--card))',
+              border: '1px solid hsl(var(--border) / 0.15)',
+              borderRadius: '1.75rem',
+              boxShadow: '0 2px 16px -4px hsl(var(--glass-shadow) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.06)',
+            }}
+          >
             No transactions yet.
           </div>
         ) : (
@@ -115,18 +154,26 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
               <button
                 type="button"
                 onClick={() => setViewing(item)}
-                className="w-full text-left rounded-2xl border border-border/10 bg-card px-4 py-3.5 active:scale-[0.99] transition-all"
+                className="w-full text-left px-5 py-4 active:scale-[0.99] transition-all"
+                style={{
+                  background: 'hsl(var(--card))',
+                  border: '1px solid hsl(var(--border) / 0.15)',
+                  borderRadius: '1.75rem',
+                  boxShadow: '0 2px 16px -4px hsl(var(--glass-shadow) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.06)',
+                }}
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className={cn(
-                      'w-10 h-10 rounded-xl flex items-center justify-center',
-                      item.direction === 'incoming' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500',
+                      'w-10 h-10 rounded-full border flex items-center justify-center shrink-0 bg-transparent',
+                      item.direction === 'incoming' ? 'border-border/20 text-emerald-500' : 'border-border/20 text-rose-500',
                     )}>
                       <DirIcon size={15} />
                     </div>
                     <div className="min-w-0">
-                      <p className="font-semibold text-sm truncate">{item.reason}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-sm truncate">{item.reason}</p>
+                      </div>
                       <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
                         <meta.Icon size={12} />
                         <span>{meta.label}</span>
@@ -135,15 +182,26 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
                       </div>
                     </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className={cn('font-bold tracking-tight', amountClass)}>
-                      {item.direction === 'incoming' ? '+' : '-'}₹{Math.abs(item.amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">{new Date(item.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</p>
+                  <div className="flex items-center gap-4 shrink-0">
+                    <div className="text-right">
+                      <p className={cn('font-bold tracking-tight', amountClass)}>
+                        {item.direction === 'incoming' ? '+' : '-'}₹{Math.abs(item.amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">{new Date(item.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeletingItem(item);
+                      }}
+                      className="w-8 h-8 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500 hover:bg-rose-500/20 active:scale-95 transition-all shrink-0"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 </div>
               </button>
-              {(idx + 4) % 5 === 0 && <NativeAdCard />}
               </Fragment>
             );
           })
@@ -200,11 +258,61 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
               {viewing.status && <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70">{viewing.status}</p>}
             </div>
 
+            {viewingAttachment && (
+              <div className="space-y-1.5">
+                <div className="relative w-full h-36 rounded-2xl overflow-hidden border border-border/10 bg-black/10">
+                  <img src={viewingAttachment} alt="Proof" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 flex items-end p-2 bg-gradient-to-t from-black/60 to-transparent">
+                    <span className="text-[9px] font-bold text-white uppercase tracking-widest px-1">Proof Attached</span>
+                  </div>
+                </div>
+                <p className="text-[9px] text-muted-foreground/60 tracking-wider text-center">
+                  🔒 Stored locally on this device for privacy
+                </p>
+              </div>
+            )}
+
             <p className="text-[10px] text-center text-muted-foreground uppercase tracking-[0.2em]">Tap top-right to open original location</p>
           </div>
         </div>,
         document.body,
       )}
+
+      {deletingItem && createPortal(
+        <div className="fixed inset-0 z-[10003] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setDeletingItem(null)}>
+          <div
+            className="w-full max-w-md bg-card rounded-[3rem] p-8 pt-10 pb-12 space-y-6 animate-in slide-in-from-bottom-10 border border-border/10 duration-300 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="text-center space-y-4">
+              <div className="w-20 h-20 rounded-[2.5rem] bg-destructive/10 flex items-center justify-center mx-auto mb-4 animate-pulse border border-destructive/20">
+                <Trash2 size={36} className="text-destructive" />
+              </div>
+              <h2 className="text-xl font-bold tracking-tight text-destructive uppercase">Delete Entry?</h2>
+              <p className="text-[13px] text-muted-foreground px-4 leading-relaxed font-semibold italic opacity-80">
+                This record will be permanently deleted from your records.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 pt-4">
+              <button
+                onClick={() => setDeletingItem(null)}
+                className="h-14 rounded-2xl bg-secondary font-bold uppercase tracking-wider text-[11px] active:scale-95 transition-all text-muted-foreground"
+              >
+                KEEP
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="h-14 rounded-2xl bg-destructive text-white font-bold uppercase tracking-wider text-[11px] active:scale-95 transition-all"
+              >
+                DELETE
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
     </div>
   );
 }

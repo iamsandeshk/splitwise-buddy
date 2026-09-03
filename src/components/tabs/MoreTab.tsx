@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeftRight, CreditCard, ExternalLink, Landmark, Repeat, Sparkles, Target, User, Users, WalletCards, PieChart, X, Globe, ArrowRightLeft, MessageSquare, CalendarDays, ListOrdered, LucideIcon } from 'lucide-react';
+import { ArrowLeftRight, CalendarClock, CreditCard, ExternalLink, Landmark, Repeat, Sparkles, Target, User, Users, WalletCards, PieChart, X, Globe, ArrowRightLeft, MessageSquare, CalendarDays, ListOrdered, LucideIcon, List, LayoutGrid } from 'lucide-react';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
 import {
   FIXED_BOTTOM_TAB_IDS,
   MAX_BOTTOM_TABS,
   getBudgetPlannerConfig,
   getAccountSummaries,
-  getSmsTransactions,
   getGoals,
   getGroups,
   getLinks,
   getLoans,
   getPersonalExpenses,
+  getRecurringPayments,
   getSharedExpenses,
   getSubscriptions,
   getTabConfig,
@@ -44,7 +44,7 @@ const MORE_CARD_TAB_IDS = [
   'subscriptions',
   'converter',
   'calendar',
-  'sms-transactions',
+  'recurring',
 ] as const;
 
 const TAB_LABELS: Record<string, string> = {
@@ -57,7 +57,7 @@ const TAB_LABELS: Record<string, string> = {
   budgets: 'Budgets',
   accounts: 'Accounts',
   loans: 'Loans',
-  goals: 'Goals',
+  goals: 'Savings',
   subscriptions: 'Subscriptions',
   converter: 'Converter',
   more: 'More',
@@ -96,21 +96,24 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
   const { isAdFree } = useAdFree();
   const [tabConfig, setTabConfigState] = useState(() => getTabConfig());
   const [swapTabId, setSwapTabId] = useState<string | null>(null);
+  const [isSwapMode, setIsSwapMode] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showConverter, setShowConverter] = useState(false);
   const { toast } = useToast();
   const currency = useCurrency();
 
   useBackHandler(showConverter, () => setShowConverter(false));
   useBackHandler(!!swapTabId, () => setSwapTabId(null));
-  
+
   const personalCount = getPersonalExpenses().length;
   const sharedCount = getSharedExpenses().length;
   const linkCount = getLinks().length + getGroups().length;
   const loansCount = getLoans().length;
   const goalsCount = getGoals().length;
   const subscriptionsCount = getSubscriptions().length;
-  const smsTransactionsCount = getSmsTransactions().length;
   const allTransactionsCount = getAllAppTransactions().length;
+  const recurringPayments = getRecurringPayments();
+  const recurringActiveCount = recurringPayments.filter((p) => p.enabled).length;
   const calendarDayCount = useMemo(() => {
     const keys = new Set<string>();
     getPersonalExpenses().forEach((expense) => {
@@ -170,21 +173,21 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
       title: 'Personal',
       subtitle: 'Track your own expenses and category totals.',
       countText: `${personalCount} expense${personalCount !== 1 ? 's' : ''}`,
-      countClass: 'text-primary bg-primary/10',
-      border: 'hsl(var(--primary) / 0.15)',
-      iconBg: 'hsl(var(--primary) / 0.1)',
+      countClass: 'text-muted-foreground bg-secondary/40',
+      border: 'hsl(var(--border) / 0.25)',
+      iconBg: 'hsl(var(--primary) / 0.12)',
       iconClass: 'text-primary',
       icon: User,
     },
     {
       id: 'shared',
-      title: 'Split',
+      title: 'Shared',
       subtitle: 'Split and settle balances with your people.',
       countText: `${sharedCount} transaction${sharedCount !== 1 ? 's' : ''}`,
-      countClass: 'text-warning bg-warning/10',
-      border: 'hsl(var(--warning) / 0.15)',
-      iconBg: 'hsl(var(--warning) / 0.1)',
-      iconClass: 'text-warning',
+      countClass: 'text-muted-foreground bg-secondary/40',
+      border: 'hsl(var(--border) / 0.25)',
+      iconBg: 'hsl(var(--primary) / 0.12)',
+      iconClass: 'text-primary',
       icon: Users,
     },
     {
@@ -192,9 +195,9 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
       title: 'Links',
       subtitle: 'Bookmarks and grouped links in one place.',
       countText: `${linkCount} saved`,
-      countClass: 'text-primary bg-primary/10',
-      border: 'hsl(var(--primary) / 0.15)',
-      iconBg: 'hsl(var(--primary) / 0.1)',
+      countClass: 'text-muted-foreground bg-secondary/40',
+      border: 'hsl(var(--border) / 0.25)',
+      iconBg: 'hsl(var(--primary) / 0.12)',
       iconClass: 'text-primary',
       icon: ExternalLink,
     },
@@ -203,9 +206,9 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
       title: 'Categories',
       subtitle: 'See where you spend most by month and category.',
       countText: `${personalCount} tracked`,
-      countClass: 'text-primary bg-primary/10',
-      border: 'hsl(var(--primary) / 0.15)',
-      iconBg: 'hsl(var(--primary) / 0.1)',
+      countClass: 'text-muted-foreground bg-secondary/40',
+      border: 'hsl(var(--border) / 0.25)',
+      iconBg: 'hsl(var(--primary) / 0.12)',
       iconClass: 'text-primary',
       icon: PieChart,
     },
@@ -214,9 +217,9 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
       title: 'Budgets',
       subtitle: 'Daily allowance and monthly budget calculator.',
       countText: budgetDailyAllowanceText,
-      countClass: 'text-primary bg-primary/10',
-      border: 'hsl(var(--primary) / 0.15)',
-      iconBg: 'hsl(var(--primary) / 0.1)',
+      countClass: 'text-muted-foreground bg-secondary/40',
+      border: 'hsl(var(--border) / 0.25)',
+      iconBg: 'hsl(var(--primary) / 0.12)',
       iconClass: 'text-primary',
       icon: WalletCards,
     },
@@ -227,9 +230,9 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
       countText: accountsCount === 0
         ? 'No Accounts'
         : `${currency.symbol}${Math.abs(totalAccountsAvailable).toLocaleString(currency.locale, { maximumFractionDigits: 0 })} Available`,
-      countClass: accountsCount === 0 ? 'text-muted-foreground bg-secondary/40' : 'text-primary bg-primary/10',
-      border: 'hsl(var(--primary) / 0.15)',
-      iconBg: 'hsl(var(--primary) / 0.1)',
+      countClass: 'text-muted-foreground bg-secondary/40',
+      border: 'hsl(var(--border) / 0.25)',
+      iconBg: 'hsl(var(--primary) / 0.12)',
       iconClass: 'text-primary',
       icon: CreditCard,
     },
@@ -238,31 +241,31 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
       title: 'Loans',
       subtitle: 'Track loan due by month or year with interest.',
       countText: `${loansCount} loan${loansCount !== 1 ? 's' : ''}`,
-      countClass: 'text-warning bg-warning/10',
-      border: 'hsl(var(--warning) / 0.15)',
-      iconBg: 'hsl(var(--warning) / 0.1)',
-      iconClass: 'text-warning',
+      countClass: 'text-muted-foreground bg-secondary/40',
+      border: 'hsl(var(--border) / 0.25)',
+      iconBg: 'hsl(var(--primary) / 0.12)',
+      iconClass: 'text-primary',
       icon: Landmark,
     },
     {
       id: 'goals',
-      title: 'Goals',
+      title: 'Savings',
       subtitle: 'Save toward future targets with optional lock.',
-      countText: `${goalsCount} goal${goalsCount !== 1 ? 's' : ''}`,
-      countClass: 'text-success bg-success/10',
-      border: 'hsl(var(--success) / 0.15)',
-      iconBg: 'hsl(var(--success) / 0.1)',
-      iconClass: 'text-success',
+      countText: `${goalsCount} savings target${goalsCount !== 1 ? 's' : ''}`,
+      countClass: 'text-muted-foreground bg-secondary/40',
+      border: 'hsl(var(--border) / 0.25)',
+      iconBg: 'hsl(var(--primary) / 0.12)',
+      iconClass: 'text-primary',
       icon: Target,
     },
     {
       id: 'subscriptions',
       title: 'Subscriptions',
-      subtitle: 'Track daily, weekly, monthly, yearly and lifetime plans.',
+      subtitle: 'Track daily, weekly, monthly, quarterly, yearly and lifetime plans.',
       countText: `${subscriptionsCount} active`,
-      countClass: 'text-primary bg-primary/10',
-      border: 'hsl(var(--primary) / 0.15)',
-      iconBg: 'hsl(var(--primary) / 0.1)',
+      countClass: 'text-muted-foreground bg-secondary/40',
+      border: 'hsl(var(--border) / 0.25)',
+      iconBg: 'hsl(var(--primary) / 0.12)',
       iconClass: 'text-primary',
       icon: Repeat,
     },
@@ -271,9 +274,9 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
       title: 'Transactions',
       subtitle: 'See all incoming, outgoing, personal, split, group and SMS entries.',
       countText: `${allTransactionsCount} total`,
-      countClass: 'text-primary bg-primary/10',
-      border: 'hsl(var(--primary) / 0.15)',
-      iconBg: 'hsl(var(--primary) / 0.1)',
+      countClass: 'text-muted-foreground bg-secondary/40',
+      border: 'hsl(var(--border) / 0.25)',
+      iconBg: 'hsl(var(--primary) / 0.12)',
       iconClass: 'text-primary',
       icon: ListOrdered,
       isTool: true,
@@ -283,9 +286,9 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
       title: 'Calendar',
       subtitle: 'Month-wise activity view from your first transaction to now.',
       countText: calendarDayCount > 0 ? `${calendarDayCount} active day${calendarDayCount !== 1 ? 's' : ''}` : 'No Activity Yet',
-      countClass: 'text-primary bg-primary/10',
-      border: 'hsl(var(--primary) / 0.15)',
-      iconBg: 'hsl(var(--primary) / 0.1)',
+      countClass: 'text-muted-foreground bg-secondary/40',
+      border: 'hsl(var(--border) / 0.25)',
+      iconBg: 'hsl(var(--primary) / 0.12)',
       iconClass: 'text-primary',
       icon: CalendarDays,
       isTool: true,
@@ -295,28 +298,27 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
       title: 'Converter',
       subtitle: 'Real-time global exchange rates directly from market indices.',
       countText: 'Latest Quotes',
-      countClass: 'text-primary bg-primary/10',
-      border: 'hsl(var(--primary) / 0.15)',
-      iconBg: 'hsl(var(--primary) / 0.1)',
+      countClass: 'text-muted-foreground bg-secondary/40',
+      border: 'hsl(var(--border) / 0.25)',
+      iconBg: 'hsl(var(--primary) / 0.12)',
       iconClass: 'text-primary',
       icon: ArrowRightLeft,
       isTool: true
     },
     {
-      id: 'sms-transactions',
-      title: 'SMS Transactions',
-      subtitle: 'Review incoming SMS debits and move them to Personal, Split or Group.',
-      countText: smsTransactionsCount > 0 ? `${smsTransactionsCount} pending` : 'Auto Capture',
-      countClass: 'text-primary bg-primary/10',
-      border: 'hsl(var(--primary) / 0.15)',
-      iconBg: 'hsl(var(--primary) / 0.1)',
+      id: 'recurring',
+      title: 'Recurring Payments',
+      subtitle: 'Auto-post salary, rent, and other regular income or expenses.',
+      countText: recurringActiveCount > 0 ? `${recurringActiveCount} active` : 'No payments',
+      countClass: 'text-muted-foreground bg-secondary/40',
+      border: 'hsl(var(--border) / 0.25)',
+      iconBg: 'hsl(var(--primary) / 0.12)',
       iconClass: 'text-primary',
-      icon: MessageSquare,
+      icon: CalendarClock,
       isTool: true,
     },
-  ]), [accountsCount, allTransactionsCount, budgetDailyAllowanceText, calendarDayCount, currency.locale, currency.symbol, goalsCount, linkCount, loansCount, personalCount, sharedCount, smsTransactionsCount, subscriptionsCount, totalAccountsAvailable]);
-
-  const cardsInMore = useMemo(() => featureCards.filter((card) => card.id === 'sms-transactions' || card.id === 'calendar' || !visibility.get(card.id)), [featureCards, visibility]);
+  ]), [accountsCount, allTransactionsCount, budgetDailyAllowanceText, calendarDayCount, currency.locale, currency.symbol, goalsCount, linkCount, loansCount, personalCount, recurringActiveCount, sharedCount, subscriptionsCount, totalAccountsAvailable]);
+  const cardsInMore = useMemo(() => featureCards.filter((card) => !visibility.get(card.id)), [featureCards, visibility]);
   const currentBottomTabs = useMemo(() => tabConfig.filter((tab) => tab.visible), [tabConfig]);
   const swappableBottomTabs = useMemo(
     () => currentBottomTabs.filter((tab) => !fixedTabs.has(tab.id)),
@@ -374,113 +376,129 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
   };
 
   return (
-    <div className="p-4 pb-40 space-y-6 font-sans">
-      {/* Header Section */}
-      <div className="pt-6 pb-2 flex items-start justify-between gap-4">
+    <div className="flex flex-col h-full font-sans">
+      {/* Fixed Header */}
+      <div className="flex-shrink-0 bg-background px-4 pt-6 pb-2 flex items-start justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-3xl font-black tracking-tight leading-none">More</h1>
         </div>
         <AccountQuickButton onClick={onOpenAccount} />
       </div>
 
-      <div className="space-y-4">
-         <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 px-2">Ecosystem Toolbox</h2>
-          <div className="grid grid-cols-2 gap-4">
-            {cardsInMore.map((card, idx) => {
-               const Icon = card.icon;
-              const isConverter = card.id === 'converter';
-              const isTransactions = card.id === 'transactions';
-              const isSmsTransactions = card.id === 'sms-transactions';
-              const isCalendar = card.id === 'calendar';
-               return (
-                  <div key={card.id} className="contents">
-                    <div
-                    onClick={() => {
-                      if (isConverter) {
-                        setShowConverter(true);
-                        return;
-                      }
-                      if (isTransactions) {
-                        onOpenFeatureTab('transactions');
-                        return;
-                      }
-                      if (isSmsTransactions) {
-                          onOpenFeatureTab('sms-transactions');
-                        return;
-                      }
-                      if (isCalendar) {
-                        onOpenFeatureTab('calendar');
-                        return;
-                      }
-                      onOpenFeatureTab(card.id);
-                    }}
-                       className="group relative flex flex-col p-5 rounded-[1.75rem] transition-all duration-300 active:scale-[0.96] text-left overflow-hidden cursor-pointer"
-                       style={{ 
-                          background: 'hsl(var(--card))',
-                          border: `1.2px solid ${card.border}`,
-                          boxShadow: 'none'
-                       }}
-                       role="button"
-                       tabIndex={0}
-                    >
-                       <div className="flex items-start justify-between mb-3.5 relative z-10">
-                             <button
-                               type="button"
-                               onClick={(e) => {
-                                 e.stopPropagation();
-                                 handleSwap(card.id);
-                               }}
-                               className="h-9 px-3.5 rounded-xl text-[9px] font-bold uppercase tracking-wider inline-flex items-center gap-1.5 transition-all active:scale-90 bg-secondary/70 border border-border/10"
-                             >
-                               <ArrowLeftRight size={10} strokeWidth={3} />
-                               Swap
-                             </button>
-
-                          <div className="w-10 h-10 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300 shadow-inner" style={{ background: card.iconBg }}>
-                             <Icon size={18} className={card.iconClass} strokeWidth={2} />
-                          </div>
-                       </div>
-
-                        <div className="relative z-10">
-                          <h3 className="font-bold text-[14px] leading-tight tracking-tight group-hover:text-primary transition-colors">{card.title}</h3>
-                       </div>
-
-                        <div className="mt-3 relative z-10">
-                          <div className={cn(
-                             "inline-flex items-center px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase tracking-wider",
-                             card.countClass
-                          )}>
-                             {card.id === 'converter' && <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse mr-1.5" />}
-                             {card.countText}
-                          </div>
-                       </div>
-
-                       {/* Watermark Overlay */}
-                       <div className="absolute -bottom-4 -right-4 opacity-[0.03] group-hover:opacity-[0.06] transition-opacity duration-500 pointer-events-none">
-                          {card.id === 'converter' ? (
-                             <Globe size={100} strokeWidth={3} className={card.iconClass} />
-                          ) : (
-                             <Icon size={100} strokeWidth={3} className={card.iconClass} />
-                          )}
-                       </div>
-                    </div>
-                  </div>
-               );
-            })}
+      {/* Fixed Toolbar */}
+      <div className="flex-shrink-0 bg-background px-4 py-2 flex items-center justify-between relative">
+        {/* Fade-out bottom edge */}
+        <div className="absolute bottom-0 left-0 right-0 h-6 translate-y-full bg-gradient-to-b from-background to-transparent pointer-events-none z-10" />
+        <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/40">Ecosystem Toolbox</h2>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-secondary/50 rounded-full p-1 border border-border/10">
+            <button onClick={() => setViewMode('list')} className={cn("p-1.5 rounded-full transition-colors", viewMode === 'list' ? "bg-card shadow-sm text-primary" : "text-muted-foreground hover:text-foreground")}>
+              <List size={12} strokeWidth={2.5} />
+            </button>
+            <button onClick={() => setViewMode('grid')} className={cn("p-1.5 rounded-full transition-colors", viewMode === 'grid' ? "bg-card shadow-sm text-primary" : "text-muted-foreground hover:text-foreground")}>
+              <LayoutGrid size={12} strokeWidth={2.5} />
+            </button>
           </div>
+          <button
+            onClick={() => setIsSwapMode(!isSwapMode)}
+            className={cn("text-[9px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 active:scale-90", isSwapMode ? "bg-primary text-primary-foreground border-primary" : "bg-secondary/50 text-muted-foreground border-border/10")}
+          >
+            <ArrowLeftRight size={10} strokeWidth={isSwapMode ? 3 : 2} />
+            {isSwapMode ? 'Done' : 'Swap'}
+          </button>
+        </div>
       </div>
 
-      {cardsInMore.length === 0 && (
-        <div className="p-10 text-center rounded-[1.75rem] bg-secondary/15 border border-dashed border-border/20">
-           <ArrowLeftRight className="mx-auto mb-3 text-primary/20" size={40} />
-           <p className="text-sm font-bold text-muted-foreground/40 italic">Pinned features are managed in your bottom navigation bar.</p>
-        </div>
-      )}
+      {/* Scrollable Cards Body */}
+      <div className="flex-1 overflow-y-auto px-4 pb-40">
+        <div className="space-y-4 pt-4">
+        <div className={viewMode === 'grid' ? "grid grid-cols-2 gap-4" : "flex flex-col gap-3"}>
+          {cardsInMore.map((card, idx) => {
+            const Icon = card.icon;
+            const isConverter = card.id === 'converter';
+            const isTransactions = card.id === 'transactions';
+            const isCalendar = card.id === 'calendar';
+            const isRecurring = card.id === 'recurring';
+            return (
+              <div key={card.id} className="contents">
+                <div
+                  onClick={() => {
+                    if (isSwapMode) {
+                      handleSwap(card.id);
+                      return;
+                    }
+                    if (isConverter) {
+                      setShowConverter(true);
+                      return;
+                    }
+                    if (isTransactions) {
+                      onOpenFeatureTab('transactions');
+                      return;
+                    }
+                    if (isCalendar) {
+                      onOpenFeatureTab('calendar');
+                      return;
+                    }
+                    onOpenFeatureTab(card.id);
+                  }}
+                  className={cn("group relative transition-all duration-300 active:scale-[0.96] text-left overflow-hidden cursor-pointer", isSwapMode ? "animate-pulse ring-2 ring-primary ring-offset-2 ring-offset-background" : "", viewMode === 'grid' ? "flex flex-col p-5 rounded-[1.75rem]" : "flex items-center gap-4 p-4 rounded-2xl")}
+                  style={{
+                    background: 'hsl(var(--card))',
+                    border: `1.2px solid ${card.border}`,
+                    boxShadow: 'none',
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className={cn("relative z-10", viewMode === 'grid' ? "flex items-start justify-start mb-3.5" : "shrink-0")}>
+                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 duration-300 shadow-inner" style={{ background: card.iconBg }}>
+                      <Icon size={18} className={card.iconClass} strokeWidth={2} />
+                    </div>
+                  </div>
 
-      <CurrencyConverterModal 
-         isOpen={showConverter} 
-         onClose={() => setShowConverter(false)} 
-      />
+                  <div className={cn("relative z-10", viewMode === 'grid' ? "" : "flex-1 min-w-0")}>
+                    <h3 className={cn("font-bold leading-tight tracking-tight group-hover:text-primary transition-colors", viewMode === 'grid' ? "text-[14px]" : "text-[15px] truncate")}>{card.title}</h3>
+                    {viewMode === 'list' && <p className="text-[11px] text-muted-foreground truncate mt-0.5">{card.subtitle}</p>}
+                  </div>
+
+                  <div className={cn("relative z-10", viewMode === 'grid' ? "mt-3" : "shrink-0")}>
+                    <div className={cn(
+                      "inline-flex items-center rounded-xl text-[9px] font-bold uppercase tracking-wider",
+                      viewMode === 'grid' ? "px-3 py-1.5" : "px-2.5 py-1",
+                      card.countClass
+                    )}>
+                      {card.id === 'converter' && <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse mr-1.5" />}
+                      {card.countText}
+                    </div>
+                  </div>
+
+                  {/* Watermark Overlay */}
+                  <div className="absolute -bottom-4 -right-4 opacity-[0.03] group-hover:opacity-[0.06] transition-opacity duration-500 pointer-events-none">
+                    {card.id === 'converter' ? (
+                      <Globe size={100} strokeWidth={3} className={TAB_COLORS[card.id] || 'text-primary'} />
+                    ) : (
+                      <Icon size={100} strokeWidth={3} className={TAB_COLORS[card.id] || 'text-primary'} />
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        </div> {/* end space-y-4 */}
+
+        {cardsInMore.length === 0 && (
+          <div className="p-10 text-center rounded-[1.75rem] bg-secondary/15 border border-dashed border-border/20 mt-2">
+            <ArrowLeftRight className="mx-auto mb-3 text-primary/20" size={40} />
+            <p className="text-sm font-bold text-muted-foreground/40 italic">Pinned features are managed in your bottom navigation bar.</p>
+          </div>
+        )}
+
+        <CurrencyConverterModal
+          isOpen={showConverter}
+          onClose={() => setShowConverter(false)}
+        />
+      </div> {/* end scrollable body */}
 
       {/* SWAP DIALOG */}
       {swapTabId && createPortal(
@@ -516,8 +534,8 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
                 >
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                       <Sparkles size={14} className="text-primary animate-pulse" />
-                       <p className="font-bold text-sm text-primary uppercase tracking-widest leading-none">Append to Navigation</p>
+                      <Sparkles size={14} className="text-primary animate-pulse" />
+                      <p className="font-bold text-sm text-primary uppercase tracking-widest leading-none">Append to Navigation</p>
                     </div>
                     <p className="text-[11px] text-muted-foreground font-medium">Add as a fresh tab at the end</p>
                   </div>
@@ -525,28 +543,28 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
               )}
 
               {swappableBottomTabs.map((tab) => {
-                 const TargetIcon = TAB_ICONS[tab.id] || Sparkles;
-                 const targetColor = TAB_COLORS[tab.id] || 'text-primary';
-                 return (
+                const TargetIcon = TAB_ICONS[tab.id] || Sparkles;
+                const targetColor = TAB_COLORS[tab.id] || 'text-primary';
+                return (
                   <button
                     key={tab.id}
                     onClick={() => handleSwapWithBottom(tab.id)}
                     className="w-full p-6 rounded-2xl text-left bg-secondary/30 border border-border/5 hover:bg-secondary/50 transition-all active:scale-[0.98] flex items-center gap-5 group"
                   >
                     <div className={cn("w-12 h-12 rounded-2xl bg-white flex items-center justify-center shadow-sm flex-shrink-0 group-hover:scale-110 transition-transform", targetColor)}>
-                       <TargetIcon size={22} strokeWidth={2.5} />
+                      <TargetIcon size={22} strokeWidth={2.5} />
                     </div>
                     <div className="flex flex-col gap-0.5 min-w-0">
                       <p className="font-bold text-sm tracking-tight text-foreground/80 font-sans truncate">Replace {TAB_LABELS[tab.id] || tab.id}</p>
                       <p className="text-[11px] text-muted-foreground font-medium leading-tight truncate">Move {TAB_LABELS[swapTabId]} to this position</p>
                     </div>
                   </button>
-                 );
+                );
               })}
             </div>
-            
+
             <div className="p-6 pt-0 opacity-20 text-center">
-               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Tap background to dismiss</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Tap background to dismiss</p>
             </div>
           </div>
         </div>,

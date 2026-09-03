@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Doto:wght@400..900&family=DM+Sans:wght@400;500;700&family=Source+Sans+3:wght@400;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -180,6 +181,56 @@ html.light.color-red {
   --accent-foreground: 346 70% 35%;
 }
 
+/* App Fonts */
+html.font-nothing {
+  --font-heading: 'Doto', monospace;
+  --font-body: 'Doto', monospace;
+}
+
+/* Improve legibility of dotted font */
+html.font-nothing body {
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+html.font-nothing .text-muted-foreground {
+  color: hsl(var(--foreground) / 0.75);
+}
+html.font-nothing h1, 
+html.font-nothing h2, 
+html.font-nothing h3, 
+html.font-nothing h4, 
+html.font-nothing h5, 
+html.font-nothing h6 {
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+html.font-samsung {
+  --font-heading: 'Samsung Sans', 'SamsungOne', 'Source Sans 3', sans-serif;
+  --font-body: 'Samsung Sans', 'SamsungOne', 'Source Sans 3', sans-serif;
+}
+html.font-google {
+  --font-heading: 'Product Sans', 'Google Sans', 'DM Sans', sans-serif;
+  --font-body: 'Product Sans', 'Google Sans', 'DM Sans', sans-serif;
+}
+html.font-system {
+  --font-heading: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-body: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Font Previews for Settings */
+.font-preview-nothing {
+  font-family: 'Doto', monospace !important;
+}
+.font-preview-samsung {
+  font-family: 'Samsung Sans', 'SamsungOne', 'Source Sans 3', sans-serif !important;
+}
+.font-preview-google {
+  font-family: 'Product Sans', 'Google Sans', 'DM Sans', sans-serif !important;
+}
+.font-preview-system {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -188,6 +239,15 @@ html.light.color-red {
     -ms-user-select: none;
     -moz-user-select: none;
     -webkit-touch-callout: none; /* Disable callout on long-press (iOS) */
+    -ms-overflow-style: none !important; /* Hide scrollbars in IE and Edge */
+    scrollbar-width: none !important; /* Hide scrollbars in Firefox */
+  }
+
+  *::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
   }
 
   input, textarea, [contenteditable="true"], .selectable {
@@ -617,15 +677,21 @@ html.light.color-red {
   overscroll-behavior: contain;
 }
 
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+.scrollbar-hide,
+.custom-scrollbar,
+.no-scrollbar,
+.scrollbar-none {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
 }
 
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
+.scrollbar-hide::-webkit-scrollbar,
+.custom-scrollbar::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* ============================================================

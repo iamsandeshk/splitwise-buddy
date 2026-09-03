@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { User, Tag, Wallet, ChevronLeft } from 'lucide-react';
+import { User, Tag, Wallet, ChevronLeft, Image as ImageIcon, X, CalendarDays, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { saveSharedExpense, generateId, getUniquePersonNames, EXPENSE_CATEGORIES, getAccounts, getCurrency, getDefaultAccountId, getSuggestedReasons, getSuggestedPersons, type SharedExpense } from '@/lib/storage';
+import { useToast } from '@/hooks/use-toast';
+import { saveSharedExpense, generateId, getUniquePersonNames, EXPENSE_CATEGORIES, getAccounts, getCurrency, getDefaultAccountId, getSuggestedReasons, getSuggestedPersons, type SharedExpense, saveTransactionAttachment, resizeImageToDataUrl } from '@/lib/storage';
 import { pushUpdateToCloud } from '@/integrations/firebase/sync';
 import { getPersonProfile, getAccountProfile, savePersonProfile } from '@/lib/storage';
 import { useBannerAd } from '@/hooks/useBannerAd';
+import { AddFirstAccountModal } from '@/components/modals/AddFirstAccountModal';
 
 interface AddSharedExpenseModalProps {
   isOpen: boolean;
@@ -31,6 +33,7 @@ const CATEGORY_EMOJIS: Record<string, string> = {
 };
 
 export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, initialReason, initialDate, initialPersonName }: AddSharedExpenseModalProps) {
+  const { toast } = useToast();
   useBannerAd(isOpen);
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
@@ -41,13 +44,17 @@ export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, i
   const [accountId, setAccountId] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const suggestions = useMemo(() => getSuggestedReasons('shared'), [isOpen]);
-  const suggestedPersons = useMemo(() => getSuggestedPersons(), [isOpen]);
+  const suggestions = getSuggestedReasons('shared');
+  const suggestedPersons = getSuggestedPersons();
   const amountRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const [attachmentDataUrl, setAttachmentDataUrl] = useState<string | null>(null);
 
   const existingNames = getUniquePersonNames();
-  const accounts = useMemo(() => getAccounts(), [isOpen]);
+  const accounts = getAccounts();
   const currency = getCurrency();
 
   useEffect(() => {
@@ -65,6 +72,8 @@ export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, i
       setPaidBy('me');
       setAccountId(getDefaultAccountId() || getAccounts()[0]?.id || '');
       setCategory(EXPENSE_CATEGORIES[0]);
+      setAttachmentDataUrl(null);
+      setShowAllCategories(false);
 
       if (amountRef.current) {
         setTimeout(() => amountRef.current?.focus(), 100);
@@ -83,7 +92,19 @@ export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, i
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  if (accounts.length === 0) {
+    return (
+      <AddFirstAccountModal
+        isOpen={isOpen}
+        onClose={onClose}
+        onAccountCreated={(createdAccount) => {
+          setAccountId(createdAccount.id);
+        }}
+      />
+    );
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const totalAmount = parseFloat(amount);
 
@@ -104,6 +125,15 @@ export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, i
       // 🔥 IMPORTANT
       fromEmail: getAccountProfile().email,
     };
+    
+    if (attachmentDataUrl) {
+      try {
+        const attachId = await saveTransactionAttachment(attachmentDataUrl, expense.id);
+        expense.attachmentId = attachId;
+      } catch (err) {
+        toast({ title: 'Attachment Failed', description: 'Could not save the image.', variant: 'destructive' });
+      }
+    }
 
     // Update the profile's email immediately if provided, so the sync can use it
     if (personEmail.trim()) {
@@ -131,7 +161,7 @@ export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, i
     const allPersons = JSON.parse(localStorage.getItem("splitmate_persons") || "[]");
 
     const latest = allPersons.find(
-      (p: any) => p.name === personName.trim()
+      (p: { name: string; email?: string }) => p.name === personName.trim()
     );
 
     if (latest) {
@@ -163,6 +193,7 @@ export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, i
     setPaidBy('me');
     setDate(new Date().toISOString().split('T')[0]);
     setIsSubmitting(false);
+    setAttachmentDataUrl(null);
     onAdd();
     onClose();
   };
@@ -185,7 +216,23 @@ export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, i
           <ChevronLeft size={20} strokeWidth={2.5} />
         </button>
         <h1 className="text-lg font-black tracking-tight uppercase absolute left-1/2 -translate-x-1/2">Shared Expense</h1>
-        <div className="w-11" />
+        {/* Date pill — top right */}
+        <button
+          type="button"
+          onClick={() => dateInputRef.current?.showPicker?.()}
+          className="relative flex items-center gap-1.5 px-3 py-2 rounded-full bg-secondary/60 border border-border/15 text-[10px] font-black uppercase tracking-wider text-muted-foreground/70 hover:bg-secondary active:scale-95 transition-all"
+        >
+          <CalendarDays size={11} className="text-muted-foreground/50" />
+          {(() => { const [,m,d] = date.split('-'); return `${d}/${m}`; })()}
+          <input
+            ref={dateInputRef}
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            required
+            className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+          />
+        </button>
       </div>
 
       {/* Scrollable content */}
@@ -282,7 +329,7 @@ export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, i
                   onClick={() => setPaidBy('me')}
                   className={cn(
                     "h-14 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all",
-                    paidBy === 'me' ? "bg-primary text-white border-transparent shadow-lg shadow-primary/20" : "bg-secondary/10 border-transparent text-muted-foreground/30"
+                    paidBy === 'me' ? "bg-primary text-white border-transparent" : "bg-secondary/10 border-transparent text-muted-foreground/30"
                   )}
                 >
                   I Paid
@@ -292,7 +339,7 @@ export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, i
                   onClick={() => setPaidBy('them')}
                   className={cn(
                     "h-14 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all",
-                    paidBy === 'them' ? "bg-primary text-white border-transparent shadow-lg shadow-primary/20" : "bg-secondary/10 border-transparent text-muted-foreground/30"
+                    paidBy === 'them' ? "bg-primary text-white border-transparent" : "bg-secondary/10 border-transparent text-muted-foreground/30"
                   )}
                 >
                   {personName || 'They'} Paid
@@ -326,25 +373,65 @@ export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, i
             </div>
           </div>
 
-          {/* Note & Date */}
-          <div className="grid grid-cols-5 gap-3">
-            <div className="col-span-3 space-y-2">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest block opacity-40">Reason</label>
-              <div className="relative">
-                <Tag size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
-                <input type="text" value={reason} onChange={(e) => setReason(e.target.value)}
-                  placeholder={category || "What for?"}
-                  className="w-full pl-10 pr-4 h-12 rounded-[1.5rem] text-sm bg-card/50 outline-none transition-all font-medium"
-                  style={{ border: '1px solid hsl(var(--border) / 0.3)' }} />
+          {/* Reason — with proof icon on the right */}
+          <div className="space-y-2">
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest block opacity-40">Reason</label>
+            <div className="relative group">
+              <Tag size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 group-focus-within:text-primary transition-colors" />
+              <input type="text" value={reason} onChange={(e) => setReason(e.target.value)}
+                placeholder={category || "What for?"}
+                className="w-full pl-10 pr-14 h-12 rounded-[1.5rem] text-sm bg-card/50 outline-none transition-all font-medium"
+                style={{ border: '1px solid hsl(var(--border) / 0.3)' }} />
+              {/* Proof / image icon inside input, right side */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                title="Add proof / bill"
+                className={cn(
+                  "absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-90",
+                  attachmentDataUrl
+                    ? "bg-primary/20 text-primary"
+                    : "bg-secondary/60 text-muted-foreground/50 hover:text-primary hover:bg-primary/10"
+                )}
+              >
+                <ImageIcon size={15} />
+              </button>
+              <input
+                type="file"
+                accept="image/*"
+                ref={fileInputRef}
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    try {
+                      const dataUrl = await resizeImageToDataUrl(file);
+                      setAttachmentDataUrl(dataUrl);
+                    } catch (err) {
+                      toast({ title: 'Error', description: 'Could not attach image', variant: 'destructive' });
+                    }
+                  }
+                }}
+              />
+            </div>
+            {/* Compact attachment preview */}
+            {attachmentDataUrl && (
+              <div className="relative w-full h-16 rounded-[1rem] overflow-hidden border border-border/20 group mt-1">
+                <img src={attachmentDataUrl} alt="Attachment" className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    type="button"
+                    onClick={() => setAttachmentDataUrl(null)}
+                    className="w-8 h-8 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-red-500 transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
               </div>
-            </div>
-            <div className="col-span-2 space-y-2">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest block opacity-40">Date</label>
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-                className="w-full h-12 px-3 rounded-[1.5rem] text-sm bg-card/50 outline-none transition-all font-medium"
-                style={{ border: '1px solid hsl(var(--border) / 0.3)' }} required />
-            </div>
+            )}
           </div>
+
+
 
           {/* Suggestion Pills */}
           {suggestions.length > 0 && (
@@ -367,21 +454,31 @@ export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, i
             <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest block opacity-40">
               Category
             </label>
-            <div className="flex flex-wrap gap-2">
-              {EXPENSE_CATEGORIES.map((cat) => {
+            <div className="flex flex-wrap gap-1.5">
+              {(showAllCategories ? EXPENSE_CATEGORIES : EXPENSE_CATEGORIES.slice(0, 2)).map((cat) => {
                 const active = category === cat;
                 return (
                   <button key={cat} type="button" onClick={() => setCategory(active ? '' : cat)}
-                    className="px-3.5 py-2.5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all duration-150 flex items-center gap-1.5"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest transition-all duration-150 border backdrop-blur-sm"
                     style={{
                       background: active ? 'hsl(var(--primary) / 0.15)' : 'hsl(var(--card) / 0.6)',
                       color: active ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))',
                       border: `1px solid ${active ? 'hsl(var(--primary) / 0.25)' : 'hsl(var(--border) / 0.2)'}`,
+                      transform: active ? 'scale(1.05)' : 'scale(1)',
                     }}>
-                    <span>{CATEGORY_EMOJIS[cat] || '📦'}</span> {cat}
+                    <span className="text-sm">{CATEGORY_EMOJIS[cat] || '📦'}</span>
+                    {cat}
                   </button>
                 );
               })}
+              {/* More / Less toggle */}
+              <button
+                type="button"
+                onClick={() => setShowAllCategories((v) => !v)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-full border border-dashed border-border/20 bg-secondary/10 text-[8px] font-black uppercase tracking-wider text-muted-foreground/50 hover:bg-secondary/30 hover:text-muted-foreground transition-all active:scale-95"
+              >
+                {showAllCategories ? <><X size={9} />Less</> : <><Plus size={9} />More</>}
+              </button>
             </div>
           </div>
 
@@ -414,7 +511,7 @@ export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, i
           </button>
           <button type="button"
             onClick={() => formRef.current?.requestSubmit()}
-            className="flex-[1.5] h-14 rounded-2xl bg-primary text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-lg shadow-primary/20 disabled:opacity-40 active:scale-95 transition-all"
+            className="flex-[1.5] h-14 rounded-2xl bg-primary text-white font-black text-[10px] uppercase tracking-[0.2em] disabled:opacity-40 active:scale-95 transition-all"
             disabled={isSubmitting || !amount || !personName.trim()}>
             {isSubmitting ? 'Adding...' : 'Add Expense'}
           </button>

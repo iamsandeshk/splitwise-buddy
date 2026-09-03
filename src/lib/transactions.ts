@@ -1,8 +1,8 @@
-import { getFriendGroups, getPersonalExpenses, getSharedExpenses, getSmsTransactions } from '@/lib/storage';
+import { getFriendGroups, getPersonalExpenses, getSharedExpenses } from '@/lib/storage';
 
-export type AppTransactionType = 'personal' | 'split-person' | 'group' | 'sms';
+export type AppTransactionType = 'personal' | 'split-person' | 'group';
 export type AppTransactionDirection = 'incoming' | 'outgoing';
-export type AppTransactionSourceTab = 'personal' | 'shared' | 'sms-transactions';
+export type AppTransactionSourceTab = 'personal' | 'shared';
 
 export interface AppTransactionItem {
   id: string;
@@ -19,21 +19,15 @@ export interface AppTransactionItem {
   status?: string;
 }
 
-const CREDIT_WORDS = /\b(credited|received|credit)\b/i;
 
-const inferSmsDirection = (text: string): AppTransactionDirection => {
-  if (CREDIT_WORDS.test(text)) return 'incoming';
-  return 'outgoing';
-};
 
 export function getAllAppTransactions(): AppTransactionItem[] {
   const groupsById = new Map(getFriendGroups().map((group) => [group.id, group.name]));
 
   const personal = getPersonalExpenses().map<AppTransactionItem>((item) => {
-    const isSms = item.source === 'sms';
     return {
       id: `personal:${item.id}`,
-      type: isSms ? 'sms' : 'personal',
+      type: 'personal',
       direction: item.isIncome ? 'incoming' : 'outgoing',
       amount: Math.abs(Number(item.amount || 0)),
       reason: item.reason || 'Personal Transaction',
@@ -41,9 +35,9 @@ export function getAllAppTransactions(): AppTransactionItem[] {
       createdAt: item.createdAt || item.date,
       sourceTab: 'personal',
       sourceId: item.id,
-      sourceLabel: isSms ? 'SMS (Auto Approved)' : 'Personal',
-      subtitle: isSms ? `Auto Approved • ${item.category || 'General'}` : (item.category || 'General'),
-      status: isSms ? 'Approved' : (item.isIncome ? 'Income' : 'Expense'),
+      sourceLabel: 'Personal',
+      subtitle: item.category || 'General',
+      status: item.isIncome ? 'Income' : 'Expense',
     };
   });
 
@@ -69,26 +63,7 @@ export function getAllAppTransactions(): AppTransactionItem[] {
     };
   });
 
-  const sms = getSmsTransactions().map<AppTransactionItem>((item) => {
-    const text = [item.reason, item.body, item.name, item.sourceAddress].filter(Boolean).join(' ');
-    const direction = inferSmsDirection(text);
-    return {
-      id: `sms:${item.id}`,
-      type: 'sms',
-      direction,
-      amount: Math.abs(Number(item.amount || 0)),
-      reason: item.reason || 'SMS Transaction',
-      date: item.date,
-      createdAt: item.createdAt || item.date,
-      sourceTab: 'sms-transactions',
-      sourceId: item.id,
-      sourceLabel: 'SMS Transactions',
-      subtitle: item.name || item.sourceAddress || 'Bank SMS',
-      status: 'Pending',
-    };
-  });
-
-  return [...personal, ...shared, ...sms].sort((a, b) => {
+  return [...personal, ...shared].sort((a, b) => {
     const aTime = new Date(a.createdAt || a.date).getTime();
     const bTime = new Date(b.createdAt || b.date).getTime();
     return bTime - aTime;

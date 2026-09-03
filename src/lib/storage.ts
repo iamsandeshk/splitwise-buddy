@@ -1,13 +1,10 @@
 // Local Storage Management for SplitMate
 import { toast } from "sonner";
+import { v4 as uuidv4 } from 'uuid';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Capacitor } from '@capacitor/core';
 import { pushUpdateToCloud } from "@/integrations/firebase/sync";
 import { isProUserCached, requestProUpgrade } from "@/lib/proAccess";
-import {
-  inferDirection,
-  extractCounterparty,
-  getTransactionCategory,
-  getTransactionTitle,
-} from './smsParser';
 
 
 export interface PersonalExpense {
@@ -19,10 +16,11 @@ export interface PersonalExpense {
   createdAt: string;
   accountId?: string;
   isIncome?: boolean;
-  source?: 'manual' | 'sms';
-  smsExternalId?: string;
   isMirror?: boolean;
   mirrorFromId?: string;
+  attachmentId?: string;
+  source?: string;
+  smsExternalId?: string;
 }
 
 export interface SharedExpense {
@@ -43,24 +41,10 @@ export interface SharedExpense {
   createdByMe?: boolean; // Explicitly marks if created on this device
   splitParticipants?: string[]; // Everyone involved in the split
   accountId?: string;
+  attachmentId?: string;
 }
 
-export type SmsTargetTab = 'personal' | 'split' | 'group';
 
-export interface SmsTransactionCandidate {
-  id: string;
-  externalId: string;
-  sourceAddress: string;
-  body: string;
-  amount: number;
-  date: string;
-  reason: string;
-  name: string;
-  targetTab?: SmsTargetTab;
-  targetPersonName?: string;
-  targetGroupId?: string;
-  createdAt: string;
-}
 
 export type FinancialAccountType = 'savings' | 'bank' | 'credit-card' | 'cash' | 'wallet' | 'other';
 
@@ -199,6 +183,7 @@ export const STORAGE_KEYS = {
   ONBOARDING_DONE: 'splitmate_onboarding_done',
   CURRENCY: 'splitmate_currency',
   ACCOUNT_PROFILE: 'splitmate_account_profile',
+  AUTO_BACKUP_PRO_REMOVED_AT: 'splitmate_auto_backup_pro_removed_at',
   QUICK_NOTES: 'splitmate_quick_notes',
   TRIP_PLANS: 'splitmate_trip_plans',
   TRIP_HISTORY: 'splitmate_trip_history',
@@ -216,15 +201,17 @@ export const STORAGE_KEYS = {
   LAST_ACTIVE_TAB: 'splitmate_last_active_tab',
   FRIEND_GROUPS: 'splitmate_friend_groups',
   ACCOUNTS: 'splitmate_accounts',
-  SMS_TRANSACTIONS: 'splitmate_sms_transactions',
+  RECURRING_PAYMENTS: 'splitmate_recurring_payments',
+
   ADS_ENABLED: 'splitmate_ads_enabled',
 };
 
 export const FREE_LIMITS = {
   MAX_PERSONS: 3,
   MAX_SHARED_GROUPS: 1,
-  MAX_TRANSACTIONS: 8,
-  MAX_ACCOUNTS: 3,
+
+  MAX_ACCOUNTS: 1,
+  MAX_RECURRING_PAYMENTS: 1,
   MAX_LINKS: 4,
   MAX_LINK_GROUPS: 1,
   MAX_GOALS: 1,
@@ -269,27 +256,6 @@ function getUniqueCollaboratorEmails(): string[] {
 }
 
 function canAddTransaction(isMirror = false): boolean {
-  if (isProUserCached()) return true;
-  if (isMirror) return true;
-
-  const todayKey = toLocalDayKey(new Date().toISOString());
-  const personalCountToday = getPersonalExpenses().filter((item) => {
-    if (item.isMirror) return false;
-    return toLocalDayKey(item.createdAt || item.date) === todayKey;
-  }).length;
-  const sharedCountToday = getSharedExpenses().filter((item) => {
-    return toLocalDayKey(item.createdAt || item.date) === todayKey;
-  }).length;
-  const totalToday = personalCountToday + sharedCountToday;
-
-  if (totalToday >= FREE_LIMITS.MAX_TRANSACTIONS) {
-    requestProUpgrade(
-      'transactions',
-      'Free users can add up to 8 transactions per day. Upgrade to Pro for unlimited history.',
-    );
-    return false;
-  }
-
   return true;
 }
 
@@ -544,6 +510,7 @@ export interface LoanItem {
   closedAt?: string;
   // Legacy field retained for compatibility with old stored data.
   personName?: string;
+  accountId?: string;
   createdAt: string;
 }
 
@@ -553,12 +520,15 @@ export interface LoanTransaction {
   amount: number;
   createdAt: string;
   note?: string;
+  accountId?: string;
 }
 
 export interface GoalTransaction {
   id: string;
   amount: number;
   createdAt: string;
+  fromAccountId?: string;
+  toAccountId?: string;
 }
 
 export interface GoalItem {
@@ -566,13 +536,14 @@ export interface GoalItem {
   name: string;
   targetAmount: number;
   expectedDate: string;
-  locked: boolean;
+  locked?: boolean;
   pin?: string;
+  targetAccountId?: string;
   transactions: GoalTransaction[];
   createdAt: string;
 }
 
-export type SubscriptionCycle = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'lifetime';
+export type SubscriptionCycle = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'lifetime';
 
 export interface PersonProfile {
   name: string;
@@ -595,6 +566,7 @@ export interface PendingSyncUpdate {
   type: 'added' | 'deleted' | 'settled' | 'updated';
   reason?: string;
   timestamp: string;
+  [key: string]: unknown;
 }
 
 export interface RejectionUpdate {
@@ -602,6 +574,7 @@ export interface RejectionUpdate {
   recipientName: string; // The name I have for them
   senderEmail: string; // My email (sending rejection back)
   reason: string;
+  expense?: SharedExpense;
   originalExpense: SharedExpense;
   timestamp: string;
 }
@@ -614,7 +587,32 @@ export interface SubscriptionItem {
   logoUrl?: string;
   startDate?: string;
   paused?: boolean;
+  accountId?: string;
   createdAt: string;
+}
+
+export type RecurringFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
+export type RecurringType = 'income' | 'expense';
+
+export interface RecurringPayment {
+  id: string;
+  name: string;
+  amount: number;
+  type: RecurringType;
+  frequency: RecurringFrequency;
+  /** Day of month (1–31) for monthly/yearly; day of week (0=Sun…6=Sat) for weekly; ignored for daily */
+  dayOfPeriod: number;
+  /** For yearly: which month (1–12) */
+  monthOfYear?: number;
+  accountId: string;
+  category: string;
+  enabled: boolean;
+  /** ISO date string of the last time this payment was auto-posted */
+  lastProcessedDate?: string;
+  createdAt: string;
+  recurrenceMode?: 'infinite' | 'once' | 'custom';
+  totalOccurrences?: number;
+  timesProcessed?: number;
 }
 
 export interface BudgetPlannerConfig {
@@ -648,7 +646,7 @@ export interface HomeTabSettings {
   selectedCategoryNames: string[];
 }
 
-const DEFAULT_HOME_SETTINGS: HomeTabSettings = {
+export const DEFAULT_HOME_SETTINGS: HomeTabSettings = {
   showStats: true,
   showSpendingBreakdown: true,
   showTopBalances: true,
@@ -678,7 +676,32 @@ const DEFAULT_ACCOUNT_PROFILE: AccountProfile = {
   nightlyBackupEnabled: false,
 };
 
-export function getAccountProfile(): AccountProfile {
+export const AUTO_BACKUP_GRACE_PERIOD_MS = 12 * 60 * 60 * 1000; // 12 hours
+
+export function getAutoBackupProRemovedAt(): number | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.AUTO_BACKUP_PRO_REMOVED_AT);
+    if (!stored) return null;
+    const val = parseInt(stored, 10);
+    return isNaN(val) ? null : val;
+  } catch {
+    return null;
+  }
+}
+
+export function isAutoBackupGracePeriodActive(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (isProUserCached()) return true;
+
+  const removedAt = getAutoBackupProRemovedAt();
+  if (!removedAt) return false;
+
+  const elapsed = Date.now() - removedAt;
+  return elapsed < AUTO_BACKUP_GRACE_PERIOD_MS;
+}
+
+function getRawAccountProfile(): AccountProfile {
   try {
     const stored = localStorage.getItem(STORAGE_KEYS.ACCOUNT_PROFILE);
     if (!stored) return { ...DEFAULT_ACCOUNT_PROFILE };
@@ -695,13 +718,96 @@ export function getAccountProfile(): AccountProfile {
   }
 }
 
-export function saveAccountProfile(profile: AccountProfile): boolean {
-  if (!isProUserCached() && profile.nightlyBackupEnabled) {
-    requestProUpgrade(
-      'auto-backup',
-      'Auto cloud backup is a Pro feature. Upgrade to Pro to enable it.',
-    );
+/**
+ * Checks and updates auto backup status during the 12-hour grace period when PRO is removed.
+ * Returns true if auto backup is still active/allowed, or false if it has been turned off.
+ */
+export function checkAndUpdateAutoBackupStatus(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  const isPro = isProUserCached();
+  const profile = getRawAccountProfile();
+
+  if (isPro) {
+    // Pro is active or has returned: clear any removal timestamp
+    // ("also if pro is back then don't turn off, wait after 12 hours")
+    if (localStorage.getItem(STORAGE_KEYS.AUTO_BACKUP_PRO_REMOVED_AT)) {
+      localStorage.removeItem(STORAGE_KEYS.AUTO_BACKUP_PRO_REMOVED_AT);
+    }
+    return profile.nightlyBackupEnabled ?? false;
+  }
+
+  // User is not Pro
+  if (!profile.nightlyBackupEnabled) {
+    // Auto backup is already off, clean up timestamp
+    if (localStorage.getItem(STORAGE_KEYS.AUTO_BACKUP_PRO_REMOVED_AT)) {
+      localStorage.removeItem(STORAGE_KEYS.AUTO_BACKUP_PRO_REMOVED_AT);
+    }
     return false;
+  }
+
+  // Auto backup is enabled, but user is not Pro
+  const removedAt = getAutoBackupProRemovedAt();
+  const now = Date.now();
+
+  if (removedAt === null) {
+    // PRO was just removed: record timestamp and begin 12-hour grace period
+    localStorage.setItem(STORAGE_KEYS.AUTO_BACKUP_PRO_REMOVED_AT, String(now));
+    return true; // Still active during grace period
+  }
+
+  const elapsed = now - removedAt;
+  if (elapsed < AUTO_BACKUP_GRACE_PERIOD_MS) {
+    // Within 12 hours: do not turn off yet
+    return true;
+  }
+
+  // 12 hours have passed since PRO was removed: turn off auto backup
+  const updatedProfile: AccountProfile = {
+    ...profile,
+    nightlyBackupEnabled: false,
+  };
+  localStorage.setItem(STORAGE_KEYS.ACCOUNT_PROFILE, JSON.stringify(updatedProfile));
+  localStorage.removeItem(STORAGE_KEYS.AUTO_BACKUP_PRO_REMOVED_AT);
+
+  window.dispatchEvent(new Event('splitmate_account_changed'));
+  console.log('[AutoBackup] 12 hours elapsed since PRO was removed. Auto backup turned off.');
+  return false;
+}
+
+export function getAccountProfile(): AccountProfile {
+  const profile = getRawAccountProfile();
+  if (!isProUserCached() && profile.nightlyBackupEnabled) {
+    const isStillActive = checkAndUpdateAutoBackupStatus();
+    if (!isStillActive) {
+      profile.nightlyBackupEnabled = false;
+    }
+  }
+  return profile;
+}
+
+export function saveAccountProfile(profile: AccountProfile): boolean {
+  const isPro = isProUserCached();
+  const existingProfile = getRawAccountProfile();
+
+  let effectiveNightlyBackup = profile.nightlyBackupEnabled ?? DEFAULT_ACCOUNT_PROFILE.nightlyBackupEnabled;
+
+  if (!isPro && effectiveNightlyBackup) {
+    const isGracePeriodActive = checkAndUpdateAutoBackupStatus();
+
+    if (!isGracePeriodActive) {
+      // 12-hour grace period expired (or user never had PRO)
+      effectiveNightlyBackup = false;
+
+      // Only notify if user actively tried to toggle it ON from false -> true
+      if (!existingProfile.nightlyBackupEnabled) {
+        requestProUpgrade(
+          'auto-backup',
+          'Auto cloud backup is a Pro feature. Upgrade to Pro to enable it.',
+        );
+        return false;
+      }
+    }
   }
 
   const normalizedProfile: AccountProfile = {
@@ -709,7 +815,7 @@ export function saveAccountProfile(profile: AccountProfile): boolean {
     email: profile.email?.trim() || '',
     bio: profile.bio?.trim() || '',
     avatar: typeof profile.avatar === 'string' ? profile.avatar : undefined,
-    nightlyBackupEnabled: profile.nightlyBackupEnabled ?? DEFAULT_ACCOUNT_PROFILE.nightlyBackupEnabled,
+    nightlyBackupEnabled: effectiveNightlyBackup,
   };
 
   localStorage.setItem(STORAGE_KEYS.ACCOUNT_PROFILE, JSON.stringify(normalizedProfile));
@@ -848,146 +954,10 @@ export function setOnboardingDone(): void {
 }
 
 export function isDemoMode(): boolean {
-  const email = (getAccountProfile().email || '').trim().toLowerCase();
-  if (!email) return true; // Show demo transactions if offline or not logged in
-  const demoKeywords = ['google', 'play', 'test', 'review', 'reviewer', 'android', 'feedback', 'developer', 'support', 'buddy', 'share'];
-  return (
-    email === 'sandeshkullolli4@gmail.com' ||
-    email === 'try.sandeshk@gmail.com' ||
-    demoKeywords.some((keyword) => email.includes(keyword))
-  );
+  return false;
 }
 
-export const DEMO_SMS_TRANSACTIONS: SmsTransactionCandidate[] = [
-  {
-    id: 'demo-sms-1',
-    externalId: 'demo-sms-1',
-    sourceAddress: 'VK-HDFCBK',
-    body: 'Rs.420 paid to zomato@oksbi via UPI Ref 123456',
-    amount: 420,
-    date: new Date().toISOString().split('T')[0],
-    reason: 'Zomato order via UPI',
-    name: 'HDFCBK',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'demo-sms-2',
-    externalId: 'demo-sms-2',
-    sourceAddress: 'AX-ICICIB',
-    body: 'Rs.850 credited from rahul@ybl via UPI Ref 888100',
-    amount: 850,
-    date: new Date().toISOString().split('T')[0],
-    reason: 'UPI credit from Rahul',
-    name: 'ICICIB',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'demo-sms-3',
-    externalId: 'demo-sms-3',
-    sourceAddress: 'AD-SBIUPI',
-    body: 'Paid Rs.299 to uber@paytm using UPI txn 998812',
-    amount: 299,
-    date: new Date().toISOString().split('T')[0],
-    reason: 'Uber ride payment',
-    name: 'SBIUPI',
-    createdAt: new Date().toISOString(),
-  },
-];
 
-function getAutoApprovedPersonalExpense(item: SmsTransactionCandidate) {
-  const direction = inferDirection(item.body);
-  const counterparty = extractCounterparty(item.body, direction, item.sourceAddress, item.name);
-  const category = direction === 'credit' ? 'Income' : getTransactionCategory(item.body, counterparty, item.reason, item.name, item.sourceAddress);
-
-  return {
-    reason: getTransactionTitle(item.body, direction, counterparty),
-    category,
-    isIncome: direction === 'credit',
-  };
-}
-
-export function syncDemoTransactions(autoApprove: boolean): void {
-  if (typeof window === 'undefined') return;
-  if (!isDemoMode()) return;
-
-  const processedIds: string[] = (() => {
-    try {
-      const stored = localStorage.getItem('splitmate_processed_demo_sms_ids');
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  })();
-
-  const activeDemoItems = DEMO_SMS_TRANSACTIONS.filter(item => !processedIds.includes(item.id));
-
-  const personalExpenses = getPersonalExpenses();
-  const smsTransactions = getSmsTransactions();
-
-  let personalChanged = false;
-  let smsChanged = false;
-
-  if (autoApprove) {
-    // 1. Ensure unprocessed demo transactions are in Personal Expenses
-    activeDemoItems.forEach(item => {
-      const existsInPersonal = personalExpenses.some(e => e.id === item.id || e.smsExternalId === item.externalId);
-      if (!existsInPersonal) {
-        const approved = getAutoApprovedPersonalExpense(item);
-        personalExpenses.push({
-          id: item.id,
-          amount: item.amount,
-          reason: approved.reason,
-          category: approved.category,
-          date: item.date,
-          createdAt: item.createdAt || new Date().toISOString(),
-          isIncome: approved.isIncome,
-          source: 'sms',
-          smsExternalId: item.externalId,
-          accountId: getDefaultAccountId() || getAccounts()[0]?.id || undefined,
-        });
-        personalChanged = true;
-      }
-    });
-
-    // 2. Ensure unprocessed demo transactions are NOT in pending SMS transactions
-    const beforeSmsLen = smsTransactions.length;
-    const filteredSms = smsTransactions.filter(item => !item.id.startsWith('demo-sms-'));
-    if (filteredSms.length !== beforeSmsLen) {
-      smsTransactions.length = 0;
-      smsTransactions.push(...filteredSms);
-      smsChanged = true;
-    }
-  } else {
-    // 1. Ensure unprocessed demo transactions are NOT in Personal Expenses
-    const beforePersonalLen = personalExpenses.length;
-    const filteredPersonal = personalExpenses.filter(e => !(e.id.startsWith('demo-sms-') || (e.smsExternalId && e.smsExternalId.startsWith('demo-sms-'))));
-    if (filteredPersonal.length !== beforePersonalLen) {
-      personalExpenses.length = 0;
-      personalExpenses.push(...filteredPersonal);
-      personalChanged = true;
-    }
-
-    // 2. Ensure unprocessed demo transactions are in pending SMS transactions
-    activeDemoItems.forEach(item => {
-      const existsInSms = smsTransactions.some(p => p.id === item.id);
-      if (!existsInSms) {
-        smsTransactions.push(item);
-        smsChanged = true;
-      }
-    });
-  }
-
-  // Save changes and dispatch events
-  if (personalChanged) {
-    localStorage.setItem(STORAGE_KEYS.PERSONAL_EXPENSES, JSON.stringify(personalExpenses));
-    window.dispatchEvent(new Event('splitmate_data_changed'));
-  }
-  if (smsChanged) {
-    localStorage.setItem(STORAGE_KEYS.SMS_TRANSACTIONS, JSON.stringify(smsTransactions));
-    window.dispatchEvent(new Event('splitmate_sms_transactions_changed'));
-    window.dispatchEvent(new Event('splitmate_data_changed'));
-  }
-}
 
 
 
@@ -1657,6 +1627,28 @@ export function updateSharedExpenseReason(id: string, reason: string): void {
       localStorage.setItem(STORAGE_KEYS.PERSONAL_EXPENSES, JSON.stringify(pExpenses));
     }
 
+    window.dispatchEvent(new Event('splitmate_data_changed'));
+  }
+}
+
+export function updateSharedExpenseAttachment(id: string, attachmentId?: string): void {
+  const expenses = getSharedExpenses();
+  const expense = expenses.find(e => e.id === id);
+  if (expense) {
+    expense.attachmentId = attachmentId;
+    localStorage.setItem(STORAGE_KEYS.SHARED_EXPENSES, JSON.stringify(expenses));
+    
+    // SYNC Personal Mirror
+    const pExpenses = getPersonalExpenses();
+    const mirror = pExpenses.find(pe => pe.mirrorFromId === id);
+    if (mirror) {
+      mirror.attachmentId = attachmentId;
+      localStorage.setItem(STORAGE_KEYS.PERSONAL_EXPENSES, JSON.stringify(pExpenses));
+    }
+
+    // Informing peers about attachment change is complex without rewriting sync payload, 
+    // but the local reference will be updated successfully.
+    
     window.dispatchEvent(new Event('splitmate_data_changed'));
   }
 }
@@ -2492,7 +2484,7 @@ export function saveAccount(account: FinancialAccount): boolean {
   if (index < 0 && !isProUserCached() && accounts.length >= FREE_LIMITS.MAX_ACCOUNTS) {
     requestProUpgrade(
       'accounts',
-      'Free users can create up to 3 accounts. Upgrade to Pro to add more accounts.',
+      'Free users can create up to 1 account. Upgrade to Pro to add unlimited accounts.',
     );
     return false;
   }
@@ -2519,6 +2511,10 @@ export function saveAccount(account: FinancialAccount): boolean {
 export function deleteAccount(id: string): void {
   const accounts = getAccounts().filter((account) => account.id !== id);
   saveAccounts(accounts);
+
+  // Remove all personal expenses associated with this account
+  const linkedExpenses = getPersonalExpenses().filter(e => e.accountId === id);
+  linkedExpenses.forEach(e => deletePersonalExpense(e.id));
 }
 
 export function getAccountSummaries(): FinancialAccountSummary[] {
@@ -2530,7 +2526,7 @@ export function getAccountSummaries(): FinancialAccountSummary[] {
 
   return accounts.map((account) => {
     const relatedPersonal = personal.filter(
-      (entry) => entry.accountId === account.id && !entry.isMirror,
+      (entry) => entry.accountId === account.id,
     );
 
     const income = relatedPersonal
@@ -2545,7 +2541,15 @@ export function getAccountSummaries(): FinancialAccountSummary[] {
       .filter((entry) => entry.accountId === account.id && entry.paidBy === 'me')
       .reduce((sum, entry) => sum + entry.amount, 0);
 
-    const available = normalizeMoney(account.budget + income - personalSpent - sharedSpent);
+    const initialBalanceTx = relatedPersonal.find(
+      (entry) => !!entry.isIncome && (entry.reason.toLowerCase().includes('initial balance') || entry.amount === account.budget)
+    );
+
+    const effectiveBudget = (initialBalanceTx && (account.budget === initialBalanceTx.amount || account.budget === 0))
+      ? 0
+      : account.budget;
+
+    const available = normalizeMoney(effectiveBudget + income - personalSpent - sharedSpent);
 
     return {
       ...account,
@@ -2557,46 +2561,7 @@ export function getAccountSummaries(): FinancialAccountSummary[] {
   });
 }
 
-export function getSmsTransactions(): SmsTransactionCandidate[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.SMS_TRANSACTIONS);
-    const parsed = raw ? (JSON.parse(raw) as SmsTransactionCandidate[]) : [];
-    if (!Array.isArray(parsed)) return [];
-    return parsed.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  } catch {
-    return [];
-  }
-}
 
-export function saveSmsTransactions(items: SmsTransactionCandidate[]): void {
-  localStorage.setItem(STORAGE_KEYS.SMS_TRANSACTIONS, JSON.stringify(items));
-  window.dispatchEvent(new Event('splitmate_sms_transactions_changed'));
-  window.dispatchEvent(new Event('splitmate_data_changed'));
-}
-
-export function upsertSmsTransactions(items: SmsTransactionCandidate[]): void {
-  if (items.length === 0) return;
-  const existing = getSmsTransactions();
-  const byExternal = new Map(existing.map((item) => [item.externalId, item]));
-
-  items.forEach((item) => {
-    if (!item.externalId) return;
-    const prev = byExternal.get(item.externalId);
-    byExternal.set(item.externalId, prev ? { ...prev, ...item } : item);
-  });
-
-  saveSmsTransactions(Array.from(byExternal.values()));
-}
-
-export function updateSmsTransaction(id: string, updates: Partial<SmsTransactionCandidate>): void {
-  const items = getSmsTransactions().map((item) => (item.id === id ? { ...item, ...updates } : item));
-  saveSmsTransactions(items);
-}
-
-export function removeSmsTransaction(id: string): void {
-  const items = getSmsTransactions().filter((item) => item.id !== id);
-  saveSmsTransactions(items);
-}
 
 const DEFAULT_BUDGET_PLANNER_CONFIG: BudgetPlannerConfig = {
   monthlyIncome: 0,
@@ -3286,6 +3251,7 @@ const DEFAULT_TABS: TabConfig[] = [
   { id: 'goals', visible: false },
   { id: 'subscriptions', visible: false },
   { id: 'converter', visible: false },
+  { id: 'recurring', visible: false },
   { id: 'more', visible: true },
 ];
 
@@ -3436,10 +3402,11 @@ export function setLastActiveTab(tabId: string): void {
 const SWIPE_NAV_KEY = 'splitmate_swipe_nav_enabled';
 const LIQUID_GLASS_KEY = 'splitmate_liquid_glass_enabled';
 const PAGE_SLIDE_KEY = 'splitmate_page_slide_enabled';
+const SHOW_TAB_NAMES_KEY = 'splitmate_show_tab_names_enabled';
 
 export function getSwipeNavEnabled(): boolean {
   const res = localStorage.getItem(SWIPE_NAV_KEY);
-  return res === null ? true : res === 'true';
+  return res === null ? false : res === 'true';
 }
 
 export function setSwipeNavEnabled(enabled: boolean): void {
@@ -3449,7 +3416,7 @@ export function setSwipeNavEnabled(enabled: boolean): void {
 
 export const getLiquidGlassEnabled = (): boolean => {
   const res = localStorage.getItem(LIQUID_GLASS_KEY);
-  return res === null ? true : res === 'true';
+  return res === null ? false : res === 'true';
 };
 
 export const setLiquidGlassEnabled = (enabled: boolean) => {
@@ -3459,12 +3426,22 @@ export const setLiquidGlassEnabled = (enabled: boolean) => {
 
 export function getPageSlideEnabled(): boolean {
   const res = localStorage.getItem(PAGE_SLIDE_KEY);
-  return res === null ? true : res === 'true';
+  return res === null ? false : res === 'true';
 }
 
 export function setPageSlideEnabled(enabled: boolean): void {
   localStorage.setItem(PAGE_SLIDE_KEY, enabled ? 'true' : 'false');
   window.dispatchEvent(new Event('splitmate_page_slide_changed'));
+}
+
+export function getShowTabNamesEnabled(): boolean {
+  const res = localStorage.getItem(SHOW_TAB_NAMES_KEY);
+  return res === null ? true : res === 'true'; // Default is true
+}
+
+export function setShowTabNamesEnabled(enabled: boolean): void {
+  localStorage.setItem(SHOW_TAB_NAMES_KEY, enabled ? 'true' : 'false');
+  window.dispatchEvent(new CustomEvent('splitmate_show_tab_names_changed', { detail: enabled }));
 }
 
 export function generateId(): string {
@@ -3871,4 +3848,423 @@ export function applySyncUpdate(update: PendingSyncUpdate): void {
   } catch (err) {
     console.error("Failed to apply cloud update on demand", err);
   }
+}
+
+// ----------------------------------------------------------------------
+// Image Attachments for Transactions
+// ----------------------------------------------------------------------
+
+export const ATTACHMENT_STORAGE_PREFIX = 'splitmate_attachment_';
+
+/**
+ * Saves a proof/bill image attachment.
+ * Uses Capacitor Filesystem with UTF-8 encoding on Native (Android/iOS)
+ * and localStorage with graceful fallbacks.
+ * Can be referenced by either the returned attachment ID or transaction ID.
+ */
+export async function saveTransactionAttachment(dataUrl: string, transactionId?: string): Promise<string> {
+  const id = generateId();
+  if (!dataUrl) return id;
+
+  try {
+    if (Capacitor.isNativePlatform()) {
+      await Filesystem.writeFile({
+        path: `${ATTACHMENT_STORAGE_PREFIX}${id}.txt`,
+        data: dataUrl,
+        directory: Directory.Data,
+        encoding: Encoding.UTF8,
+        recursive: true,
+      });
+
+      if (transactionId) {
+        await Filesystem.writeFile({
+          path: `${ATTACHMENT_STORAGE_PREFIX}tx_${transactionId}.txt`,
+          data: dataUrl,
+          directory: Directory.Data,
+          encoding: Encoding.UTF8,
+          recursive: true,
+        }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.warn('[Storage] Native filesystem write warning:', err);
+  }
+
+  try {
+    localStorage.setItem(`${ATTACHMENT_STORAGE_PREFIX}${id}`, dataUrl);
+    if (transactionId) {
+      localStorage.setItem(`${ATTACHMENT_STORAGE_PREFIX}tx_${transactionId}`, dataUrl);
+    }
+  } catch (lsErr) {
+    console.warn('[Storage] LocalStorage cache warning for attachment:', lsErr);
+  }
+
+  return id;
+}
+
+export async function getTransactionAttachment(id: string): Promise<string | null> {
+  if (!id) return null;
+
+  // 1. Try reading from Native Filesystem first
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const result = await Filesystem.readFile({
+        path: `${ATTACHMENT_STORAGE_PREFIX}${id}.txt`,
+        directory: Directory.Data,
+        encoding: Encoding.UTF8,
+      });
+      if (result?.data && typeof result.data === 'string' && result.data.length > 0) {
+        return result.data;
+      }
+    } catch {
+      try {
+        const txResult = await Filesystem.readFile({
+          path: `${ATTACHMENT_STORAGE_PREFIX}tx_${id}.txt`,
+          directory: Directory.Data,
+          encoding: Encoding.UTF8,
+        });
+        if (txResult?.data && typeof txResult.data === 'string' && txResult.data.length > 0) {
+          return txResult.data;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  // 2. Fallback to localStorage
+  try {
+    const fromLs = localStorage.getItem(`${ATTACHMENT_STORAGE_PREFIX}${id}`);
+    if (fromLs) return fromLs;
+
+    const fromTxLs = localStorage.getItem(`${ATTACHMENT_STORAGE_PREFIX}tx_${id}`);
+    if (fromTxLs) return fromTxLs;
+  } catch {
+    /* ignore */
+  }
+
+  return null;
+}
+
+export async function deleteTransactionAttachment(id: string): Promise<void> {
+  if (!id) return;
+  try {
+    if (Capacitor.isNativePlatform()) {
+      await Filesystem.deleteFile({
+        path: `${ATTACHMENT_STORAGE_PREFIX}${id}.txt`,
+        directory: Directory.Data,
+      }).catch(() => {});
+      await Filesystem.deleteFile({
+        path: `${ATTACHMENT_STORAGE_PREFIX}tx_${id}.txt`,
+        directory: Directory.Data,
+      }).catch(() => {});
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    localStorage.removeItem(`${ATTACHMENT_STORAGE_PREFIX}${id}`);
+    localStorage.removeItem(`${ATTACHMENT_STORAGE_PREFIX}tx_${id}`);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function resizeImageToDataUrl(file: File, maxWidth = 800, maxHeight = 800, quality = 0.7): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width *= ratio;
+          height *= ratio;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject(new Error('Canvas ctx null'));
+
+        ctx.drawImage(img, 0, 0, width, height);
+        // Use webp or jpeg for better compression
+        const dataUrl = canvas.toDataURL('image/webp', quality) || canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.onerror = reject;
+      if (e.target?.result) img.src = e.target.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ─── Recurring Payments ────────────────────────────────────────────────────
+
+export function getRecurringPayments(): RecurringPayment[] {
+  const stored = localStorage.getItem(STORAGE_KEYS.RECURRING_PAYMENTS);
+  return stored ? JSON.parse(stored) : [];
+}
+
+function saveRecurringPayments(payments: RecurringPayment[]): void {
+  localStorage.setItem(STORAGE_KEYS.RECURRING_PAYMENTS, JSON.stringify(payments));
+  window.dispatchEvent(new Event('splitmate_recurring_changed'));
+}
+
+export function saveRecurringPayment(payment: RecurringPayment): boolean {
+  const payments = getRecurringPayments();
+  const idx = payments.findIndex((p) => p.id === payment.id);
+
+  if (idx < 0 && !isProUserCached() && payments.length >= FREE_LIMITS.MAX_RECURRING_PAYMENTS) {
+    requestProUpgrade(
+      'recurring',
+      'Free users can add up to 1 recurring payment. Upgrade to Pro for unlimited recurring payments.',
+    );
+    return false;
+  }
+
+  if (idx >= 0) {
+    payments[idx] = payment;
+  } else {
+    payments.unshift(payment);
+  }
+  saveRecurringPayments(payments);
+  return true;
+}
+
+export function deleteRecurringPayment(id: string): void {
+  const payments = getRecurringPayments().filter((p) => p.id !== id);
+  saveRecurringPayments(payments);
+}
+
+/**
+ * Checks all enabled recurring payments and posts any that are due today
+ * (haven't been processed in the current period yet) as PersonalExpense entries.
+ */
+export function processRecurringPayments(): void {
+  const payments = getRecurringPayments();
+  if (payments.length === 0) return;
+
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  let anyPosted = false;
+
+  const updated = payments.map((payment) => {
+    if (!payment.enabled) return payment;
+
+    const lastDate = payment.lastProcessedDate ? new Date(payment.lastProcessedDate) : null;
+
+    let isDue = false;
+
+    if (payment.frequency === 'daily') {
+      isDue = !lastDate || lastDate.toISOString().slice(0, 10) < todayStr;
+    } else if (payment.frequency === 'weekly') {
+      const todayDow = now.getDay(); // 0 = Sun
+      isDue =
+        todayDow === payment.dayOfPeriod &&
+        (!lastDate || lastDate.toISOString().slice(0, 10) < todayStr);
+    } else if (payment.frequency === 'monthly') {
+      const todayDom = now.getDate();
+      const lastMonthKey = lastDate
+        ? `${lastDate.getFullYear()}-${String(lastDate.getMonth() + 1).padStart(2, '0')}`
+        : '';
+      const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      isDue = todayDom >= payment.dayOfPeriod && lastMonthKey < thisMonthKey;
+    } else if (payment.frequency === 'yearly') {
+      const todayDom = now.getDate();
+      const todayMonth = now.getMonth() + 1;
+      const lastYearKey = lastDate ? String(lastDate.getFullYear()) : '';
+      const thisYearKey = String(now.getFullYear());
+      isDue =
+        todayMonth === (payment.monthOfYear ?? 1) &&
+        todayDom >= payment.dayOfPeriod &&
+        lastYearKey < thisYearKey;
+    }
+
+    if (!isDue) return payment;
+
+    // Determine which account to use
+    const accountId = payment.accountId || getDefaultAccountId() || '';
+
+    // Build the PersonalExpense
+    const expense: PersonalExpense = {
+      id: generateId(),
+      amount: payment.amount,
+      reason: payment.name,
+      category: payment.category || 'General',
+      date: todayStr,
+      createdAt: new Date().toISOString(),
+      accountId,
+      isIncome: payment.type === 'income',
+    };
+
+    savePersonalExpense(expense);
+    anyPosted = true;
+
+    const nextTimesProcessed = (payment.timesProcessed ?? 0) + 1;
+    let nextEnabled: boolean = payment.enabled;
+
+    if (payment.recurrenceMode === 'once') {
+      nextEnabled = false;
+    } else if (
+      payment.recurrenceMode === 'custom' &&
+      payment.totalOccurrences &&
+      nextTimesProcessed >= payment.totalOccurrences
+    ) {
+      nextEnabled = false;
+    }
+
+    return {
+      ...payment,
+      lastProcessedDate: todayStr,
+      timesProcessed: nextTimesProcessed,
+      enabled: nextEnabled,
+    };
+  });
+
+  if (anyPosted) {
+    saveRecurringPayments(updated);
+  }
+}
+
+/**
+ * Processes billing for subscriptions:
+ * 1. Does not subtract on the day subscription is created if due date is in the future.
+ * 2. Subtracts on the due date (when current date reaches or passes the billing date).
+ * 3. Recurs each month (or cycle) on the same date until removed or paused.
+ * 4. Cleans up any premature future-dated mirror expenses that were created ahead of time.
+ */
+export function processSubscriptionBilling(): void {
+  const subs = getSubscriptions();
+  if (subs.length === 0) return;
+
+  const now = new Date();
+  const todayY = now.getFullYear();
+  const todayM = now.getMonth();
+  const todayD = now.getDate();
+  const todayDate = new Date(todayY, todayM, todayD, 23, 59, 59, 999);
+  const todayStr = `${todayY}-${String(todayM + 1).padStart(2, '0')}-${String(todayD).padStart(2, '0')}`;
+
+  let pExpenses = getPersonalExpenses();
+  let modified = false;
+
+  // Step 1: Clean up any premature future-dated subscription expenses
+  const activeSubIds = new Set(subs.map(s => s.id));
+  const validExpenses = pExpenses.filter(e => {
+    if (e.isMirror && e.mirrorFromId && activeSubIds.has(e.mirrorFromId) && e.date > todayStr) {
+      modified = true;
+      return false;
+    }
+    return true;
+  });
+
+  if (modified) {
+    pExpenses = validExpenses;
+  }
+
+  // Step 2: Post any due billing dates that have arrived and not yet billed
+  let anyPosted = false;
+
+  for (const sub of subs) {
+    if (sub.paused || sub.amount <= 0) continue;
+
+    const startDateStr = sub.startDate || sub.createdAt.slice(0, 10);
+    const parts = startDateStr.split('T')[0].split('-').map(Number);
+    if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) continue;
+
+    let cycleDate = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+
+    // If initial start date is in the future, it cannot be billed yet
+    if (cycleDate > todayDate) continue;
+
+    // Advance through each billing date up to today
+    let safetyCounter = 0;
+    while (cycleDate <= todayDate && safetyCounter < 500) {
+      safetyCounter++;
+      const billingDateStr = `${cycleDate.getFullYear()}-${String(cycleDate.getMonth() + 1).padStart(2, '0')}-${String(cycleDate.getDate()).padStart(2, '0')}`;
+
+      // Check if an expense already exists for this subscription on this billing date
+      const alreadyBilled = pExpenses.some(
+        e => e.isMirror && e.mirrorFromId === sub.id && e.date === billingDateStr
+      );
+
+      if (!alreadyBilled) {
+        const expense: PersonalExpense = {
+          id: generateId(),
+          amount: sub.amount,
+          reason: `Subscription: ${sub.appName.trim()}`,
+          category: 'Bills & Utilities',
+          date: billingDateStr,
+          createdAt: new Date().toISOString(),
+          isIncome: false,
+          isMirror: true,
+          mirrorFromId: sub.id,
+          accountId: sub.accountId || getDefaultAccountId() || undefined,
+        };
+        pExpenses.push(expense);
+        anyPosted = true;
+      }
+
+      if (sub.cycle === 'lifetime') break;
+
+      // Calculate next cycle date
+      const next = new Date(cycleDate);
+      if (sub.cycle === 'daily') {
+        next.setDate(next.getDate() + 1);
+      } else if (sub.cycle === 'weekly') {
+        next.setDate(next.getDate() + 7);
+      } else if (sub.cycle === 'monthly') {
+        const targetDay = parts[2];
+        next.setMonth(next.getMonth() + 1);
+        const daysInMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+        next.setDate(Math.min(targetDay, daysInMonth));
+      } else if (sub.cycle === 'quarterly') {
+        const targetDay = parts[2];
+        next.setMonth(next.getMonth() + 3);
+        const daysInMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+        next.setDate(Math.min(targetDay, daysInMonth));
+      } else if (sub.cycle === 'yearly') {
+        next.setFullYear(next.getFullYear() + 1);
+      } else {
+        break;
+      }
+
+      cycleDate = next;
+    }
+  }
+
+  if (anyPosted || modified) {
+    localStorage.setItem(STORAGE_KEYS.PERSONAL_EXPENSES, JSON.stringify(pExpenses));
+    window.dispatchEvent(new Event('storage'));
+  }
+}
+
+export function setPendingOpenItem(tab: string, id: string): void {
+  try {
+    sessionStorage.setItem('splitmate_pending_open_item', JSON.stringify({ tab, id, timestamp: Date.now() }));
+    window.dispatchEvent(new CustomEvent('splitmate_open_item', { detail: { tab, id } }));
+  } catch (e) {
+    // ignore
+  }
+}
+
+export function consumePendingOpenItem(tab: string): string | null {
+  try {
+    const raw = sessionStorage.getItem('splitmate_pending_open_item');
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (data.tab === tab) {
+      sessionStorage.removeItem('splitmate_pending_open_item');
+      return data.id || null;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return null;
 }

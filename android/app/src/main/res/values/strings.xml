@@ -5,4 +5,12 @@
     <string name="package_name">com.expensetrack1ux.dev</string>
     <string name="custom_url_scheme">com.expensetrack1ux.dev</string>
     <string name="default_web_client_id">480038500173-dn6fprr6u4ot65ml8cshjtn1sqdq75i9.apps.googleusercontent.com</string>
+
+    <!-- Widget strings -->
+    <string name="widget_total_brief_name">Total Brief</string>
+    <string name="widget_total_brief_desc">Shows your monthly expenses, income, and net balance at a glance.</string>
+    <string name="widget_quick_personal_name">Quick Add Expense</string>
+    <string name="widget_quick_personal_desc">Quickly add a personal expense with one tap.</string>
+    <string name="widget_quick_shared_name">Quick Add Split</string>
+    <string name="widget_quick_shared_desc">Quickly add a shared or split expense with one tap.</string>
 </resources>

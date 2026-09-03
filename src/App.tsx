@@ -7,13 +7,16 @@ import Index from "./pages/Index";
 import PersonDetailsPage from "./pages/PersonDetailsPage";
 import GroupDetailsPage from "./pages/GroupDetailsPage";
 import ProPlanPage from "./pages/ProPlanPage";
+import AdminProUsersPage from "./pages/AdminProUsersPage";
 import NotFound from "./pages/NotFound";
 import { SyncManager } from "@/components/SyncManager";
+import { WidgetSync } from "@/components/WidgetSync";
 import { useCloudSync } from "@/hooks/useCloudSync";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { AdMob } from "@capacitor-community/admob";
 import { Capacitor } from "@capacitor/core";
 import { ProProvider } from "@/providers/ProProvider";
+import { useBilling } from "@/hooks/useBilling";
 import { PRO_LIMIT_BLOCKED_EVENT } from "@/lib/proAccess";
 import { STORAGE_KEYS } from "@/lib/storage";
 
@@ -29,6 +32,17 @@ const AppHooks = () => {
     }
   }, []);
 
+  return null;
+};
+
+/**
+ * Initializes the in-app purchase store at the app root so Google Play re-verification,
+ * silent revalidation and purchase callbacks run on EVERY page — not only when the Pro
+ * upgrade screen is mounted. This is what lets Pro restore/refresh regardless of which
+ * screen the user is on. Store init is de-duped at module level inside useBilling.
+ */
+const BillingInitializer = () => {
+  useBilling();
   return null;
 };
 
@@ -69,7 +83,12 @@ const ProLimitNavigator = () => {
   const location = useLocation();
 
   useEffect(() => {
-    const handler = () => {
+    const handler = (event: Event) => {
+      const customEvent = event as CustomEvent<{ feature?: string; description?: string }>;
+      // Never push to PRO page for auto backup
+      if (customEvent?.detail?.feature === 'auto-backup') {
+        return;
+      }
       if (location.pathname === '/pro') return;
       navigate('/pro');
     };
@@ -83,28 +102,35 @@ const ProLimitNavigator = () => {
   return null;
 };
 
+import { BannedGuard } from "@/components/BannedGuard";
+
 const App = () => {
   return (
     <ProProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <AppHooks />
-          <SyncManager />
-          <Toaster />
-          <Sonner />
-          <AppBootstrap>
-            <BrowserRouter>
-              <ProLimitNavigator />
-              <Routes>
-                <Route path="/" element={<Index />} />
-                <Route path="/home" element={<Index />} />
-                <Route path="/person/:personName" element={<PersonDetailsPage />} />
-                <Route path="/group/:groupId" element={<GroupDetailsPage />} />
-                <Route path="/pro" element={<ProPlanPage />} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </BrowserRouter>
-          </AppBootstrap>
+          <BannedGuard>
+            <AppHooks />
+            <BillingInitializer />
+            <SyncManager />
+            <WidgetSync />
+            <Toaster />
+            <Sonner />
+            <AppBootstrap>
+              <BrowserRouter>
+                <ProLimitNavigator />
+                <Routes>
+                  <Route path="/" element={<Index />} />
+                  <Route path="/home" element={<Index />} />
+                  <Route path="/person/:personName" element={<PersonDetailsPage />} />
+                  <Route path="/group/:groupId" element={<GroupDetailsPage />} />
+                  <Route path="/pro" element={<ProPlanPage />} />
+                  <Route path="/admin/pro-users" element={<AdminProUsersPage />} />
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </BrowserRouter>
+            </AppBootstrap>
+          </BannedGuard>
         </TooltipProvider>
       </QueryClientProvider>
     </ProProvider>

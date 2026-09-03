@@ -1,13 +1,15 @@
 
 import { useState, useMemo, useEffect } from 'react';
-import { ArrowLeft, PiggyBank, TrendingUp, Wallet, Calendar, AlertCircle, CheckCircle2, Save, IndianRupee } from 'lucide-react';
+import { ArrowLeft, PiggyBank, TrendingUp, Wallet, Calendar, AlertCircle, CheckCircle2, Save, IndianRupee, ChevronLeft } from 'lucide-react';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
 import {
   getBudgetPlannerConfig,
   getPersonalExpenses,
   saveBudgetPlannerConfig,
+  getAccounts,
   type BudgetPlannerConfig,
 } from '@/lib/storage';
+import { AddFirstAccountModal } from '@/components/modals/AddFirstAccountModal';
 import { useCurrency } from '@/hooks/use-currency';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -28,8 +30,9 @@ export function BudgetsTab({ onOpenAccount, onBack, bannerAdActive = true }: Bud
   const [showAddModal, setShowAddModal] = useState(false);
 
   useEffect(() => {
-    const handleTriggerAdd = (e: any) => {
-      if (e.detail?.tabId === 'budgets') setShowAddModal(true);
+    const handleTriggerAdd = (e: Event) => {
+      const detail = (e as CustomEvent<{ tabId?: string }>).detail;
+      if (detail?.tabId === 'budgets') setShowAddModal(true);
     };
     window.addEventListener('splitmate_trigger_add', handleTriggerAdd);
     return () => window.removeEventListener('splitmate_trigger_add', handleTriggerAdd);
@@ -153,22 +156,21 @@ export function BudgetsTab({ onOpenAccount, onBack, bannerAdActive = true }: Bud
             <button
               type="button"
               onClick={onBack}
-              className="w-11 h-11 rounded-2xl flex items-center justify-center mt-1 bg-secondary/80 border border-border/10 active:scale-95 transition-all font-sans"
+              className="w-11 h-11 rounded-2xl slab flex items-center justify-center active:scale-90 transition-all mt-0.5"
             >
-              <ArrowLeft size={20} strokeWidth={2.5} />
+              <ChevronLeft size={20} strokeWidth={2.5} />
             </button>
           )}
           <div className="space-y-1">
-            <h1 className="text-3xl font-black tracking-tight leading-none">Budgets</h1>
-            <p className="text-sm text-muted-foreground font-medium opacity-60">Master your monthly flow</p>
+            <h1 className="text-[28px] font-bold leading-none tracking-tight">Budgets<span className="text-primary">.</span></h1>
+            <p className="text-xs text-muted-foreground mt-1.5 tracking-wide">Master your monthly flow</p>
           </div>
         </div>
       </div>
 
-      {/* Summary Card */}
       <div className={cn(
-        "relative overflow-hidden p-6 rounded-[2.5rem] bg-card border border-border/40 transition-all duration-500 shadow-sm",
-        stats.remaining < 0 && "border-destructive/30 shadow-[0_0_40px_-15px_hsl(var(--destructive)_/_0.2)] bg-destructive/[0.02]"
+        "relative overflow-hidden p-6 rounded-[1.5rem] bg-card border border-border/40 transition-all duration-500",
+        stats.remaining < 0 && "border-destructive/30 bg-destructive/[0.02]"
       )}>
         <div className="grid grid-cols-2 gap-6 relative z-10">
           <div className="space-y-1.5">
@@ -224,7 +226,7 @@ export function BudgetsTab({ onOpenAccount, onBack, bannerAdActive = true }: Bud
       </div>
 
       {/* Progress Card */}
-      <div className="p-6 space-y-5 rounded-[2.5rem] bg-card border border-border/40 shadow-sm transition-all hover:shadow-md">
+      <div className="p-6 space-y-5 rounded-[1.5rem] bg-card border border-border/40 transition-all">
         <div className="flex items-center justify-between">
            <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center text-primary shadow-inner">
@@ -271,7 +273,7 @@ export function BudgetsTab({ onOpenAccount, onBack, bannerAdActive = true }: Bud
       </div>
 
       {/* Planner Card */}
-      <div className="p-6 space-y-6 rounded-[2.5rem] bg-secondary/5 border border-dashed border-border/20 transition-all hover:bg-secondary/10">
+      <div className="p-6 space-y-6 rounded-[1.5rem] bg-secondary/5 border border-dashed border-border/20 transition-all hover:bg-secondary/10">
         <div className="flex items-center gap-3 mb-2">
            <div className="w-10 h-10 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-600 shadow-inner">
              <PiggyBank size={20} strokeWidth={2.5} />
@@ -306,19 +308,27 @@ export function BudgetsTab({ onOpenAccount, onBack, bannerAdActive = true }: Bud
 
         <button
           onClick={handleSave}
-          className="w-full h-14 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-primary text-white shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-95 transition-all flex items-center justify-center gap-2 font-sans"
+          className="w-full h-14 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-primary text-white active:scale-95 transition-all flex items-center justify-center gap-2 font-sans"
         >
           <Save size={16} strokeWidth={2.5} />
           Lock Budget Plan
         </button>
 
-        <div className="p-4 rounded-2xl bg-secondary/20 flex gap-3 border border-border/5">
+         <div className="p-4 rounded-2xl bg-secondary/20 flex gap-3 border border-border/5">
            <AlertCircle size={14} className="text-muted-foreground/40 shrink-0 mt-0.5" />
            <p className="text-[10px] font-bold text-muted-foreground/40 leading-relaxed italic">
              Smart calculation enabled: Remaining = Fixed budget - Spend. Safe daily = Remaining / days.
            </p>
         </div>
       </div>
+
+      {showAddModal && getAccounts().length === 0 && (
+        <AddFirstAccountModal
+          isOpen={true}
+          onClose={() => setShowAddModal(false)}
+          onAccountCreated={() => {}}
+        />
+      )}
     </div>
   );
 }

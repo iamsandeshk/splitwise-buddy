@@ -1,7 +1,14 @@
 import { useEffect } from 'react';
 import { subscribeGoogleAuth } from '@/integrations/firebase/auth';
 import { saveBackupForCurrentUser } from '@/integrations/firebase/backup';
-import { getAccountProfile, exportAllData } from '@/lib/storage';
+import { 
+  getAccountProfile, 
+  exportAllData, 
+  isAutoBackupGracePeriodActive, 
+  checkAndUpdateAutoBackupStatus,
+  getAutoBackupProRemovedAt,
+  AUTO_BACKUP_GRACE_PERIOD_MS
+} from '@/lib/storage';
 import { isProUserCached } from '@/lib/proAccess';
 
 const APP_VERSION = '4.7';
@@ -14,11 +21,27 @@ const APP_VERSION = '4.7';
 export function useNightlyBackup() {
   useEffect(() => {
     let isUserLoggedIn = false;
+    let graceTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const setupGraceTimeout = () => {
+      if (graceTimeout) {
+        clearTimeout(graceTimeout);
+        graceTimeout = null;
+      }
+      const removedAt = getAutoBackupProRemovedAt();
+      if (removedAt && !isProUserCached()) {
+        const remaining = Math.max(0, AUTO_BACKUP_GRACE_PERIOD_MS - (Date.now() - removedAt));
+        graceTimeout = setTimeout(() => {
+          checkAndUpdateAutoBackupStatus();
+        }, remaining + 100);
+      }
+    };
 
     const performBackup = async () => {
+      const isAutoBackupActive = checkAndUpdateAutoBackupStatus();
       const profile = getAccountProfile();
-      if (!isUserLoggedIn || !navigator.onLine || !profile.nightlyBackupEnabled) return;
-      if (!isProUserCached()) return;
+      if (!isUserLoggedIn || !navigator.onLine || !profile.nightlyBackupEnabled || !isAutoBackupActive) return;
+      if (!isProUserCached() && !isAutoBackupGracePeriodActive()) return;
 
       const lastBackupStr = localStorage.getItem('last_nightly_backup_date');
       const todayStr = new Date().toISOString().split('T')[0];
@@ -35,6 +58,15 @@ export function useNightlyBackup() {
         }
       }
     };
+
+    setupGraceTimeout();
+
+    const handleProChange = () => {
+      checkAndUpdateAutoBackupStatus();
+      setupGraceTimeout();
+    };
+
+    window.addEventListener('splitmate_pro_changed', handleProChange);
 
     const unsubscribe = subscribeGoogleAuth((user) => {
       const isLoggingIn = !isUserLoggedIn && !!user;
@@ -62,14 +94,17 @@ export function useNightlyBackup() {
 
     window.addEventListener('online', handleOnlineStatus);
 
-    // Also check every hour in case the app stays open across midnight
+    // Also check every hour in case the app stays open across midnight or grace period expires
     const interval = setInterval(() => {
+      checkAndUpdateAutoBackupStatus();
       void performBackup();
     }, 1000 * 60 * 60); // 1 hour
 
     return () => {
       unsubscribe();
       window.removeEventListener('online', handleOnlineStatus);
+      window.removeEventListener('splitmate_pro_changed', handleProChange);
+      if (graceTimeout) clearTimeout(graceTimeout);
       clearInterval(interval);
     };
   }, []);

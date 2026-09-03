@@ -2,11 +2,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Plus, CheckCircle2, Trash2, Users, BarChart3, ArrowDownRight, ArrowUpRight, Search, X, Calendar, AlertCircle, ChevronRight, Pencil, Check, Edit3, Lock } from 'lucide-react';
+import { ChevronLeft, Plus, CheckCircle2, Trash2, Users, BarChart3, ArrowDownRight, ArrowUpRight, Search, X, Calendar, AlertCircle, ChevronRight, Pencil, Check, Edit3, Lock, Image as ImageIcon, RefreshCw } from 'lucide-react';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
 import { ExpenseChart } from '@/components/ExpenseChart';
-import { getPersonBalances, getSharedExpenses, deleteSharedExpense, updateSharedExpenseReason, deleteFriendGroup, settleExpenseWithPerson, getGroupBalances, settleGroup, deletePerson, FREE_LIMITS, getFriendGroups, saveSharedExpense, updateSmsTransaction, type PersonBalance, type SharedExpense, type GroupBalance } from '@/lib/storage';
+import { getPersonBalances, getSharedExpenses, deleteSharedExpense, updateSharedExpenseReason, deleteFriendGroup, settleExpenseWithPerson, getGroupBalances, settleGroup, deletePerson, FREE_LIMITS, getFriendGroups, saveSharedExpense, type PersonBalance, type SharedExpense, type GroupBalance, getTransactionAttachment, saveTransactionAttachment, deleteTransactionAttachment, resizeImageToDataUrl, updateSharedExpenseAttachment, getPendingSyncUpdates } from '@/lib/storage';
 import { AddSharedExpenseModal } from '@/components/modals/AddSharedExpenseModal';
+import { SyncCenterModal } from '@/components/modals/SyncCenterModal';
 import { useCurrency } from '@/hooks/use-currency';
 import { useToast } from '@/hooks/use-toast';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
@@ -59,7 +60,33 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
   const [viewingTransaction, setViewingTransaction] = useState<SharedExpense | null>(null);
   const [isEditingReason, setIsEditingReason] = useState(false);
   const [editedReason, setEditedReason] = useState('');
+  const [showFullImage, setShowFullImage] = useState(false);
+  const [viewingAttachment, setViewingAttachment] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showSyncCenter, setShowSyncCenter] = useState(false);
+  const [pendingSyncCount, setPendingSyncCount] = useState(() => getPendingSyncUpdates().length);
 
+  useEffect(() => {
+    const updateSyncCount = () => {
+      setPendingSyncCount(getPendingSyncUpdates().length);
+    };
+    updateSyncCount();
+    window.addEventListener('storage', updateSyncCount);
+    window.addEventListener('splitmate_data_changed', updateSyncCount);
+    window.addEventListener('splitmate_sync_rejected', updateSyncCount);
+    window.addEventListener('splitmate_account_changed', updateSyncCount);
+    const timer = setInterval(updateSyncCount, 5000);
+
+    return () => {
+      window.removeEventListener('storage', updateSyncCount);
+      window.removeEventListener('splitmate_data_changed', updateSyncCount);
+      window.removeEventListener('splitmate_sync_rejected', updateSyncCount);
+      window.removeEventListener('splitmate_account_changed', updateSyncCount);
+      clearInterval(timer);
+    };
+  }, []);
+
+  useBackHandler(showSyncCenter, () => setShowSyncCenter(false));
   useBackHandler(!!viewingTransaction, () => {
     setViewingTransaction(null);
     setIsEditingReason(false);
@@ -251,6 +278,21 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
   }, [monthSections, selectedMonthKey]);
 
   useEffect(() => {
+    if (viewingTransaction) {
+      const attachKey = viewingTransaction.attachmentId || viewingTransaction.id;
+      if (attachKey) {
+        getTransactionAttachment(attachKey).then(data => {
+          setViewingAttachment(data);
+        });
+      } else {
+        setViewingAttachment(null);
+      }
+    } else {
+      setViewingAttachment(null);
+    }
+  }, [viewingTransaction]);
+
+  useEffect(() => {
     const handleTriggerAdd = (e: Event) => {
       const detail = (e as CustomEvent<{ tabId?: string }>).detail;
       if (detail?.tabId === 'shared') setShowAddModal(true);
@@ -264,12 +306,12 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
       setGroupBalances(getGroupBalances());
       setRecentTransactions(
         all
-        .filter((item) => !item.groupId)
-        .sort((a, b) => {
-          const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
-          if (dateDiff !== 0) return dateDiff;
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        }),
+          .filter((item) => !item.groupId)
+          .sort((a, b) => {
+            const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+            if (dateDiff !== 0) return dateDiff;
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          }),
       );
 
       const target = all.find((item) => item.id === detail.transactionId);
@@ -278,7 +320,10 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
       setSelectedMonthKey(monthKey);
       setViewingTransaction(target);
       setIsEditingReason(false);
+      setShowFullImage(false);
     };
+
+
     const sync = () => {
       setPersonBalances(getPersonBalances());
       setGroupBalances(getGroupBalances());
@@ -366,11 +411,27 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
               </button>
             )}
             <div className="min-w-0">
-              <h1 className="text-[28px] font-bold leading-none tracking-tight">Split<span className="text-primary">.</span></h1>
+              <h1 className="text-[28px] font-bold leading-none tracking-tight">Shared<span className="text-primary">.</span></h1>
               <p className="text-xs text-muted-foreground mt-1.5 tracking-wide">Shared expenses ledger</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Sync Center Button */}
+            <button
+              type="button"
+              onClick={() => setShowSyncCenter(true)}
+              className="w-10 h-10 rounded-2xl slab flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-90 transition-all relative"
+              aria-label="Sync Center"
+              title="Sync Center"
+            >
+              <RefreshCw size={16} className={pendingSyncCount > 0 ? "text-primary animate-pulse" : ""} />
+              {pendingSyncCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-primary text-[10px] font-black text-white flex items-center justify-center px-1 border-2 border-background animate-in zoom-in">
+                  {pendingSyncCount}
+                </span>
+              )}
+            </button>
+
             {personBalances.length > 0 && (
               <button
                 onClick={() => { setShowSearch(!showSearch); if (showSearch) setSearchQuery(''); }}
@@ -460,7 +521,7 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
             <Users size={24} className="text-muted-foreground" />
           </div>
           <p className="font-semibold tracking-tight">No shared expenses</p>
-          <p className="text-xs text-muted-foreground mt-1 tracking-wide">Tap + to log your first split</p>
+          <p className="text-xs text-muted-foreground mt-1 tracking-wide">Tap + to log your first shared</p>
         </div>
       ) : (
         <div className="space-y-6 pt-2">
@@ -469,15 +530,114 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
             <div className="space-y-3">
               <div className="section-head">
                 <h3>Active Groups</h3>
-                <span className="mono-label">{String(groupBalances.length).padStart(2,'0')} / GRP</span>
+                <span className="mono-label">{String(groupBalances.length).padStart(2, '0')} / GRP</span>
               </div>
               <div className="grid grid-cols-1 gap-3">
                 {groupBalances.map((group, index) => {
                   const isLockedGroup = !isPro && index >= FREE_LIMITS.MAX_SHARED_GROUPS;
                   return (
+                    <div
+                      key={group.groupId}
+                      onPointerDown={(e) => handleStartPress(group.groupId, e)}
+                      onPointerUp={handleEndPress}
+                      onPointerLeave={handleEndPress}
+                      onClick={() => {
+                        if (showDeleteFor) {
+                          setShowDeleteFor(null);
+                          return;
+                        }
+                        navigate(`/group/${group.groupId}`);
+                      }}
+                      className={cn(
+                        "ios-card-modern p-4 relative overflow-hidden group active:scale-[0.98] transition-all cursor-pointer",
+                        isLockedGroup && "opacity-40",
+                        showDeleteFor === group.groupId && "z-20 ring-2 ring-rose-500/20"
+                      )}
+                    >
+                      {isLockedGroup && (
+                        <>
+                          <div className="absolute top-3 right-3 z-30 w-7 h-7 rounded-lg bg-black/50 border border-white/20 flex items-center justify-center">
+                            <Lock size={12} className="text-white" />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              requestProUpgrade('groups', 'Free users can create and manage only 1 group. Upgrade to Pro for unlimited groups.');
+                            }}
+                            className="absolute inset-0 z-40 pointer-events-auto"
+                            aria-label="Upgrade to unlock this group"
+                          />
+                        </>
+                      )}
+                      {/* Delete Overlay Icon */}
+                      {showDeleteFor === group.groupId && !isLockedGroup && (
+                        <div
+                          className="absolute inset-0 z-20 bg-rose-500/10 backdrop-blur-[2px] flex items-center justify-end pr-4 animate-in slide-in-from-right-10"
+                        >
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteConfirmGroup(group);
+                            }}
+                            className="w-12 h-12 rounded-2xl bg-rose-500 text-white flex items-center justify-center active:scale-90 transition-all"
+                          >
+                            <Trash2 size={24} />
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between relative z-10">
+                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                          <div
+                            className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-lg relative overflow-hidden"
+                            style={{ backgroundColor: group.color }}
+                          >
+                            <div className="absolute inset-0 bg-white/10" />
+                            {group.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold text-base text-foreground truncate">{group.name}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-muted-foreground font-bold uppercase tracking-tight">
+                              <span>{group.transactions.length} txn</span>
+                              <span className="opacity-30">•</span>
+                              <span>{group.members.length} people</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-end gap-1">
+                          <div className="flex items-center gap-2">
+                            <MoneyDisplay
+                              amount={group.totalSpend}
+                              size="md"
+                              showSign={false}
+                              className="font-black tracking-tight text-rose-500"
+                            />
+                          </div>
+                          <p className="text-[9px] text-rose-500/60 font-black uppercase tracking-widest">
+                            Total Paid
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3 pb-4">
+            <div className="section-head">
+              <h3>Individual Balances</h3>
+              <span className="mono-label">{String(sortedBalances.length).padStart(2, '0')} / PPL</span>
+            </div>
+            {sortedBalances.map((person, index) => {
+              const isLockedPerson = !isPro && index >= FREE_LIMITS.MAX_PERSONS;
+              return (
+                <div key={person.name} className="flex flex-col gap-3">
                   <div
-                    key={group.groupId}
-                    onPointerDown={(e) => handleStartPress(group.groupId, e)}
+                    onPointerDown={(e) => person.name !== 'me' && handleStartPress(person.name, e)}
                     onPointerUp={handleEndPress}
                     onPointerLeave={handleEndPress}
                     onClick={() => {
@@ -485,15 +645,15 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
                         setShowDeleteFor(null);
                         return;
                       }
-                      navigate(`/group/${group.groupId}`);
+                      handlePersonClick(person);
                     }}
                     className={cn(
                       "ios-card-modern p-4 relative overflow-hidden group active:scale-[0.98] transition-all cursor-pointer",
-                      isLockedGroup && "opacity-40",
-                      showDeleteFor === group.groupId && "z-20 ring-2 ring-rose-500/20"
+                      isLockedPerson && "opacity-40",
+                      showDeleteFor === person.name && "z-20 ring-2 ring-rose-500/20"
                     )}
                   >
-                    {isLockedGroup && (
+                    {isLockedPerson && (
                       <>
                         <div className="absolute top-3 right-3 z-30 w-7 h-7 rounded-lg bg-black/50 border border-white/20 flex items-center justify-center">
                           <Lock size={12} className="text-white" />
@@ -502,24 +662,24 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            requestProUpgrade('groups', 'Free users can create and manage only 1 group. Upgrade to Pro for unlimited groups.');
+                            requestProUpgrade('persons', 'Free users can manage up to 3 people. Upgrade to Pro for unlimited people.');
                           }}
                           className="absolute inset-0 z-40 pointer-events-auto"
-                          aria-label="Upgrade to unlock this group"
+                          aria-label="Upgrade to unlock this person"
                         />
                       </>
                     )}
                     {/* Delete Overlay Icon */}
-                    {showDeleteFor === group.groupId && !isLockedGroup && (
+                    {showDeleteFor === person.name && !isLockedPerson && (
                       <div
                         className="absolute inset-0 z-20 bg-rose-500/10 backdrop-blur-[2px] flex items-center justify-end pr-4 animate-in slide-in-from-right-10"
                       >
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            setDeleteConfirmGroup(group);
+                            setDeleteConfirmPerson(person);
                           }}
-                          className="w-12 h-12 rounded-2xl bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-500/20 active:scale-90 transition-all"
+                          className="w-12 h-12 rounded-2xl bg-rose-500 text-white flex items-center justify-center active:scale-90 transition-all"
                         >
                           <Trash2 size={24} />
                         </button>
@@ -527,587 +687,598 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
                     )}
 
                     <div className="flex items-center justify-between relative z-10">
-                      <div className="flex items-center gap-4 flex-1 min-w-0">
+                      <div className="flex items-center gap-3 flex-1 text-left group">
                         <div
-                          className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-lg relative overflow-hidden"
-                          style={{ backgroundColor: group.color }}
+                          className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 text-sm font-bold"
+                          style={{
+                            background: person.netBalance > 0
+                              ? 'hsl(var(--success) / 0.12)' : person.netBalance < 0
+                                ? 'hsl(var(--danger) / 0.12)' : 'hsl(var(--muted) / 0.3)',
+                            color: person.netBalance > 0
+                              ? 'hsl(var(--success))' : person.netBalance < 0
+                                ? 'hsl(var(--danger))' : 'hsl(var(--muted-foreground))',
+                            border: `1px solid ${person.netBalance > 0
+                              ? 'hsl(var(--success) / 0.2)' : person.netBalance < 0
+                                ? 'hsl(var(--danger) / 0.2)' : 'hsl(var(--border) / 0.3)'}`,
+                          }}
                         >
-                          <div className="absolute inset-0 bg-white/10" />
-                          {group.name.charAt(0).toUpperCase()}
+                          {person.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-bold text-base text-foreground truncate">{group.name}</p>
-                          <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-muted-foreground font-bold uppercase tracking-tight">
-                            <span>{group.transactions.length} txn</span>
-                            <span className="opacity-30">•</span>
-                            <span>{group.members.length} people</span>
+                          <p className="font-semibold text-sm text-foreground truncate group-hover:text-primary" style={{ transition: 'color 0.15s ease' }}>
+                            {person.name}
+                          </p>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                            <span>{person.transactions.length} txn{person.transactions.length !== 1 ? 's' : ''}</span>
+                            {person.netBalance === 0 && (
+                              <span className="text-success font-semibold flex items-center gap-0.5">
+                                <CheckCircle2 size={10} /> Settled
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex flex-col items-end gap-1">
-                        <div className="flex items-center gap-2">
-                          <MoneyDisplay
-                            amount={group.totalSpend}
-                            size="md"
-                            showSign={false}
-                            className="font-black tracking-tight text-rose-500"
-                          />
-                        </div>
-                        <p className="text-[9px] text-rose-500/60 font-black uppercase tracking-widest">
-                          Total Paid
-                        </p>
+                      <div className="flex items-center gap-2">
+                        <MoneyDisplay amount={person.netBalance} size="sm" showSign={true} />
+                        {person.netBalance !== 0 && !isLockedPerson && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSettleTrigger(person);
+                            }}
+                            className="w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 bg-primary/10 text-primary border border-primary/20 active:scale-90"
+                          >
+                            <ChevronRight size={14} strokeWidth={3} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
-                )})}
-              </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Recent Transactions */}
+      {!isSearching && recentTransactions.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="font-semibold text-muted-foreground text-xs uppercase tracking-widest px-1" style={{ letterSpacing: '0.08em' }}>
+            Recent Transactions
+          </h3>
+
+          {monthSections.length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+              {monthSections.map((month) => {
+                const isActive = selectedMonthKey === month.key;
+                return (
+                  <button
+                    key={month.key}
+                    onClick={() => setSelectedMonthKey(month.key)}
+                    className="px-3.5 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap border flex items-center gap-1.5 flex-shrink-0 transition-all duration-200"
+                    style={{
+                      background: isActive ? 'hsl(var(--primary))' : 'hsl(var(--secondary) / 0.5)',
+                      color: isActive ? 'hsl(var(--primary-foreground))' : 'hsl(var(--muted-foreground))',
+                      borderColor: isActive ? 'hsl(var(--primary) / 0.5)' : 'hsl(var(--border) / 0.2)',
+                      boxShadow: isActive ? '0 4px 12px -4px hsl(var(--primary) / 0.3)' : 'none',
+                    }}
+                  >
+                    {month.label}
+                  </button>
+                );
+              })}
             </div>
           )}
 
-          <div className="space-y-3 pb-4">
-            <div className="section-head">
-              <h3>Individual Balances</h3>
-              <span className="mono-label">{String(sortedBalances.length).padStart(2,'0')} / PPL</span>
-            </div>
-            {sortedBalances.map((person, index) => {
-              const isLockedPerson = !isPro && index >= FREE_LIMITS.MAX_PERSONS;
-              return (
-              <div key={person.name} className="flex flex-col gap-3">
+          <div onTouchStart={handleMonthSwipeStart} onTouchEnd={handleMonthSwipeEnd} className="space-y-3.5">
+            {visibleTransactions.map((expense, idx) => (
+              <div key={expense.id} className="flex flex-col gap-3.5">
                 <div
-                  onPointerDown={(e) => person.name !== 'me' && handleStartPress(person.name, e)}
-                  onPointerUp={handleEndPress}
-                  onPointerLeave={handleEndPress}
-                  onClick={() => {
-                    if (showDeleteFor) {
-                      setShowDeleteFor(null);
-                      return;
-                    }
-                    handlePersonClick(person);
-                  }}
-                  className={cn(
-                    "ios-card-modern p-4 relative overflow-hidden group active:scale-[0.98] transition-all cursor-pointer",
-                    isLockedPerson && "opacity-40",
-                    showDeleteFor === person.name && "z-20 ring-2 ring-rose-500/20"
-                  )}
+                  onClick={() => setViewingTransaction(expense)}
+                  className="ios-card-modern px-4 py-3.5 group active:scale-[0.98] transition-all cursor-pointer"
                 >
-                  {isLockedPerson && (
-                    <>
-                      <div className="absolute top-3 right-3 z-30 w-7 h-7 rounded-lg bg-black/50 border border-white/20 flex items-center justify-center">
-                        <Lock size={12} className="text-white" />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          requestProUpgrade('persons', 'Free users can manage up to 3 people. Upgrade to Pro for unlimited people.');
-                        }}
-                        className="absolute inset-0 z-40 pointer-events-auto"
-                        aria-label="Upgrade to unlock this person"
-                      />
-                    </>
-                  )}
-                  {/* Delete Overlay Icon */}
-                  {showDeleteFor === person.name && !isLockedPerson && (
-                    <div
-                      className="absolute inset-0 z-20 bg-rose-500/10 backdrop-blur-[2px] flex items-center justify-end pr-4 animate-in slide-in-from-right-10"
-                    >
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteConfirmPerson(person);
-                        }}
-                        className="w-12 h-12 rounded-2xl bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-500/20 active:scale-90 transition-all"
-                      >
-                        <Trash2 size={24} />
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between relative z-10">
-                    <div className="flex items-center gap-3 flex-1 text-left group">
-                      <div
-                        className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 text-sm font-bold"
-                        style={{
-                          background: person.netBalance > 0
-                            ? 'hsl(var(--success) / 0.12)' : person.netBalance < 0
-                              ? 'hsl(var(--danger) / 0.12)' : 'hsl(var(--muted) / 0.3)',
-                          color: person.netBalance > 0
-                            ? 'hsl(var(--success))' : person.netBalance < 0
-                              ? 'hsl(var(--danger))' : 'hsl(var(--muted-foreground))',
-                          border: `1px solid ${person.netBalance > 0
-                            ? 'hsl(var(--success) / 0.2)' : person.netBalance < 0
-                              ? 'hsl(var(--danger) / 0.2)' : 'hsl(var(--border) / 0.3)'}`,
-                        }}
-                      >
-                        {person.name.charAt(0).toUpperCase()}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-9 h-9 rounded-full border border-border/20 bg-transparent flex items-center justify-center flex-shrink-0">
+                        {expense.paidBy === 'me'
+                          ? <ArrowUpRight size={14} className="text-danger" />
+                          : <ArrowDownRight size={14} className="text-success" />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm text-foreground truncate group-hover:text-primary" style={{ transition: 'color 0.15s ease' }}>
-                          {person.name}
-                        </p>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                          <span>{person.transactions.length} txn{person.transactions.length !== 1 ? 's' : ''}</span>
-                          {person.netBalance === 0 && (
-                            <span className="text-success font-semibold flex items-center gap-0.5">
-                              <CheckCircle2 size={10} /> Settled
-                            </span>
+                        <p className="font-medium text-sm text-foreground truncate">{expense.reason || 'Shared expense'}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-muted-foreground">
+                          <span className="font-medium">{expense.personName}</span>
+                          <span className="opacity-40">·</span>
+                          <span>{new Date(expense.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                          {expense.settled && (
+                            <>
+                              <span className="opacity-40">·</span>
+                              <span className="text-success font-semibold">Settled</span>
+                            </>
                           )}
                         </div>
                       </div>
                     </div>
-
                     <div className="flex items-center gap-2">
-                      <MoneyDisplay amount={person.netBalance} size="sm" showSign={true} />
-                      {person.netBalance !== 0 && !isLockedPerson && (
+                      <div className="text-right">
+                        <MoneyDisplay
+                          amount={expense.amount}
+                          size="sm"
+                          className={expense.paidBy === 'me' ? 'text-red-400' : 'text-green-400'}
+                        />
+                        <p className="text-[9px] text-muted-foreground mt-0.5">
+                          {expense.paidBy === 'me' ? 'You paid' : `${expense.personName} paid`}
+                        </p>
+                      </div>
+                      {/* Deletion Permission based on Ownership (Created By Me) */}
+                      {(expense.createdByMe !== false && !expense.isIncoming) && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleSettleTrigger(person);
+                            handleDeleteTrigger(expense.id);
                           }}
-                          className="w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 bg-primary/10 text-primary border border-primary/20 active:scale-90"
+                          className="w-10 h-10 flex items-center justify-center text-destructive/60 bg-danger/5 rounded-2xl active:scale-90 transition-all border border-destructive/5 shadow-sm"
                         >
-                          <ChevronRight size={14} strokeWidth={3} />
+                          <Trash2 size={14} />
                         </button>
                       )}
                     </div>
                   </div>
                 </div>
-                {!isAdFree && index === 0 && <NativeAdCard />}
               </div>
-            )})}
+            ))}
           </div>
         </div>
       )}
 
-          {/* Recent Transactions */}
-          {!isSearching && recentTransactions.length > 0 && (
-            <div className="space-y-3">
-              <h3 className="font-semibold text-muted-foreground text-xs uppercase tracking-widest px-1" style={{ letterSpacing: '0.08em' }}>
-                Recent Transactions
-              </h3>
+      {/* Modals */}
+      <AddSharedExpenseModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onAdd={handleAddExpense}
+      />
+      {/* Transaction Detail Sheet */}
+      {viewingTransaction && createPortal(
+        <div className="fixed inset-0 z-[10001] flex items-end justify-center pointer-events-auto" onClick={() => setViewingTransaction(null)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" />
+          <div
+            className="w-full max-w-md bg-card rounded-[3rem] p-6 pb-12 space-y-5 animate-in slide-in-from-bottom-full border border-border/10 duration-500 shadow-2xl relative overflow-hidden mb-4 mx-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-1 bg-muted/20 rounded-full mt-3" />
 
-              {monthSections.length > 0 && (
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                  {monthSections.map((month) => {
-                    const isActive = selectedMonthKey === month.key;
-                    return (
-                      <button
-                        key={month.key}
-                        onClick={() => setSelectedMonthKey(month.key)}
-                        className="px-3.5 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap border flex items-center gap-1.5 flex-shrink-0 transition-all duration-200"
-                        style={{
-                          background: isActive ? 'hsl(var(--primary))' : 'hsl(var(--secondary) / 0.5)',
-                          color: isActive ? 'hsl(var(--primary-foreground))' : 'hsl(var(--muted-foreground))',
-                          borderColor: isActive ? 'hsl(var(--primary) / 0.5)' : 'hsl(var(--border) / 0.2)',
-                          boxShadow: isActive ? '0 4px 12px -4px hsl(var(--primary) / 0.3)' : 'none',
-                        }}
-                      >
-                        {month.label}
-                      </button>
-                    );
-                  })}
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => {
+                  setViewingTransaction(null);
+                  setIsEditingReason(false);
+                }}
+                className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center active:scale-90 transition-all border border-border/5"
+              >
+                <X size={16} className="text-muted-foreground" />
+              </button>
+              <div className="flex items-center gap-2">
+                {(viewingTransaction.createdByMe !== false && !viewingTransaction.isIncoming) && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setIsEditingReason(!isEditingReason);
+                        setEditedReason(viewingTransaction.reason);
+                      }}
+                      className={cn(
+                        "w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-all border group",
+                        isEditingReason ? "bg-primary/20 border-primary/30 text-primary" : "bg-secondary border-border/10 text-muted-foreground"
+                      )}
+                    >
+                      <Pencil size={15} className={cn(isEditingReason && "animate-pulse")} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const id = viewingTransaction.id;
+                        handleDeleteTrigger(id);
+                        // Use a small timeout to allow the portal to mount correctly
+                        setTimeout(() => setViewingTransaction(null), 100);
+                      }}
+                      className="w-9 h-9 rounded-full bg-destructive/10 flex items-center justify-center active:scale-90 transition-all border border-destructive/10 group"
+                    >
+                      <Trash2 size={16} className="text-destructive group-hover:scale-110 transition-transform" />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="text-center space-y-1 py-1">
+              <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground/30">Contribution</p>
+              <MoneyDisplay
+                amount={viewingTransaction.amount}
+                size="xl"
+                className={cn(
+                  "font-black text-5xl tracking-tighter block",
+                  viewingTransaction.paidBy === 'me' ? "text-red-500" : "text-green-500"
+                )}
+              />
+            </div>
+
+            <div className="flex items-center justify-center gap-2">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">
+                <span className="text-sm">
+                  {viewingTransaction.category === 'Food & Dining' ? '🍕' :
+                    viewingTransaction.category === 'Transportation' ? '🚗' :
+                      viewingTransaction.category === 'Shopping' ? '🛍️' :
+                        viewingTransaction.category === 'Entertainment' ? '🎬' :
+                          viewingTransaction.category === 'Bills & Utilities' ? '📄' :
+                            viewingTransaction.category === 'Healthcare' ? '💊' :
+                              viewingTransaction.category === 'Education' ? '📚' :
+                                viewingTransaction.category === 'Travel' ? '✈️' :
+                                  viewingTransaction.category === 'Groceries' ? '🛒' : '📦'}
+                </span>
+                <span className="text-[9px] font-black text-primary uppercase tracking-[0.1em]">{viewingTransaction.category || 'Shared'}</span>
+              </div>
+              <div className={cn(
+                "px-3 py-1.5 rounded-full border border-border/5",
+                viewingTransaction.paidBy === 'me' ? "bg-rose-500/10 text-rose-500" : "bg-green-500/10 text-green-500"
+              )}>
+                <span className="text-[9px] font-black uppercase tracking-[0.1em]">
+                  {viewingTransaction.paidBy === 'me' ? "You Paid" : `${viewingTransaction.personName} Paid`}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-1">
+              <div className="space-y-1 text-center">
+                <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/30">Purpose</p>
+                {isEditingReason ? (
+                  <div className="flex items-center gap-2 max-w-xs mx-auto">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={editedReason}
+                      onChange={(e) => setEditedReason(e.target.value)}
+                      onKeyDown={async (e) => {
+                        if (e.key === 'Enter') {
+                          let finalAttachmentId = viewingTransaction.attachmentId;
+                          if (viewingAttachment && viewingAttachment.startsWith('data:image') && viewingAttachment.length > 100) {
+                            try {
+                              finalAttachmentId = await saveTransactionAttachment(viewingAttachment, viewingTransaction.id);
+                              if (viewingTransaction.attachmentId) await deleteTransactionAttachment(viewingTransaction.attachmentId);
+                            } catch (err) {
+                              console.error("Failed to save image attachment:", err);
+                            }
+                          } else if (!viewingAttachment && viewingTransaction.attachmentId) {
+                            await deleteTransactionAttachment(viewingTransaction.attachmentId);
+                            finalAttachmentId = undefined;
+                          }
+                          updateSharedExpenseReason(viewingTransaction.id, editedReason);
+                          if (finalAttachmentId !== viewingTransaction.attachmentId) {
+                            updateSharedExpenseAttachment(viewingTransaction.id, finalAttachmentId);
+                          }
+                          setViewingTransaction({ ...viewingTransaction, reason: editedReason, attachmentId: finalAttachmentId });
+                          setIsEditingReason(false);
+                          refreshData();
+                        }
+                      }}
+                      className="flex-1 h-10 bg-secondary/50 rounded-xl px-4 text-sm font-bold border border-primary/20 outline-none focus:border-primary/50 transition-all"
+                    />
+                    <button
+                      onClick={async () => {
+                        let finalAttachmentId = viewingTransaction.attachmentId;
+                        if (viewingAttachment && viewingAttachment.startsWith('data:image') && viewingAttachment.length > 100) {
+                          try {
+                            finalAttachmentId = await saveTransactionAttachment(viewingAttachment, viewingTransaction.id);
+                            if (viewingTransaction.attachmentId) await deleteTransactionAttachment(viewingTransaction.attachmentId);
+                          } catch (err) {
+                            console.error("Failed to save image attachment:", err);
+                          }
+                        } else if (!viewingAttachment && viewingTransaction.attachmentId) {
+                          await deleteTransactionAttachment(viewingTransaction.attachmentId);
+                          finalAttachmentId = undefined;
+                        }
+                        updateSharedExpenseReason(viewingTransaction.id, editedReason);
+                        if (finalAttachmentId !== viewingTransaction.attachmentId) {
+                          updateSharedExpenseAttachment(viewingTransaction.id, finalAttachmentId);
+                        }
+                        setViewingTransaction({ ...viewingTransaction, reason: editedReason, attachmentId: finalAttachmentId });
+                        setIsEditingReason(false);
+                        refreshData();
+                      }}
+                      className="h-10 px-4 bg-primary text-primary-foreground font-bold rounded-xl active:scale-95 transition-all text-sm"
+                    >
+                      Save
+                    </button>
+                  </div>
+                ) : (
+                  <h2 className="text-[20px] font-black tracking-tight text-foreground leading-snug uppercase px-4">
+                    {viewingTransaction.reason || "No Purpose Defined"}
+                  </h2>
+                )}
+              </div>
+
+              {/* Image Attachment (Below Reason) */}
+              {(viewingAttachment || isEditingReason) && (
+                <div className="space-y-3 pt-3">
+                  {isEditingReason && (
+                    <input
+                      type="file"
+                      accept="image/*"
+                      ref={fileInputRef}
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          try {
+                            const dataUrl = await resizeImageToDataUrl(file);
+                            setViewingAttachment(dataUrl);
+                          } catch (err) {
+                            toast({ title: 'Error', description: 'Could not attach image', variant: 'destructive' });
+                          }
+                        }
+                      }}
+                    />
+                  )}
+
+                  {!viewingAttachment && isEditingReason ? (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full h-12 flex items-center justify-center gap-2 rounded-[1.5rem] bg-secondary/30 border border-border/10 border-dashed text-muted-foreground/60 text-[11px] font-black uppercase tracking-widest hover:bg-secondary/50 hover:text-primary transition-all"
+                    >
+                      <ImageIcon size={16} />
+                      Attach Proof / Bill
+                    </button>
+                  ) : viewingAttachment ? (
+                    <div className="relative w-full h-32 rounded-[1.5rem] overflow-hidden border border-border/20 group cursor-pointer" onClick={() => !isEditingReason && setShowFullImage(true)}>
+                      <img src={viewingAttachment} alt="Attachment" className="w-full h-full object-cover" />
+                      {isEditingReason && (
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setViewingAttachment(null);
+                            }}
+                            className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-red-500 transition-colors"
+                          >
+                            <X size={18} />
+                          </button>
+                        </div>
+                      )}
+                      {!isEditingReason && (
+                        <div className="absolute inset-0 flex items-end p-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span className="text-[10px] font-bold text-white uppercase tracking-widest px-2">Proof Attached</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               )}
 
-              <div onTouchStart={handleMonthSwipeStart} onTouchEnd={handleMonthSwipeEnd} className="space-y-3.5">
-                {visibleTransactions.map((expense, idx) => (
-                  <div key={expense.id} className="flex flex-col gap-3.5">
-                    <div
-                      onClick={() => setViewingTransaction(expense)}
-                      className="ios-card-modern px-4 py-3.5 group active:scale-[0.98] transition-all cursor-pointer"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                            style={{
-                              background: expense.paidBy === 'me' ? 'hsl(var(--danger) / 0.1)' : 'hsl(var(--success) / 0.1)',
-                            }}>
-                            {expense.paidBy === 'me'
-                              ? <ArrowUpRight size={14} className="text-danger" />
-                              : <ArrowDownRight size={14} className="text-success" />}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm text-foreground truncate">{expense.reason || 'Shared expense'}</p>
-                            <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-muted-foreground">
-                              <span className="font-medium">{expense.personName}</span>
-                              <span className="opacity-40">·</span>
-                              <span>{new Date(expense.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
-                              {expense.settled && (
-                                <>
-                                  <span className="opacity-40">·</span>
-                                  <span className="text-success font-semibold">Settled</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="text-right">
-                            <MoneyDisplay
-                              amount={expense.amount}
-                              size="sm"
-                              className={expense.paidBy === 'me' ? 'text-red-400' : 'text-green-400'}
-                            />
-                            <p className="text-[9px] text-muted-foreground mt-0.5">
-                              {expense.paidBy === 'me' ? 'You paid' : `${expense.personName} paid`}
-                            </p>
-                          </div>
-                          {/* Deletion Permission based on Ownership (Created By Me) */}
-                          {(expense.createdByMe !== false && !expense.isIncoming) && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteTrigger(expense.id);
-                              }}
-                              className="w-10 h-10 flex items-center justify-center text-destructive/60 bg-danger/5 rounded-2xl active:scale-90 transition-all border border-destructive/5 shadow-sm"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    {!isAdFree && idx % 5 === 0 && (
-                      <div className="pt-1.5">
-                        <NativeAdCard />
-                      </div>
-                    )}
+              <div className="space-y-2">
+                <div className="bg-secondary/20 p-4 rounded-2xl border border-border/5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Calendar size={12} className="text-muted-foreground opacity-40" />
+                    <span className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">Date Recorded</span>
                   </div>
-                ))}
+                  <span className="text-[10px] font-black text-foreground/80 uppercase tracking-tight">
+                    {new Date(viewingTransaction.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
+                  </span>
+                </div>
+
+                <div className="bg-secondary/20 p-4 rounded-2xl border border-border/5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 size={12} className={cn("text-muted-foreground opacity-40", viewingTransaction.settled && "text-success opacity-100")} />
+                    <span className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">Status</span>
+                  </div>
+                  <span className={cn(
+                    "text-[10px] font-black uppercase tracking-tight",
+                    viewingTransaction.settled ? "text-success" : "text-muted-foreground/60"
+                  )}>
+                    {viewingTransaction.settled ? "Settled" : "Pending"}
+                  </span>
+                </div>
               </div>
             </div>
-          )}
 
-          {/* Modals */}
-          <AddSharedExpenseModal
-            isOpen={showAddModal}
-            onClose={() => setShowAddModal(false)}
-            onAdd={handleAddExpense}
+            <div className="flex items-center justify-center pt-1">
+              <span className="text-[8px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40">Shared Transaction Verified</span>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Full Screen Image Viewer */}
+      {showFullImage && viewingAttachment && createPortal(
+        <div
+          className="fixed inset-0 z-[10005] flex items-center justify-center bg-black/90 backdrop-blur-xl animate-in fade-in duration-300"
+          onClick={() => setShowFullImage(false)}
+        >
+          <button
+            className="absolute top-6 right-6 w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors"
+            onClick={() => setShowFullImage(false)}
+          >
+            <X size={24} />
+          </button>
+          <img
+            src={viewingAttachment}
+            alt="Full Attachment"
+            className="max-w-full max-h-[90vh] object-contain px-4"
+            onClick={(e) => e.stopPropagation()}
           />
-          {/* Transaction Detail Sheet */}
-          {viewingTransaction && createPortal(
-            <div className="fixed inset-0 z-[10001] flex items-end justify-center pointer-events-auto" onClick={() => setViewingTransaction(null)}>
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-md" />
-              <div
-                className="w-full max-w-md bg-card rounded-[3rem] p-6 pb-12 space-y-5 animate-in slide-in-from-bottom-full border border-border/10 duration-500 shadow-2xl relative overflow-hidden mb-4 mx-4"
-                onClick={e => e.stopPropagation()}
+        </div>,
+        document.body
+      )}
+
+      {/* Delete Confirmation Sheet */}
+      {deletingId && createPortal(
+        <div className="fixed inset-0 z-[10002] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setDeletingId(null)}>
+          <div
+            className="w-full max-w-md bg-card rounded-[3rem] p-7 pt-9 pb-10 space-y-6 animate-in slide-in-from-bottom-10 duration-300 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={28} className="text-destructive" />
+              </div>
+              <h2 className="text-xl font-bold tracking-tight">Delete Transaction?</h2>
+              <p className="text-sm text-muted-foreground px-4">
+                Are you sure you want to remove this? This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 pt-4">
+              <button
+                onClick={() => setDeletingId(null)}
+                className="w-full h-14 rounded-2xl bg-secondary/50 text-secondary-foreground font-bold hover:bg-secondary transition-all active:scale-[0.97]"
               >
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-1 bg-muted/20 rounded-full mt-3" />
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="w-full h-14 rounded-2xl bg-destructive text-destructive-foreground font-black shadow-xl shadow-destructive/20 hover:brightness-110 transition-all active:scale-[0.97]"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
-                <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => {
-                      setViewingTransaction(null);
-                      setIsEditingReason(false);
-                    }}
-                    className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center active:scale-90 transition-all border border-border/5"
-                  >
-                    <X size={16} className="text-muted-foreground" />
-                  </button>
-                  <div className="flex items-center gap-2">
-                    {(viewingTransaction.createdByMe !== false && !viewingTransaction.isIncoming) && (
-                      <>
-                        <button
-                          onClick={() => {
-                            setIsEditingReason(!isEditingReason);
-                            setEditedReason(viewingTransaction.reason);
-                          }}
-                          className={cn(
-                            "w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-all border group",
-                            isEditingReason ? "bg-primary/20 border-primary/30 text-primary" : "bg-secondary border-border/10 text-muted-foreground"
-                          )}
-                        >
-                          <Pencil size={15} className={cn(isEditingReason && "animate-pulse")} />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const id = viewingTransaction.id;
-                            handleDeleteTrigger(id);
-                            // Use a small timeout to allow the portal to mount correctly
-                            setTimeout(() => setViewingTransaction(null), 100);
-                          }}
-                          className="w-9 h-9 rounded-full bg-destructive/10 flex items-center justify-center active:scale-90 transition-all border border-destructive/10 group"
-                        >
-                          <Trash2 size={16} className="text-destructive group-hover:scale-110 transition-transform" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
+      {/* Delete Group Confirmation */}
+      {deleteConfirmGroup && createPortal(
+        <div className="fixed inset-0 z-[10002] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md animate-in fade-in duration-300 pointer-events-auto" onClick={() => setDeleteConfirmGroup(null)}>
+          <div
+            className="w-full max-w-sm bg-card rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 border border-border/10 shadow-2xl relative"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="text-center space-y-3">
+              <div className="w-16 h-16 rounded-[1.75rem] bg-rose-500/10 flex items-center justify-center mx-auto border-2 border-white/5">
+                <AlertCircle size={32} className="text-rose-500" />
+              </div>
+              <div>
+                <h2 className="text-xl font-black tracking-tight text-foreground uppercase italic leading-none">Delete Group?</h2>
+                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40 mt-1">{deleteConfirmGroup.name}</p>
+              </div>
+            </div>
 
-                <div className="text-center space-y-1 py-1">
-                  <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground/30">Contribution</p>
-                  <MoneyDisplay
-                    amount={viewingTransaction.amount}
-                    size="xl"
-                    className={cn(
-                      "font-black text-5xl tracking-tighter block",
-                      viewingTransaction.paidBy === 'me' ? "text-red-500" : "text-green-500"
-                    )}
-                  />
-                </div>
+            <div className="rounded-[2rem] p-5 bg-rose-500/5 border border-rose-500/10 text-center">
+              <p className="text-[10px] font-black uppercase text-rose-500/60 leading-relaxed">
+                Permanently delete this group and all its records? This cannot be undone.
+              </p>
+            </div>
 
-                <div className="flex items-center justify-center gap-2">
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">
-                    <span className="text-sm">
-                      {viewingTransaction.category === 'Food & Dining' ? '🍕' :
-                        viewingTransaction.category === 'Transportation' ? '🚗' :
-                          viewingTransaction.category === 'Shopping' ? '🛍️' :
-                            viewingTransaction.category === 'Entertainment' ? '🎬' :
-                              viewingTransaction.category === 'Bills & Utilities' ? '📄' :
-                                viewingTransaction.category === 'Healthcare' ? '💊' :
-                                  viewingTransaction.category === 'Education' ? '📚' :
-                                    viewingTransaction.category === 'Travel' ? '✈️' :
-                                      viewingTransaction.category === 'Groceries' ? '🛒' : '📦'}
-                    </span>
-                    <span className="text-[9px] font-black text-primary uppercase tracking-[0.1em]">{viewingTransaction.category || 'Shared'}</span>
-                  </div>
-                  <div className={cn(
-                    "px-3 py-1.5 rounded-full border border-border/5",
-                    viewingTransaction.paidBy === 'me' ? "bg-rose-500/10 text-rose-500" : "bg-green-500/10 text-green-500"
-                  )}>
-                    <span className="text-[9px] font-black uppercase tracking-[0.1em]">
-                      {viewingTransaction.paidBy === 'me' ? "You Paid" : `${viewingTransaction.personName} Paid`}
-                    </span>
-                  </div>
-                </div>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={handleDeleteGroup}
+                className="h-14 w-full rounded-2xl bg-rose-500 text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-lg shadow-rose-500/20 active:scale-95 transition-all"
+              >
+                Delete Everything
+              </button>
+              <button
+                onClick={() => setDeleteConfirmGroup(null)}
+                className="h-14 w-full rounded-2xl bg-secondary text-foreground font-black text-[10px] uppercase tracking-[0.2em] active:scale-95 transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      {/* Delete Person Confirmation */}
+      {deleteConfirmPerson && createPortal(
+        <div className="fixed inset-0 z-[10002] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md animate-in fade-in duration-300 pointer-events-auto" onClick={() => setDeleteConfirmPerson(null)}>
+          <div
+            className="w-full max-w-sm bg-card rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 border border-border/10 shadow-2xl relative"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="text-center space-y-3">
+              <div className="w-16 h-16 rounded-[1.75rem] bg-rose-500/10 flex items-center justify-center mx-auto border-2 border-white/5">
+                <AlertCircle size={32} className="text-rose-500" />
+              </div>
+              <div>
+                <h2 className="text-xl font-black tracking-tight text-foreground uppercase italic leading-none">Delete Contact?</h2>
+                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40 mt-1">{deleteConfirmPerson.name}</p>
+              </div>
+            </div>
 
-                <div className="space-y-4 pt-1">
-                  <div className="space-y-1 text-center">
-                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/30">Purpose</p>
-                    {isEditingReason ? (
-                      <div className="flex items-center gap-2 max-w-xs mx-auto">
-                        <input
-                          autoFocus
-                          type="text"
-                          value={editedReason}
-                          onChange={(e) => setEditedReason(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              updateSharedExpenseReason(viewingTransaction.id, editedReason);
-                              setViewingTransaction({ ...viewingTransaction, reason: editedReason });
-                              setIsEditingReason(false);
-                              refreshData();
-                            }
-                          }}
-                          className="flex-1 h-10 bg-secondary/50 rounded-xl px-4 text-sm font-bold border border-primary/20 outline-none focus:border-primary/50 transition-all"
-                        />
-                        <button
-                          onClick={() => {
-                            updateSharedExpenseReason(viewingTransaction.id, editedReason);
-                            setViewingTransaction({ ...viewingTransaction, reason: editedReason });
-                            setIsEditingReason(false);
-                            refreshData();
-                          }}
-                          className="w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center shadow-lg shadow-primary/20 active:scale-90 transition-all"
-                        >
-                          <Check size={18} />
-                        </button>
-                      </div>
-                    ) : (
-                      <h2 className="text-[20px] font-black tracking-tight text-foreground leading-snug uppercase px-4">
-                        {viewingTransaction.reason || "No Purpose Defined"}
-                      </h2>
-                    )}
-                  </div>
+            <div className="rounded-[2rem] p-5 bg-rose-500/5 border border-rose-500/10 text-center">
+              <p className="text-[10px] font-black uppercase text-rose-500/60 leading-relaxed">
+                Permanently delete this contact and all shared history? This cannot be undone.
+              </p>
+            </div>
 
-                  <div className="space-y-2">
-                    <div className="bg-secondary/20 p-4 rounded-2xl border border-border/5 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Calendar size={12} className="text-muted-foreground opacity-40" />
-                        <span className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">Date Recorded</span>
-                      </div>
-                      <span className="text-[10px] font-black text-foreground/80 uppercase tracking-tight">
-                        {new Date(viewingTransaction.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
-                      </span>
-                    </div>
-
-                    <div className="bg-secondary/20 p-4 rounded-2xl border border-border/5 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 size={12} className={cn("text-muted-foreground opacity-40", viewingTransaction.settled && "text-success opacity-100")} />
-                        <span className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">Status</span>
-                      </div>
-                      <span className={cn(
-                        "text-[10px] font-black uppercase tracking-tight",
-                        viewingTransaction.settled ? "text-success" : "text-muted-foreground/60"
-                      )}>
-                        {viewingTransaction.settled ? "Settled" : "Pending"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-center pt-1">
-                  <span className="text-[8px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40">Shared Transaction Verified</span>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={handleDeletePerson}
+                className="h-14 w-full rounded-2xl bg-rose-500 text-white font-black text-[10px] uppercase tracking-[0.2em] active:scale-95 transition-all"
+              >
+                Delete Contact
+              </button>
+              <button
+                onClick={() => setDeleteConfirmPerson(null)}
+                className="h-14 w-full rounded-2xl bg-secondary text-foreground font-black text-[10px] uppercase tracking-[0.2em] active:scale-95 transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      {/* Settle Confirmation Sheet */}
+      {settlingPerson && createPortal(
+        <div className="fixed inset-0 z-[10003] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setSettlingPerson(null)}>
+          <div
+            className="w-full max-w-md bg-card rounded-[3rem] p-7 pt-9 pb-10 space-y-6 animate-in slide-in-from-bottom-10 border border-border/10 duration-300 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                <CheckCircle2 size={28} className="text-primary" />
+              </div>
+              <h2 className="text-xl font-bold tracking-tight uppercase italic">Settle Balance?</h2>
+              <p className="text-sm text-muted-foreground px-4">
+                Confirm settlement with <span className="font-semibold text-foreground">{settlingPerson.name}</span>.
+              </p>
+              <div className="mt-4 p-5 bg-secondary/15 rounded-3xl border border-border/5">
+                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-2 opacity-50">Settle Amount</p>
+                <div className="text-2xl font-black">
+                  <MoneyDisplay amount={settlingPerson.netBalance} showSign={true} />
                 </div>
               </div>
-            </div>,
-            document.body
-          )}
+            </div>
 
-          {/* Delete Confirmation Sheet */}
-          {deletingId && createPortal(
-            <div className="fixed inset-0 z-[10002] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setDeletingId(null)}>
-              <div
-                className="w-full max-w-md bg-card rounded-[3rem] p-7 pt-9 pb-10 space-y-6 animate-in slide-in-from-bottom-10 duration-300 shadow-2xl"
-                onClick={e => e.stopPropagation()}
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              <button
+                onClick={() => setSettlingPerson(null)}
+                className="w-full h-14 rounded-2xl bg-secondary/50 text-secondary-foreground font-black text-[10px] uppercase tracking-[0.2em] hover:bg-secondary transition-all active:scale-[0.97]"
               >
-                <div className="text-center space-y-2">
-                  <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
-                    <Trash2 size={28} className="text-destructive" />
-                  </div>
-                  <h2 className="text-xl font-bold tracking-tight">Delete Transaction?</h2>
-                  <p className="text-sm text-muted-foreground px-4">
-                    Are you sure you want to remove this? This action cannot be undone.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 pt-4">
-                  <button
-                    onClick={() => setDeletingId(null)}
-                    className="w-full h-14 rounded-2xl bg-secondary/50 text-secondary-foreground font-bold hover:bg-secondary transition-all active:scale-[0.97]"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={confirmDelete}
-                    className="w-full h-14 rounded-2xl bg-destructive text-destructive-foreground font-black shadow-xl shadow-destructive/20 hover:brightness-110 transition-all active:scale-[0.97]"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body
-          )}
-
-          {/* Delete Group Confirmation */}
-          {deleteConfirmGroup && createPortal(
-            <div className="fixed inset-0 z-[10002] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md animate-in fade-in duration-300 pointer-events-auto" onClick={() => setDeleteConfirmGroup(null)}>
-              <div
-                className="w-full max-w-sm bg-card rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 border border-border/10 shadow-2xl relative"
-                onClick={e => e.stopPropagation()}
+                Cancel
+              </button>
+              <button
+                onClick={confirmSettle}
+                className="w-full h-14 rounded-2xl bg-primary text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-primary/20 active:scale-[0.97]"
               >
-                <div className="text-center space-y-3">
-                  <div className="w-16 h-16 rounded-[1.75rem] bg-rose-500/10 flex items-center justify-center mx-auto border-2 border-white/5">
-                    <AlertCircle size={32} className="text-rose-500" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-black tracking-tight text-foreground uppercase italic leading-none">Delete Group?</h2>
-                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40 mt-1">{deleteConfirmGroup.name}</p>
-                  </div>
-                </div>
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
-                <div className="rounded-[2rem] p-5 bg-rose-500/5 border border-rose-500/10 text-center">
-                  <p className="text-[10px] font-black uppercase text-rose-500/60 leading-relaxed">
-                    Permanently delete this group and all its records? This cannot be undone.
-                  </p>
-                </div>
+      {/* Sync Center Modal */}
+      <SyncCenterModal
+        isOpen={showSyncCenter}
+        onClose={() => setShowSyncCenter(false)}
+      />
 
-                <div className="flex flex-col gap-3">
-                  <button
-                    onClick={handleDeleteGroup}
-                    className="h-14 w-full rounded-2xl bg-rose-500 text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-lg shadow-rose-500/20 active:scale-95 transition-all"
-                  >
-                    Delete Everything
-                  </button>
-                  <button
-                    onClick={() => setDeleteConfirmGroup(null)}
-                    className="h-14 w-full rounded-2xl bg-secondary text-foreground font-black text-[10px] uppercase tracking-[0.2em] active:scale-95 transition-all"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body
-          )}
-          {/* Delete Person Confirmation */}
-          {deleteConfirmPerson && createPortal(
-            <div className="fixed inset-0 z-[10002] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md animate-in fade-in duration-300 pointer-events-auto" onClick={() => setDeleteConfirmPerson(null)}>
-              <div
-                className="w-full max-w-sm bg-card rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 border border-border/10 shadow-2xl relative"
-                onClick={e => e.stopPropagation()}
-              >
-                <div className="text-center space-y-3">
-                  <div className="w-16 h-16 rounded-[1.75rem] bg-rose-500/10 flex items-center justify-center mx-auto border-2 border-white/5">
-                    <AlertCircle size={32} className="text-rose-500" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-black tracking-tight text-foreground uppercase italic leading-none">Delete Contact?</h2>
-                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40 mt-1">{deleteConfirmPerson.name}</p>
-                  </div>
-                </div>
-
-                <div className="rounded-[2rem] p-5 bg-rose-500/5 border border-rose-500/10 text-center">
-                  <p className="text-[10px] font-black uppercase text-rose-500/60 leading-relaxed">
-                    Permanently delete this contact and all shared history? This cannot be undone.
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-3">
-                  <button
-                    onClick={handleDeletePerson}
-                    className="h-14 w-full rounded-2xl bg-rose-500 text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-lg shadow-rose-500/20 active:scale-95 transition-all"
-                  >
-                    Delete Contact
-                  </button>
-                  <button
-                    onClick={() => setDeleteConfirmPerson(null)}
-                    className="h-14 w-full rounded-2xl bg-secondary text-foreground font-black text-[10px] uppercase tracking-[0.2em] active:scale-95 transition-all"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body
-          )}
-          {/* Settle Confirmation Sheet */}
-          {settlingPerson && createPortal(
-            <div className="fixed inset-0 z-[10003] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setSettlingPerson(null)}>
-              <div
-                className="w-full max-w-md bg-card rounded-[3rem] p-7 pt-9 pb-10 space-y-6 animate-in slide-in-from-bottom-10 border border-border/10 duration-300 shadow-2xl"
-                onClick={e => e.stopPropagation()}
-              >
-                <div className="text-center space-y-2">
-                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle2 size={28} className="text-primary" />
-                  </div>
-                  <h2 className="text-xl font-bold tracking-tight uppercase italic">Settle Balance?</h2>
-                  <p className="text-sm text-muted-foreground px-4">
-                    Confirm settlement with <span className="font-semibold text-foreground">{settlingPerson.name}</span>.
-                  </p>
-                  <div className="mt-4 p-5 bg-secondary/15 rounded-3xl border border-border/5">
-                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-2 opacity-50">Settle Amount</p>
-                    <div className="text-2xl font-black">
-                      <MoneyDisplay amount={settlingPerson.netBalance} showSign={true} />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 pt-2">
-                  <button
-                    onClick={() => setSettlingPerson(null)}
-                    className="w-full h-14 rounded-2xl bg-secondary/50 text-secondary-foreground font-black text-[10px] uppercase tracking-[0.2em] hover:bg-secondary transition-all active:scale-[0.97]"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={confirmSettle}
-                    className="w-full h-14 rounded-2xl bg-primary text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-primary/20 active:scale-[0.97]"
-                  >
-                    Confirm
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body
-          )}
-
-        </div>
-      );
+    </div>
+  );
 }
 

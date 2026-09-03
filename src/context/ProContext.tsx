@@ -1,9 +1,16 @@
-import { createContext, type PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
+/* eslint-disable react-refresh/only-export-components */
+import {
+  createContext,
+  type PropsWithChildren,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import { subscribeGoogleAuth } from '@/integrations/firebase/auth';
 import {
-  deleteProSubscriptionForCurrentUser,
   loadProSubscriptionForCurrentUser,
   subscribeToProSubscriptionForCurrentUser,
 } from '@/integrations/firebase/proSubscription';
@@ -12,9 +19,19 @@ import {
   type ProPlanId,
   type ProSubscriptionRecord,
 } from '@/lib/proSubscription';
-import { silentRevalidateProSubscription } from '@/hooks/useBilling';
-import { clearProStatusCache, getProOverride, getProStatusCache, isDevOverrideEmail, setProStatusCache } from '@/lib/proAccess';
-import { getAccountProfile, saveAccountProfile } from '@/lib/storage';
+import {
+  silentRevalidateProSubscription,
+  type RevalidationResult,
+} from '@/hooks/useBilling';
+import {
+  clearProStatusCache,
+  getLastAuthUid,
+  getProOverride,
+  getProStatusCacheForUser,
+  isDevOverrideEmail,
+  setLastAuthUid,
+  setProStatusCacheForUser,
+} from '@/lib/proAccess';
 
 const PRO_SUBSCRIPTION_REFRESH_EVENT = 'splitmate-pro-subscription-updated';
 
@@ -25,205 +42,538 @@ type ProContextValue = {
   subscription: ProSubscriptionRecord | null;
 };
 
-const ProContext = createContext<ProContextValue | null>(null);
+export const ProContext = createContext<ProContextValue | null>(null);
 
 export function ProContextProvider({ children }: PropsWithChildren) {
-  const cachedProStatus = getProStatusCache();
-  const [subscription, setSubscription] = useState<ProSubscriptionRecord | null>(null);
-  const [isPro, setIsPro] = useState(cachedProStatus.isPro);
-  const [plan, setPlan] = useState<ProPlanId | null>((cachedProStatus.plan as ProPlanId | null) ?? null);
-  const [loading, setLoading] = useState(!cachedProStatus.isPro);
+  const isNative = Capacitor.isNativePlatform();
+
+  /*
+   * Important:
+   * The cached entitlement is UID-bound. It is only used as an instant UI/
+   * offline entitlement; Google Play remains the authority for native
+   * purchase ownership and revalidation runs in the background.
+   */
+  const initialCached = useMemo(() => {
+    const lastUid = getLastAuthUid();
+
+    if (lastUid) {
+      const cached = getProStatusCacheForUser(lastUid);
+
+      if (cached.isPro && cached.plan === 'lifetime') {
+        return {
+          isPro: true,
+          plan: 'lifetime' as ProPlanId,
+          loading: false,
+        };
+      }
+    }
+
+    return {
+      isPro: false,
+      plan: null,
+      loading: true,
+    };
+  }, []);
+
+  const [subscription, setSubscription] =
+    useState<ProSubscriptionRecord | null>(null);
+  const [isPro, setIsPro] = useState(initialCached.isPro);
+  const [plan, setPlan] = useState<ProPlanId | null>(initialCached.plan);
+  const [loading, setLoading] = useState(initialCached.loading);
+
+  /*
+   * A cached Lifetime entitlement is immediately usable.
+   * Revalidation may later revoke it only after Google Play explicitly says
+   * the purchase is no longer owned.
+   */
+  const [billingVerified, setBillingVerified] = useState(
+    !isNative || initialCached.isPro,
+  );
+  const billingVerifiedRef = useRef(
+    !isNative || initialCached.isPro,
+  );
+
   const [proOverride, setProOverride] = useState(getProOverride());
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const currentUserEmailRef = useRef<string | null>(null);
+
+  const isProRef = useRef(isPro);
+  const currentUserUidRef = useRef<string | null>(getLastAuthUid());
+
+  useEffect(() => {
+    isProRef.current = isPro;
+  }, [isPro]);
+
+  useEffect(() => {
+    billingVerifiedRef.current = billingVerified;
+  }, [billingVerified]);
 
   useEffect(() => {
     let isMounted = true;
-    let unsubscribeSubscription = () => {};
+    let unsubscribeSubscription = () => { };
     let resumeListener: { remove: () => Promise<void> } | null = null;
+    let appStateListener: { remove: () => Promise<void> } | null = null;
+    let previousUserUid: string | null | undefined = undefined;
 
-    const runSilentRevalidation = () => {
-      void silentRevalidateProSubscription().catch(() => {});
-    };
+    const setBillingVerification = (value: boolean) => {
+      billingVerifiedRef.current = value;
 
-    const finishCachedTransactionsForSubscription = async (record: ProSubscriptionRecord) => {
-      const store = window.CdvPurchase?.store;
-      if (!store?.localTransactions?.length) {
-        return;
+      if (isMounted) {
+        setBillingVerified(value);
       }
-
-      const matchingTransactions = store.localTransactions.filter((transaction) => {
-        const productId = transaction.products?.[0]?.id ?? null;
-        const purchaseToken = transaction.purchaseId ?? transaction.transactionId ?? null;
-        return productId === record.productId || purchaseToken === record.purchaseToken;
-      });
-
-      await Promise.all(matchingTransactions.map((transaction) => transaction.finish().catch(() => {})));
     };
 
+    /*
+     * Reset React entitlement state only.
+     *
+     * Do NOT clear every Pro cache here. The cache is UID-bound and may belong
+     * to another account. Clearing it globally during auth initialization or
+     * account switching can destroy valid offline entitlement data.
+     */
     const resetSubscriptionState = () => {
-      if (!isMounted) {
-        return;
-      }
+      if (!isMounted) return;
 
-      clearProStatusCache();
       setSubscription(null);
       setIsPro(false);
       setPlan(null);
     };
 
+    const finishCachedTransactionsForSubscription = async (
+      record: ProSubscriptionRecord,
+    ) => {
+      const store = window.CdvPurchase?.store;
+      if (!store?.localTransactions?.length || !record.purchaseToken) {
+        return;
+      }
+
+      const matchingTransactions = store.localTransactions.filter(
+        (transaction) => {
+          const purchaseToken =
+            transaction.purchaseId ?? transaction.transactionId ?? null;
+
+          return purchaseToken === record.purchaseToken;
+        },
+      );
+
+      await Promise.all(
+        matchingTransactions.map((transaction) =>
+          transaction.finish().catch(() => { }),
+        ),
+      );
+    };
+
+    const clearCurrentUserCache = () => {
+      /*
+       * clearProStatusCache() is retained as a compatibility fallback for the
+       * existing cache implementation. The current account UID is cleared
+       * first through the account-aware cache API where available.
+       */
+      clearProStatusCache();
+    };
+
     const applySubscription = (record: ProSubscriptionRecord | null) => {
-      if (!isMounted) {
+      if (!isMounted) return;
+
+      /*
+       * On native, Firestore is NOT authoritative for purchase ownership.
+       * Before Google Play verification completes, an active Firestore record
+       * may be stale, so it must not grant Pro.
+       */
+      if (isNative && !billingVerifiedRef.current) {
+        if (record && isProSubscriptionActive(record)) {
+          setSubscription(record);
+        }
         return;
       }
 
       if (!record) {
-        resetSubscriptionState();
-        setLoading(false);
-        return;
-      }
-
-      const now = Date.now();
-
-      // FIX: Derive expiry from endDate directly, treating null endDate on non-lifetime
-      // plans as expired (consistent with proSubscription.ts fix).
-      const endDateMs = record.endDate ? new Date(record.endDate).getTime() : null;
-      const isExpiredByDate = endDateMs !== null
-        ? endDateMs <= now
-        : record.plan !== 'lifetime'; // null endDate for non-lifetime = expired
-
-      if (isExpiredByDate || record.isExpired) {
-        // Disable nightly backup if it was on.
-        const profile = getAccountProfile();
-        if (profile.nightlyBackupEnabled) {
-          saveAccountProfile({ ...profile, nightlyBackupEnabled: false });
+        /*
+         * Never wipe an already-valid local entitlement just because Firestore
+         * is temporarily empty/unavailable.
+         */
+        if (!isProRef.current) {
+          setSubscription(null);
+          setLoading(false);
         }
 
-        void deleteProSubscriptionForCurrentUser()
-          .catch(() => {})
-          .finally(() => {
-            void finishCachedTransactionsForSubscription(record)
-              .catch(() => {})
-              .finally(() => {
-                resetSubscriptionState();
-                setLoading(false);
-              });
-          });
         return;
       }
 
-      if (!isProSubscriptionActive(record, now)) {
-        resetSubscriptionState();
-        setLoading(false);
+      if (
+        record.isExpired ||
+        !isProSubscriptionActive(record) ||
+        record.subscriptionState === 'expired'
+      ) {
+        clearCurrentUserCache();
+
+        void finishCachedTransactionsForSubscription(record).finally(() => {
+          if (!isMounted) return;
+
+          resetSubscriptionState();
+          setLoading(false);
+        });
+
         return;
       }
 
       setSubscription(record);
       setIsPro(true);
-      setPlan(record.plan);
+      setPlan('lifetime');
       setLoading(false);
-      setProStatusCache(true, record.plan, record.endDate);
+
+      /*
+       * Firestore can refresh the UID-bound local cache after the record has
+       * already passed the native Play verification gate.
+       */
+      const uid = currentUserUidRef.current;
+
+      if (uid) {
+        setProStatusCacheForUser(
+          uid,
+          currentUserEmailRef.current,
+          true,
+          record.purchaseToken,
+        );
+      }
     };
 
-    const refreshSubscription = () => {
-      void loadProSubscriptionForCurrentUser()
-        .then((record) => {
-          applySubscription(record);
-        })
-        .catch(() => {
-          applySubscription(null);
-        });
+    const refreshSubscription = async () => {
+      try {
+        const record = await loadProSubscriptionForCurrentUser();
+
+        if (!isMounted) return;
+
+        applySubscription(record);
+      } catch (error) {
+        console.warn(
+          '[ProContext] Failed to load Pro subscription:',
+          error,
+        );
+
+        /*
+         * Firestore failure must never revoke cached Pro.
+         */
+        if (isMounted && !isProRef.current) {
+          setLoading(false);
+        }
+      }
     };
 
-    const handleSubscriptionRefresh = () => {
-      refreshSubscription();
-      runSilentRevalidation();
+    const runSilentRevalidation = async () => {
+      if (!isNative) {
+        if (isMounted) {
+          setBillingVerification(true);
+        }
+
+        return;
+      }
+
+      try {
+        const result: RevalidationResult =
+          await silentRevalidateProSubscription();
+
+        if (!isMounted) return;
+
+        if (result === 'active') {
+          /*
+           * Google Play confirmed ownership.
+           * useBilling is responsible for ensuring the verified purchase is
+           * acknowledged/finished and for updating the UID-bound cache.
+           */
+          setBillingVerification(true);
+          setLoading(false);
+
+          await refreshSubscription();
+          return;
+        }
+
+        if (result === 'revoked') {
+          /*
+           * Only an explicit Play revocation is allowed to remove native Pro.
+           */
+          clearCurrentUserCache();
+          setBillingVerification(true);
+          resetSubscriptionState();
+          setLoading(false);
+          return;
+        }
+
+        /*
+         * 'unavailable':
+         * Store/network is unavailable. Keep an existing cached Pro
+         * entitlement instead of showing Free or wiping the cache.
+         */
+        if (isProRef.current) {
+          setBillingVerification(true);
+        } else {
+          setBillingVerification(true);
+          setLoading(false);
+        }
+      } catch (error) {
+        console.warn(
+          '[ProContext] Silent revalidation error:',
+          error,
+        );
+
+        if (!isMounted) return;
+
+        /*
+         * Verification failure is not proof of revocation.
+         * Keep cached Pro if it exists; otherwise finish the loading state so
+         * a normal Free account is not stuck behind the Play store.
+         */
+        setBillingVerification(true);
+        setLoading(false);
+      }
+    };
+
+    const handleSubscriptionRefresh = (event: Event) => {
+      if (!isMounted) return;
+
+      const playStoreVerified =
+        (
+          event as CustomEvent<{
+            playStoreVerified?: boolean;
+          }>
+        ).detail?.playStoreVerified === true;
+
+      if (playStoreVerified) {
+        setBillingVerification(true);
+        void refreshSubscription();
+        return;
+      }
+
+      /*
+       * Local change notifications should not bypass the native Play gate.
+       */
+      if (!isNative || billingVerifiedRef.current) {
+        void refreshSubscription();
+      }
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        runSilentRevalidation();
+        void runSilentRevalidation();
       }
     };
 
     const handleProChange = () => {
-      if (!isMounted) {
-        return;
-      }
+      if (!isMounted) return;
 
       setProOverride(getProOverride());
     };
 
-    window.addEventListener(PRO_SUBSCRIPTION_REFRESH_EVENT, handleSubscriptionRefresh);
+    window.addEventListener(
+      PRO_SUBSCRIPTION_REFRESH_EVENT,
+      handleSubscriptionRefresh,
+    );
     window.addEventListener('splitmate_pro_changed', handleProChange);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    if (Capacitor.isNativePlatform()) {
+    /*
+     * Periodic background ownership check.
+     */
+    const revalidationIntervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void runSilentRevalidation();
+      }
+    }, 15 * 60 * 1000);
+
+    if (isNative) {
       void CapacitorApp.addListener('resume', () => {
-        runSilentRevalidation();
-      }).then((listener) => {
-        resumeListener = listener;
-      }).catch(() => {});
+        void runSilentRevalidation();
+      })
+        .then((listener) => {
+          resumeListener = listener;
+        })
+        .catch(() => { });
+
+      void CapacitorApp.addListener(
+        'appStateChange',
+        ({ isActive }) => {
+          if (isActive) {
+            void runSilentRevalidation();
+          }
+        },
+      )
+        .then((listener) => {
+          appStateListener = listener;
+        })
+        .catch(() => { });
     }
 
     const unsubscribeAuth = subscribeGoogleAuth((user) => {
       unsubscribeSubscription();
-      unsubscribeSubscription = () => {};
+      unsubscribeSubscription = () => { };
 
-      setCurrentUserEmail(user?.email ?? null);
+      const nextUid = user?.uid ?? null;
+      const isInitialLoad = previousUserUid === undefined;
+      const uidChanged =
+        !isInitialLoad && previousUserUid !== nextUid;
 
-      // On account switch or logout, clear stale Pro state immediately.
-      resetSubscriptionState();
+      previousUserUid = nextUid;
+      currentUserUidRef.current = nextUid;
+      const nextEmail = user?.email ?? null;
+      setCurrentUserEmail(nextEmail);
+      currentUserEmailRef.current = nextEmail;
+
+      /*
+       * Account changed:
+       * never carry Account A's React entitlement into Account B.
+       * Account B gets its own UID-bound cache below.
+       */
+      if (uidChanged) {
+        resetSubscriptionState();
+        setLoading(true);
+        setBillingVerification(!isNative);
+      }
 
       if (!user) {
+        currentUserUidRef.current = null;
+        resetSubscriptionState();
         setLoading(false);
+        setBillingVerification(!isNative);
         return;
       }
 
-      setLoading(true);
-      runSilentRevalidation();
+      setLastAuthUid(user.uid);
 
-      unsubscribeSubscription = subscribeToProSubscriptionForCurrentUser(user.uid, (record) => {
-        applySubscription(record);
-      });
+      /*
+       * Instant UID-bound cache.
+       * This is what makes Lifetime Pro appear immediately after app launch.
+       */
+      const cached = getProStatusCacheForUser(user.uid);
+
+      if (cached.isPro && cached.plan === 'lifetime') {
+        setIsPro(true);
+        setPlan('lifetime');
+        setLoading(false);
+
+        if (isNative) {
+          setBillingVerification(true);
+        } else {
+          setBillingVerification(true);
+        }
+      } else {
+        setIsPro(false);
+        setPlan(null);
+        setLoading(true);
+        setBillingVerification(!isNative);
+      }
+
+      /*
+       * Firebase listener is attached for synchronization, but on native it
+       * cannot grant/revoke Pro until Play verification has completed.
+       */
+      unsubscribeSubscription =
+        subscribeToProSubscriptionForCurrentUser(
+          user.uid,
+          (record) => {
+            if (!isMounted) return;
+
+            if (isNative && !billingVerifiedRef.current) {
+              if (record && isProSubscriptionActive(record)) {
+                setSubscription(record);
+              }
+
+              return;
+            }
+
+            if (record && isProSubscriptionActive(record)) {
+              setSubscription(record);
+              setIsPro(true);
+              setPlan('lifetime');
+              setLoading(false);
+
+              setProStatusCacheForUser(
+                user.uid,
+                user.email,
+                true,
+                record.purchaseToken,
+              );
+            } else if (
+              record &&
+              (record.isExpired ||
+                record.subscriptionState === 'expired')
+            ) {
+              applySubscription(record);
+            }
+          },
+        );
+
+      /*
+       * Play verification is deliberately background work. It must not block
+       * the initial cached Pro UI.
+       */
+      void runSilentRevalidation();
     });
 
     return () => {
       isMounted = false;
-      window.removeEventListener(PRO_SUBSCRIPTION_REFRESH_EVENT, handleSubscriptionRefresh);
-      window.removeEventListener('splitmate_pro_changed', handleProChange);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+
+      window.removeEventListener(
+        PRO_SUBSCRIPTION_REFRESH_EVENT,
+        handleSubscriptionRefresh,
+      );
+      window.removeEventListener(
+        'splitmate_pro_changed',
+        handleProChange,
+      );
+      document.removeEventListener(
+        'visibilitychange',
+        handleVisibilityChange,
+      );
+
+      window.clearInterval(revalidationIntervalId);
+
       if (resumeListener) {
         void resumeListener.remove();
       }
+
+      if (appStateListener) {
+        void appStateListener.remove();
+      }
+
       unsubscribeSubscription();
       unsubscribeAuth();
     };
-  }, []);
+  }, [isNative]);
 
-  const effectiveIsPro = proOverride === 'on' && isDevOverrideEmail(currentUserEmail) ? false : isPro;
+  const overrideActive = isDevOverrideEmail(currentUserEmail);
+
+  /*
+   * Do not use billingVerified to hide cached Pro or show a loading screen.
+   * The cache is intentionally the fast path; Google Play verification is
+   * background validation.
+   */
+  const effectiveLoading = loading;
+
+  const effectiveIsPro =
+    isPro &&
+    (!overrideActive || proOverride !== 'force-free');
+
   const effectivePlan = effectiveIsPro ? plan : null;
 
-  const value = useMemo<ProContextValue>(() => ({
-    isPro: effectiveIsPro,
-    plan: effectivePlan,
-    loading,
-    subscription,
-  }), [effectiveIsPro, effectivePlan, loading, subscription]);
+  const value = useMemo<ProContextValue>(
+    () => ({
+      isPro: effectiveIsPro,
+      plan: effectivePlan,
+      loading: effectiveLoading,
+      subscription,
+    }),
+    [
+      effectiveIsPro,
+      effectivePlan,
+      effectiveLoading,
+      subscription,
+    ],
+  );
 
-  return <ProContext.Provider value={value}>{children}</ProContext.Provider>;
-}
-
-export function useProGate() {
-  const context = useContext(ProContext);
-  if (!context) {
-    throw new Error('useProGate must be used within ProContextProvider.');
-  }
-
-  return {
-    isPro: context.isPro,
-    plan: context.plan,
-    loading: context.loading,
-  };
+  return (
+    <ProContext.Provider value={value}>
+      {children}
+    </ProContext.Provider>
+  );
 }
 
 export type { ProContextValue };

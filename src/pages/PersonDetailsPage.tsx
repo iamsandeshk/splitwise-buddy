@@ -1,7 +1,7 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, Trash2, History, TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, Plus, Pencil, Check, Calendar, X, Share2, Copy, AlertCircle, RefreshCw, Users, Users2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Trash2, History, TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, Plus, Pencil, Check, Calendar, X, Share2, Copy, AlertCircle, RefreshCw, Users, Users2, Image as ImageIcon } from 'lucide-react';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
 import { ExpenseChart } from '@/components/ExpenseChart';
 import {
@@ -18,6 +18,11 @@ import {
   deletePerson,
   updatePersonName,
   getAccountProfile,
+  getTransactionAttachment,
+  saveTransactionAttachment,
+  deleteTransactionAttachment,
+  resizeImageToDataUrl,
+  updateSharedExpenseAttachment,
   type PersonBalance,
   type SharedExpense
 } from '@/lib/storage';
@@ -53,14 +58,18 @@ export default function PersonDetailsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [viewingTransaction, setViewingTransaction] = useState<SharedExpense | null>(null);
   const [isEditingReason, setIsEditingReason] = useState(false);
-  const [expenses, setExpenses] = useState<any[]>([]);
+  const [editedReason, setEditedReason] = useState('');
+  const [viewingAttachment, setViewingAttachment] = useState<string | null>(null);
+  const [showFullImage, setShowFullImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [expenses, setExpenses] = useState<SharedExpense[]>([]);
   const [isRenaming, setIsRenaming] = useState(false);
   const [newName, setNewName] = useState('');
   const [showCollabModal, setShowCollabModal] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const myEmail = getAccountProfile().email;
 
-  const loadExpenses = () => {
+  const loadExpenses = useCallback(() => {
     if (!personName) return;
 
     const decodedName = decodeURIComponent(personName);
@@ -70,24 +79,39 @@ export default function PersonDetailsPage() {
     );
 
     const filtered = all.filter(
-      (e: any) => e.personName === decodedName
+      (e: SharedExpense) => e.personName === decodedName
     );
 
     setExpenses(filtered);
-  };
+  }, [personName]);
 
   useEffect(() => {
     loadExpenses();
-  }, [personName]);
+  }, [loadExpenses]);
 
-  const refreshPersonData = () => {
+  useEffect(() => {
+    if (viewingTransaction) {
+      const attachKey = viewingTransaction.attachmentId || viewingTransaction.id;
+      if (attachKey) {
+        getTransactionAttachment(attachKey).then(data => {
+          setViewingAttachment(data);
+        });
+      } else {
+        setViewingAttachment(null);
+      }
+    } else {
+      setViewingAttachment(null);
+    }
+  }, [viewingTransaction]);
+
+  const refreshPersonData = useCallback(() => {
     if (personName) {
       const decodedName = decodeURIComponent(personName);
       const personBalances = getPersonBalances(true);
       const foundPerson = personBalances.find(p => p.name === decodedName);
       setPerson(foundPerson || null);
     }
-  };
+  }, [personName]);
 
   useEffect(() => {
     const refresh = () => {
@@ -110,7 +134,7 @@ export default function PersonDetailsPage() {
     return () => {
       window.removeEventListener('splitmate_data_changed', refresh);
     };
-  }, [personName]);
+  }, [personName, loadExpenses, refreshPersonData]);
 
 
   useEffect(() => {
@@ -209,7 +233,7 @@ export default function PersonDetailsPage() {
     return () => {
       if (handleRef) void handleRef.remove();
     };
-  }, [navigate, showPersonDeleteConfirm, showSettleConfirm, showRollbackConfirm, deletingId, isEditingEmail, showAddModal]);
+  }, [navigate, showPersonDeleteConfirm, showSettleConfirm, showRollbackConfirm, deletingId, isEditingEmail, showAddModal, showCollabModal, viewingTransaction]);
 
 
   const confirmSettle = () => {
@@ -255,7 +279,7 @@ export default function PersonDetailsPage() {
       localStorage.getItem(STORAGE_KEYS.SHARED_EXPENSES) || '[]'
     );
 
-    const exp = expenses.find((e: any) => e.id === deletingId);
+    const exp = expenses.find((e: SharedExpense) => e.id === deletingId);
 
     if (!exp || exp.fromEmail !== getAccountProfile().email) {
       toast.error("You can't delete this expense");
@@ -333,7 +357,7 @@ export default function PersonDetailsPage() {
                 />
                 <button 
                   onClick={handleRename} 
-                  className="w-9 h-9 flex-shrink-0 flex items-center justify-center bg-primary text-white rounded-xl shadow-lg shadow-primary/25 active:scale-90 transition-all border border-white/10"
+                  className="w-9 h-9 flex-shrink-0 flex items-center justify-center bg-primary text-white rounded-xl active:scale-90 transition-all border border-white/10"
                 >
                   <Check size={18} strokeWidth={4} />
                 </button>
@@ -420,7 +444,7 @@ export default function PersonDetailsPage() {
             background: person.netBalance >= 0
               ? 'linear-gradient(135deg, hsl(var(--success) / 0.12) 0%, hsl(var(--card)) 60%)'
               : 'linear-gradient(135deg, hsl(var(--danger) / 0.12) 0%, hsl(var(--card)) 60%)',
-            border: `1px solid ${person.netBalance >= 0 ? 'hsl(var(--success) / 0.2)' : 'hsl(var(--danger) / 0.2)'}`,
+            border: 'none',
             borderRadius: '2.25rem',
           }}
         >
@@ -472,7 +496,6 @@ export default function PersonDetailsPage() {
                 style={{
                   background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
                   color: 'hsl(var(--primary-foreground))',
-                  boxShadow: '0 4px 16px -4px hsl(var(--primary) / 0.4)',
                 }}
               >
                 <CheckCircle2 size={18} />
@@ -534,10 +557,7 @@ export default function PersonDetailsPage() {
                 <div onClick={() => setViewingTransaction(transaction)} className="ios-card-modern px-4 py-3.5 group active:scale-[0.98] transition-all cursor-pointer">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                        style={{
-                          background: transaction.paidBy === 'me' ? 'hsl(var(--danger) / 0.1)' : 'hsl(var(--success) / 0.1)',
-                        }}>
+                      <div className="w-9 h-9 rounded-full border border-border/20 bg-transparent flex items-center justify-center flex-shrink-0">
                         {transaction.paidBy === 'me'
                           ? <ArrowUpRight size={14} className="text-danger" />
                           : <ArrowDownRight size={14} className="text-success" />}
@@ -583,12 +603,6 @@ export default function PersonDetailsPage() {
                     </div>
                   </div>
                 </div>
-                {/* Native Ad Placement: Show after 1st record, then every 5th */}
-                {!isAdFree && idx % 5 === 0 && (
-                  <div className="pt-0.5">
-                    <NativeAdCard />
-                  </div>
-                )}
               </div>
             ))}
           </div>
@@ -622,7 +636,7 @@ export default function PersonDetailsPage() {
               </button>
               <button
                 onClick={confirmDeletePerson}
-                className="w-full h-14 rounded-2xl bg-destructive text-destructive-foreground font-black shadow-xl shadow-destructive/20 hover:brightness-110 transition-all active:scale-[0.97]"
+                className="w-full h-14 rounded-2xl bg-destructive text-destructive-foreground font-black hover:brightness-110 transition-all active:scale-[0.97]"
               >
                 Delete
               </button>
@@ -658,7 +672,7 @@ export default function PersonDetailsPage() {
               </button>
               <button
                 onClick={confirmDelete}
-                className="w-full h-14 rounded-2xl bg-destructive text-white font-bold shadow-xl shadow-destructive/20 active:scale-[0.97]"
+                className="w-full h-14 rounded-2xl bg-destructive text-white font-bold active:scale-[0.97]"
               >
                 Delete
               </button>
@@ -780,7 +794,7 @@ export default function PersonDetailsPage() {
       {/* Floating Add Button */}
       <button
         onClick={() => setShowAddModal(true)}
-        className="fixed bottom-16 right-6 w-14 h-14 rounded-2xl bg-primary text-primary-foreground shadow-xl shadow-primary/30 flex items-center justify-center active:scale-90 transition-all z-40 border border-primary-glow/20"
+        className="fixed bottom-16 right-6 w-14 h-14 rounded-2xl bg-primary text-primary-foreground shadow-xl flex items-center justify-center active:scale-90 transition-all z-40 border border-white/10"
       >
         <Plus size={28} strokeWidth={3} />
       </button>
@@ -807,7 +821,7 @@ export default function PersonDetailsPage() {
 
             <div className="flex items-center justify-between">
               <button
-                onClick={() => { setViewingTransaction(null); setIsEditingReason(false); }}
+                onClick={() => { setViewingTransaction(null); setIsEditingReason(false); setShowFullImage(false); }}
                 className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center active:scale-90 transition-all border border-border/5"
               >
                 <X size={16} className="text-muted-foreground" />
@@ -840,7 +854,214 @@ export default function PersonDetailsPage() {
                 )}
               />
             </div>
+
+            <div className="flex items-center justify-center gap-2">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">
+                <span className="text-sm">
+                  {viewingTransaction.category === 'Food & Dining' ? '🍕' :
+                    viewingTransaction.category === 'Transportation' ? '🚗' :
+                      viewingTransaction.category === 'Shopping' ? '🛍️' :
+                        viewingTransaction.category === 'Entertainment' ? '🎬' :
+                          viewingTransaction.category === 'Bills & Utilities' ? '📄' :
+                            viewingTransaction.category === 'Healthcare' ? '💊' :
+                              viewingTransaction.category === 'Education' ? '📚' :
+                                viewingTransaction.category === 'Travel' ? '✈️' :
+                                  viewingTransaction.category === 'Groceries' ? '🛒' : '📦'}
+                </span>
+                <span className="text-[9px] font-black text-primary uppercase tracking-[0.1em]">{viewingTransaction.category || 'Shared'}</span>
+              </div>
+              <div className={cn(
+                "px-3 py-1.5 rounded-full border border-border/5",
+                viewingTransaction.paidBy === 'me' ? "bg-rose-500/10 text-rose-500" : "bg-green-500/10 text-green-500"
+              )}>
+                <span className="text-[9px] font-black uppercase tracking-[0.1em]">
+                  {viewingTransaction.paidBy === 'me' ? "You Paid" : `${viewingTransaction.personName} Paid`}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-1">
+              <div className="space-y-1 text-center">
+                <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/30">Purpose</p>
+                {isEditingReason ? (
+                  <div className="flex items-center gap-2 max-w-xs mx-auto">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={editedReason}
+                      onChange={(e) => setEditedReason(e.target.value)}
+                      onKeyDown={async (e) => {
+                        if (e.key === 'Enter') {
+                          let finalAttachmentId = viewingTransaction.attachmentId;
+                          if (viewingAttachment && viewingAttachment.startsWith('data:image') && viewingAttachment.length > 100) {
+                            try {
+                              finalAttachmentId = await saveTransactionAttachment(viewingAttachment, viewingTransaction.id);
+                              if (viewingTransaction.attachmentId) await deleteTransactionAttachment(viewingTransaction.attachmentId);
+                            } catch (err) {
+                              console.error(err);
+                            }
+                          } else if (!viewingAttachment && viewingTransaction.attachmentId) {
+                            await deleteTransactionAttachment(viewingTransaction.attachmentId);
+                            finalAttachmentId = undefined;
+                          }
+                          updateSharedExpenseReason(viewingTransaction.id, editedReason);
+                          if (finalAttachmentId !== viewingTransaction.attachmentId) {
+                            updateSharedExpenseAttachment(viewingTransaction.id, finalAttachmentId);
+                          }
+                          setViewingTransaction({ ...viewingTransaction, reason: editedReason, attachmentId: finalAttachmentId });
+                          setIsEditingReason(false);
+                          refreshPersonData();
+                          loadExpenses();
+                        }
+                      }}
+                      className="flex-1 h-10 bg-secondary/50 rounded-xl px-4 text-sm font-bold border border-primary/20 outline-none focus:border-primary/50 transition-all"
+                    />
+                    <button
+                      onClick={async () => {
+                        let finalAttachmentId = viewingTransaction.attachmentId;
+                        if (viewingAttachment && viewingAttachment.startsWith('data:image') && viewingAttachment.length > 100) {
+                          try {
+                            finalAttachmentId = await saveTransactionAttachment(viewingAttachment, viewingTransaction.id);
+                            if (viewingTransaction.attachmentId) await deleteTransactionAttachment(viewingTransaction.attachmentId);
+                          } catch (err) {
+                            console.error(err);
+                          }
+                        } else if (!viewingAttachment && viewingTransaction.attachmentId) {
+                          await deleteTransactionAttachment(viewingTransaction.attachmentId);
+                          finalAttachmentId = undefined;
+                        }
+                        updateSharedExpenseReason(viewingTransaction.id, editedReason);
+                        if (finalAttachmentId !== viewingTransaction.attachmentId) {
+                          updateSharedExpenseAttachment(viewingTransaction.id, finalAttachmentId);
+                        }
+                        setViewingTransaction({ ...viewingTransaction, reason: editedReason, attachmentId: finalAttachmentId });
+                        setIsEditingReason(false);
+                        refreshPersonData();
+                        loadExpenses();
+                      }}
+                      className="h-10 px-4 bg-primary text-primary-foreground font-bold rounded-xl active:scale-95 transition-all text-sm"
+                    >
+                      Save
+                    </button>
+                  </div>
+                ) : (
+                  <h2 className="text-[20px] font-black tracking-tight text-foreground leading-snug uppercase px-4">
+                    {viewingTransaction.reason || "No Purpose Defined"}
+                  </h2>
+                )}
+              </div>
+
+              {/* Image Attachment (Below Reason) */}
+              {(viewingAttachment || isEditingReason) && (
+                <div className="space-y-3 pt-3">
+                  {isEditingReason && (
+                    <input
+                      type="file"
+                      accept="image/*"
+                      ref={fileInputRef}
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          try {
+                            const dataUrl = await resizeImageToDataUrl(file);
+                            setViewingAttachment(dataUrl);
+                          } catch (err) {
+                            toast('Could not attach image');
+                          }
+                        }
+                      }}
+                    />
+                  )}
+                  
+                  {!viewingAttachment && isEditingReason ? (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full h-12 flex items-center justify-center gap-2 rounded-[1.5rem] bg-secondary/30 border border-border/10 border-dashed text-muted-foreground/60 text-[11px] font-black uppercase tracking-widest hover:bg-secondary/50 hover:text-primary transition-all"
+                    >
+                      <ImageIcon size={16} />
+                      Attach Proof / Bill
+                    </button>
+                  ) : viewingAttachment ? (
+                    <div className="relative w-full h-32 rounded-[1.5rem] overflow-hidden border border-border/20 group cursor-pointer" onClick={() => !isEditingReason && setShowFullImage(true)}>
+                      <img src={viewingAttachment} alt="Attachment" className="w-full h-full object-cover" />
+                      {isEditingReason && (
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setViewingAttachment(null);
+                            }}
+                            className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-red-500 transition-colors"
+                          >
+                            <X size={18} />
+                          </button>
+                        </div>
+                      )}
+                      {!isEditingReason && (
+                        <div className="absolute inset-0 flex items-end p-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span className="text-[10px] font-bold text-white uppercase tracking-widest px-2">Proof Attached</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <div className="bg-secondary/20 p-4 rounded-2xl border border-border/5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Calendar size={12} className="text-muted-foreground opacity-40" />
+                    <span className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">Date Recorded</span>
+                  </div>
+                  <span className="text-[10px] font-black text-foreground/80 uppercase tracking-tight">
+                    {new Date(viewingTransaction.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
+                  </span>
+                </div>
+
+                <div className="bg-secondary/20 p-4 rounded-2xl border border-border/5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 size={12} className={cn("text-muted-foreground opacity-40", viewingTransaction.settled && "text-success opacity-100")} />
+                    <span className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">Status</span>
+                  </div>
+                  <span className={cn(
+                    "text-[10px] font-black uppercase tracking-tight",
+                    viewingTransaction.settled ? "text-success" : "text-muted-foreground/60"
+                  )}>
+                    {viewingTransaction.settled ? "Settled" : "Pending"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-center pt-1">
+              <span className="text-[8px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40">Shared Transaction Verified</span>
+            </div>
           </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Full Screen Image Viewer */}
+      {showFullImage && viewingAttachment && createPortal(
+        <div 
+          className="fixed inset-0 z-[10005] flex items-center justify-center bg-black/90 backdrop-blur-xl animate-in fade-in duration-300"
+          onClick={() => setShowFullImage(false)}
+        >
+          <button
+            className="absolute top-6 right-6 w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors"
+            onClick={() => setShowFullImage(false)}
+          >
+            <X size={24} />
+          </button>
+          <img 
+            src={viewingAttachment} 
+            alt="Full Attachment" 
+            className="max-w-full max-h-[90vh] object-contain px-4" 
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>,
         document.body
       )}
@@ -953,7 +1174,7 @@ export default function PersonDetailsPage() {
                       </p>
                       <button
                         onClick={() => setIsEditingEmail(true)}
-                        className="w-full h-14 rounded-2xl bg-primary text-white text-[11px] font-black uppercase tracking-widest shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-3"
+                        className="w-full h-14 rounded-2xl bg-primary text-white text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-3"
                       >
                         <Plus size={18} strokeWidth={3} />
                         Setup Collaboration

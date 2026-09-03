@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { User, Tag, Wallet, ChevronLeft, Plus, X, Users, Check, Search, FolderPlus, History, Trash2, AlertTriangle } from 'lucide-react';
-import { saveSharedExpense, generateId, getUniquePersonNames, EXPENSE_CATEGORIES, getCurrency, type SharedExpense, getFriendGroups, saveFriendGroup, type FriendGroup, getFriendGroup, getAccountProfile, deleteFriendGroup, getDefaultAccountId, getAccounts } from '@/lib/storage';
+import { saveSharedExpense, generateId, getUniquePersonNames, EXPENSE_CATEGORIES, getCurrency, type SharedExpense, getFriendGroups, saveFriendGroup, type FriendGroup, getFriendGroup, getAccountProfile, deleteFriendGroup, getDefaultAccountId, getAccounts, type PersonProfile } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { pushUpdateToCloud } from '@/integrations/firebase/sync';
 import { useBannerAd } from '@/hooks/useBannerAd';
+import { AddFirstAccountModal } from '@/components/modals/AddFirstAccountModal';
 
 interface GroupExpenseModalProps {
   isOpen: boolean;
@@ -98,6 +99,16 @@ export function GroupExpenseModal({ isOpen, onClose, onAdd, defaultGroupId }: Gr
 
   if (!isOpen) return null;
 
+  if (getAccounts().length === 0) {
+    return (
+      <AddFirstAccountModal
+        isOpen={isOpen}
+        onClose={onClose}
+        onAccountCreated={() => {}}
+      />
+    );
+  }
+
   const handleSelectGroup = (group: FriendGroup) => {
     setSelectedGroupId(group.id);
     setGroupName(group.name);
@@ -184,7 +195,7 @@ export function GroupExpenseModal({ isOpen, onClose, onAdd, defaultGroupId }: Gr
     const myProfile = getAccountProfile();
     if (group?.syncEmails && group.syncEmails.length > 0 && myProfile.email) {
       import('@/lib/storage').then(({ getPersonProfiles }) => {
-        const profiles = getPersonProfiles() as Record<string, any>;
+        const profiles = getPersonProfiles() as Record<string, PersonProfile>;
         
         group.syncEmails.forEach(email => {
           let peerNameInMyList = 'friend';

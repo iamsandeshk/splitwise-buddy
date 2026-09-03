@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, CreditCard, Pencil, PiggyBank, Plus, Star, Trash2, Wallet } from 'lucide-react';
+import { ArrowLeft, CreditCard, Lock, Pencil, PiggyBank, Plus, Star, Trash2, Wallet, type LucideIcon } from 'lucide-react';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
+import { AccountTransactionsView } from '@/components/AccountTransactionsView';
 import {
   FINANCIAL_ACCOUNT_TYPES,
+  FREE_LIMITS,
   deleteAccount,
   getAccountSummaries,
   getAccounts,
   saveAccount,
+  savePersonalExpense,
+  generateId,
   type FinancialAccount,
   type FinancialAccountType,
 } from '@/lib/storage';
@@ -16,6 +20,8 @@ import { cn } from '@/lib/utils';
 import { useCurrency } from '@/hooks/use-currency';
 import { useBackHandler } from '@/hooks/useBackHandler';
 import { useBannerAd } from '@/hooks/useBannerAd';
+import { useProGate } from '@/hooks/useProGate';
+import { requestProUpgrade } from '@/lib/proAccess';
 
 interface AccountsTabProps {
   onOpenAccount: () => void;
@@ -38,7 +44,7 @@ const DEFAULT_FORM: AccountFormState = {
   isDefault: false,
 };
 
-const TYPE_ICONS: Record<FinancialAccountType, any> = {
+const TYPE_ICONS: Record<FinancialAccountType, LucideIcon> = {
   savings: PiggyBank,
   bank: Wallet,
   'credit-card': CreditCard,
@@ -49,12 +55,15 @@ const TYPE_ICONS: Record<FinancialAccountType, any> = {
 
 export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: AccountsTabProps) {
   useBannerAd(bannerAdActive);
+  const { isPro } = useProGate();
   const currency = useCurrency();
   const [accounts, setAccounts] = useState(() => getAccountSummaries());
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<AccountFormState>(DEFAULT_FORM);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
 
+  useBackHandler(Boolean(selectedAccountId), () => setSelectedAccountId(null));
   useBackHandler(showForm, () => setShowForm(false));
   useBackHandler(!!deleteId, () => setDeleteId(null));
 
@@ -70,6 +79,10 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
   }, []);
 
   const openCreate = () => {
+    if (!isPro && accounts.length >= FREE_LIMITS.MAX_ACCOUNTS) {
+      requestProUpgrade('accounts', 'Free users can create up to 1 account. Upgrade to Pro for unlimited accounts.');
+      return;
+    }
     setForm({ ...DEFAULT_FORM, isDefault: getAccounts().length === 0 });
     setShowForm(true);
   };
@@ -89,18 +102,34 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
     event.preventDefault();
     const amount = Number(form.budget);
     if (!form.name.trim() || !Number.isFinite(amount)) return;
+    const isNew = !form.id;
+    const accountId = form.id || generateId();
 
     const saved = saveAccount({
-      id: form.id || '',
+      id: accountId,
       name: form.name.trim(),
       type: form.type,
-      budget: amount,
+      budget: isNew ? 0 : amount,
       isDefault: form.isDefault,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
 
     if (!saved) return;
+
+    if (isNew && amount > 0) {
+      savePersonalExpense({
+        id: generateId(),
+        amount: amount,
+        reason: `Initial Balance for ${form.name.trim()}`,
+        category: 'other',
+        date: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        isIncome: true,
+        isMirror: false,
+        accountId: accountId
+      });
+    }
 
     setShowForm(false);
     setForm(DEFAULT_FORM);
@@ -123,8 +152,17 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
     }, 180);
   };
 
+  if (selectedAccountId) {
+    return (
+      <AccountTransactionsView
+        accountId={selectedAccountId}
+        onBack={() => setSelectedAccountId(null)}
+      />
+    );
+  }
+
   return (
-    <div className="p-4 pb-40 space-y-5 font-sans">
+    <div className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col p-4 space-y-5 font-sans">
       <div className="pt-4 pb-1 flex items-start justify-between gap-3">
         <div className="flex items-start gap-4">
           {onBack && (
@@ -151,7 +189,8 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
         </div>
       ) : (
         <div className="space-y-3">
-          {accounts.map((account) => {
+          {accounts.map((account, index) => {
+            const isLockedAccount = !isPro && index >= FREE_LIMITS.MAX_ACCOUNTS;
             const Icon = TYPE_ICONS[account.type] || Wallet;
             const typeLabel = FINANCIAL_ACCOUNT_TYPES.find((item) => item.value === account.type)?.label || 'Other';
             const totalPool = Math.max(0, account.budget + account.income);
@@ -183,7 +222,37 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
                 };
 
             return (
-              <div key={account.id} className="rounded-[2rem] border border-border/10 p-5 bg-card">
+              <div
+                key={account.id}
+                onClick={() => {
+                  if (isLockedAccount) {
+                    requestProUpgrade('accounts', 'Free users can create up to 1 account. Upgrade to Pro for unlimited accounts.');
+                  } else {
+                    setSelectedAccountId(account.id);
+                  }
+                }}
+                className={cn(
+                  "rounded-2xl border border-border/10 p-5 bg-card relative cursor-pointer active:scale-[0.99] transition-all hover:border-primary/20",
+                  isLockedAccount && "opacity-40"
+                )}
+              >
+                {isLockedAccount && (
+                  <>
+                    <div className="absolute top-4 right-4 z-30 w-7 h-7 rounded-lg bg-black/60 border border-white/20 flex items-center justify-center">
+                      <Lock size={13} className="text-white" />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        requestProUpgrade('accounts', 'Free users can create up to 1 account. Upgrade to Pro for unlimited accounts.');
+                      }}
+                      className="absolute inset-0 z-40 pointer-events-auto rounded-[2rem]"
+                      aria-label="Upgrade to unlock this account"
+                    />
+                  </>
+                )}
+
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
@@ -204,7 +273,10 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
                   </div>
                   <button
                     type="button"
-                    onClick={() => openEdit(account)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEdit(account);
+                    }}
                     className="w-9 h-9 rounded-xl border border-border/10 bg-secondary/50 flex items-center justify-center active:scale-90"
                   >
                     <Pencil size={14} />
@@ -282,93 +354,94 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
                 <button
                   type="button"
                   onClick={promptDeleteFromEdit}
-                  className="w-9 h-9 rounded-xl border border-destructive/20 bg-destructive/10 text-destructive flex items-center justify-center active:scale-90"
-                  aria-label="Delete account"
+                  className="w-9 h-9 rounded-xl border border-destructive/20 text-destructive flex items-center justify-center active:scale-90 transition-all"
+                  aria-label="Delete Account"
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={15} />
                 </button>
               )}
             </div>
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">Account Name</label>
-              <input
-                type="text"
-                value={form.name}
-                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-                placeholder="Savings, Main Bank, Credit Card"
-                className="w-full h-12 rounded-2xl border border-border/10 bg-secondary/20 px-4 text-sm font-bold outline-none"
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">Account Type</label>
-              <div className="grid grid-cols-2 gap-2">
-                {FINANCIAL_ACCOUNT_TYPES.map((type) => (
-                  <button
-                    key={type.value}
-                    type="button"
-                    onClick={() => setForm((prev) => ({ ...prev, type: type.value }))}
-                    className={cn(
-                      'h-10 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all',
-                      form.type === type.value
-                        ? 'bg-primary/15 text-primary border-primary/25'
-                        : 'bg-secondary/20 text-muted-foreground border-border/10',
-                    )}
-                  >
-                    {type.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">Fixed Budget</label>
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/60 font-bold">{currency.symbol}</span>
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground/60">Account Name</label>
                 <input
-                  type="number"
-                  value={form.budget}
-                  onChange={(event) => setForm((prev) => ({ ...prev, budget: event.target.value }))}
-                  placeholder="0"
-                  step="0.01"
-                  className="w-full h-12 rounded-2xl border border-border/10 bg-secondary/20 pl-10 pr-4 text-sm font-bold outline-none"
+                  type="text"
                   required
+                  placeholder="e.g. HDFC Bank, Cash Wallet"
+                  value={form.name}
+                  onChange={(event) => setForm({ ...form, name: event.target.value })}
+                  className="w-full h-12 rounded-2xl border border-border/15 bg-secondary/30 px-4 text-sm font-semibold focus:outline-none focus:border-primary"
                 />
               </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground/60">Account Type</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {FINANCIAL_ACCOUNT_TYPES.map((typeOption) => {
+                    const selected = form.type === typeOption.value;
+                    const Icon = TYPE_ICONS[typeOption.value] || Wallet;
+                    return (
+                      <button
+                        key={typeOption.value}
+                        type="button"
+                        onClick={() => setForm({ ...form, type: typeOption.value })}
+                        className={cn(
+                          'h-16 rounded-2xl border flex flex-col items-center justify-center gap-1 text-[11px] font-bold transition-all',
+                          selected
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border/15 bg-secondary/20 text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        <Icon size={16} />
+                        <span>{typeOption.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground/60">
+                  {form.id ? 'Budget Limit' : 'Initial Balance'}
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  placeholder="0.00"
+                  value={form.budget}
+                  onChange={(event) => setForm({ ...form, budget: event.target.value })}
+                  className="w-full h-12 rounded-2xl border border-border/15 bg-secondary/30 px-4 text-sm font-semibold focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <label className="flex items-center gap-3 p-3 rounded-2xl bg-secondary/20 border border-border/15 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.isDefault}
+                  onChange={(event) => setForm({ ...form, isDefault: event.target.checked })}
+                  className="w-4 h-4 rounded text-primary focus:ring-0 cursor-pointer"
+                />
+                <div>
+                  <p className="text-xs font-bold">Set as Default Account</p>
+                  <p className="text-[10px] text-muted-foreground">New expenses will automatically use this account</p>
+                </div>
+              </label>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">Default Account</label>
-              <button
-                type="button"
-                onClick={() => setForm((prev) => ({ ...prev, isDefault: !prev.isDefault }))}
-                className={cn(
-                  'w-full h-11 rounded-2xl border text-[10px] font-black uppercase tracking-wider transition-all inline-flex items-center justify-center gap-2',
-                  form.isDefault
-                    ? 'bg-primary/15 text-primary border-primary/25'
-                    : 'bg-secondary/20 text-muted-foreground border-border/10',
-                )}
-              >
-                <Star size={12} className={cn(form.isDefault && 'fill-current')} />
-                {form.isDefault ? 'Marked As Default' : 'Mark As Default'}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
+            <div className="flex gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setShowForm(false)}
-                className="h-11 rounded-2xl border border-border/10 bg-secondary/40 text-[10px] font-black uppercase tracking-wider"
+                className="flex-1 h-12 rounded-2xl border border-border/15 font-bold text-xs active:scale-95 transition-all"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="h-11 rounded-2xl bg-primary text-white text-[10px] font-black uppercase tracking-wider"
+                className="flex-1 h-12 rounded-2xl bg-primary text-white font-bold text-xs shadow-lg shadow-primary/20 active:scale-95 transition-all"
               >
-                Save
+                {form.id ? 'Save Changes' : 'Create Account'}
               </button>
             </div>
           </form>
@@ -377,25 +450,30 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
       )}
 
       {deleteId && createPortal(
-        <div className="fixed inset-0 z-[10003] bg-black/60 backdrop-blur-sm flex items-end p-4" onClick={() => setDeleteId(null)}>
+        <div className="fixed inset-0 z-[10003] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setDeleteId(null)}>
           <div
-            className="w-full max-w-md mx-auto rounded-[2.5rem] border border-border/10 bg-card p-6 space-y-4 animate-in slide-in-from-bottom-10 duration-200"
+            className="w-full max-w-xs rounded-[2rem] border border-border/10 bg-card p-6 space-y-4 text-center animate-in zoom-in-95 duration-150"
             onClick={(event) => event.stopPropagation()}
           >
-            <h3 className="text-lg font-black">Delete Account?</h3>
-            <p className="text-sm text-muted-foreground">This removes the account profile. Your past transactions will remain unchanged.</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
+              <Trash2 size={20} />
+            </div>
+            <div>
+              <h3 className="text-base font-bold">Delete Account?</h3>
+              <p className="text-xs text-muted-foreground mt-1">This will remove this account. Transactions already made will stay intact.</p>
+            </div>
+            <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setDeleteId(null)}
-                className="h-11 rounded-2xl border border-border/10 bg-secondary/40 text-[10px] font-black uppercase tracking-wider"
+                className="flex-1 h-11 rounded-2xl border border-border/15 font-bold text-xs"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={confirmDelete}
-                className="h-11 rounded-2xl bg-destructive text-white text-[10px] font-black uppercase tracking-wider"
+                className="flex-1 h-11 rounded-2xl bg-destructive text-white font-bold text-xs"
               >
                 Delete
               </button>

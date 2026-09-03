@@ -1,6 +1,7 @@
 
 import { useState } from 'react';
 import { Edit, Loader, Lock as LockIcon, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { saveLink, fetchLinkMetadata, getGroups, LinkItem } from '@/lib/storage';
@@ -71,7 +72,7 @@ export const EditLinkModal = ({ link, isOpen, onClose, onSave }: EditLinkModalPr
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
       <div 
         className="w-full max-w-lg bg-card rounded-t-[2.5rem] p-7 pt-9 pb-16 space-y-6 animate-in slide-in-from-bottom-20 duration-300 shadow-2xl relative"
@@ -209,7 +210,7 @@ export const EditLinkModal = ({ link, isOpen, onClose, onSave }: EditLinkModalPr
             </button>
             <button
               type="submit"
-              className="flex-[2] h-14 rounded-2xl bg-primary text-primary-foreground font-black shadow-xl shadow-primary/20 hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-50"
+              className="flex-[2] h-14 rounded-2xl bg-primary text-primary-foreground font-black hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-50"
               disabled={isLoading || !name.trim() || !url.trim()}
             >
               {isLoading ? (
@@ -224,6 +225,7 @@ export const EditLinkModal = ({ link, isOpen, onClose, onSave }: EditLinkModalPr
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import tailwindcssAnimate from "tailwindcss-animate";
 
 export default {
 	darkMode: ["class"],
@@ -83,9 +84,9 @@ export default {
 				'2xl': 'calc(var(--radius-lg) + 4px)'
 			},
 			fontFamily: {
-				sans: ['Manrope', 'Inter', 'system-ui', 'sans-serif'],
-				heading: ['Sora', 'Inter', 'system-ui', 'sans-serif'],
-				display: ['Sora', 'Inter', 'system-ui', 'sans-serif'],
+				sans: ['var(--font-body)', 'Manrope', 'Inter', 'system-ui', 'sans-serif'],
+				heading: ['var(--font-heading)', 'Sora', 'Inter', 'system-ui', 'sans-serif'],
+				display: ['var(--font-heading)', 'Sora', 'Inter', 'system-ui', 'sans-serif'],
 			},
 			fontSize: {
 				'money': ['1.25rem', { lineHeight: '1.2', fontWeight: '600' }],
@@ -252,5 +253,5 @@ export default {
 			}
 		}
 	},
-	plugins: [require("tailwindcss-animate")],
+	plugins: [tailwindcssAnimate],
 } satisfies Config;

@@ -1,21 +1,164 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ===========================================================================
+# Expense Tracker — ProGuard / R8 Rules
+# App ID: com.expensetrack1ux.dev
+# ===========================================================================
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# ---------------------------------------------------------------------------
+# 1. Crash reporting / useful stack traces
+# ---------------------------------------------------------------------------
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+-keepattributes SourceFile,LineNumberTable
+-keepattributes *Annotation*
+-keepattributes Signature
+-keepattributes Exceptions
+-keepattributes InnerClasses
+-keepattributes EnclosingMethod
+
+-renamesourcefileattribute SourceFile
+
+
+# ---------------------------------------------------------------------------
+# 2. Capacitor
+# ---------------------------------------------------------------------------
+
+# Keep Capacitor plugin classes discovered through annotations/reflection.
+-keep @com.getcapacitor.annotation.CapacitorPlugin class * { *; }
+
+# Capacitor plugin methods called from JavaScript.
+-keepclassmembers class * {
+    @com.getcapacitor.PluginMethod <methods>;
+}
+
+# Permission callbacks.
+-keepclassmembers class * {
+    @com.getcapacitor.annotation.PermissionCallback <methods>;
+}
+
+# Activity callbacks.
+-keepclassmembers class * {
+    @com.getcapacitor.annotation.ActivityCallback <methods>;
+}
+
+# JavaScript interface methods.
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+
+# ---------------------------------------------------------------------------
+# 3. Cordova
+# ---------------------------------------------------------------------------
+
+# Cordova framework/plugin classes that are discovered dynamically.
+-keep class org.apache.cordova.** { *; }
+
+
+# ---------------------------------------------------------------------------
+# 4. cordova-plugin-purchase
+# ---------------------------------------------------------------------------
+
+# Fovea purchase plugin.
+-keep class cc.fovea.** { *; }
+
+# Some versions/builds of the plugin use this namespace.
+-keep class com.alexdisler.** { *; }
+
+
+# ---------------------------------------------------------------------------
+# 5. Google Play Billing
+# ---------------------------------------------------------------------------
+
+# Keep BillingClient API classes used by the purchase plugin.
+-keep class com.android.billingclient.api.** { *; }
+
+
+# ---------------------------------------------------------------------------
+# 6. Firebase
+# ---------------------------------------------------------------------------
+
+# IMPORTANT:
+# Do NOT keep all Firebase classes.
+# Firebase libraries provide their own R8/consumer rules.
+
+# Keep Firebase component annotations/metadata.
+-keepattributes RuntimeVisibleAnnotations,RuntimeInvisibleAnnotations
+-keepattributes RuntimeVisibleParameterAnnotations,RuntimeInvisibleParameterAnnotations
+
+
+# ---------------------------------------------------------------------------
+# 7. Google Sign-In / Google Play Services
+# ---------------------------------------------------------------------------
+
+# Only keep the authentication/sign-in pieces if they are referenced
+# reflectively by the app/plugin.
+-keep class com.google.android.gms.auth.api.signin.** { *; }
+
+
+# ---------------------------------------------------------------------------
+# 8. AdMob
+# ---------------------------------------------------------------------------
+
+# AdMob classes used by the native ad plugin.
+-keep class com.google.android.gms.ads.** { *; }
+-keep class com.google.ads.** { *; }
+
+
+# ---------------------------------------------------------------------------
+# 9. Application components
+# ---------------------------------------------------------------------------
+
+-keep class com.expensetrack1ux.dev.MainActivity { *; }
+
+-keep class com.expensetrack1ux.dev.TotalBriefWidget { *; }
+
+-keep class com.expensetrack1ux.dev.QuickAddPersonalWidget { *; }
+
+-keep class com.expensetrack1ux.dev.QuickAddSharedWidget { *; }
+
+-keep class com.expensetrack1ux.dev.NativeAdPlugin { *; }
+
+-keep class com.expensetrack1ux.dev.WidgetBridgePlugin { *; }
+
+
+# ---------------------------------------------------------------------------
+# 10. Android components
+# ---------------------------------------------------------------------------
+
+# Android discovers these through the manifest/component system.
+-keep public class * extends android.app.Activity
+
+-keep public class * extends android.app.Service
+
+-keep public class * extends android.content.BroadcastReceiver
+
+-keep public class * extends android.content.ContentProvider
+
+-keep public class * extends android.appwidget.AppWidgetProvider
+
+
+# ---------------------------------------------------------------------------
+# 11. FileProvider
+# ---------------------------------------------------------------------------
+
+-keep class androidx.core.content.FileProvider { *; }
+
+
+# ---------------------------------------------------------------------------
+# 12. Kotlin
+# ---------------------------------------------------------------------------
+
+-keep class kotlin.Metadata { *; }
+
+-keepclassmembers class **$WhenMappings {
+    <fields>;
+}
+
+
+# ---------------------------------------------------------------------------
+# 13. WebView
+# ---------------------------------------------------------------------------
+
+-keepclassmembers class * extends android.webkit.WebViewClient {
+    public *;
+}

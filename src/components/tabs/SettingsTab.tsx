@@ -11,11 +11,12 @@ import {
   Pencil, CloudUpload, Home, User, Users, ExternalLink, PieChart,
   WalletCards, Landmark, Target, Repeat, ArrowLeftRight, Globe, Sparkles,
   Calendar, MessageSquare,
-  FileSpreadsheet, HardDrive, Activity, CheckSquare, Plus, RefreshCw, HelpCircle, Bell, Settings, CreditCard, Link as LinkIcon, Crown, Share2, Lock,
+  FileSpreadsheet, HardDrive, Activity, CheckSquare, Plus, RefreshCw, HelpCircle, Bell, Settings, CreditCard, Link as LinkIcon, Crown, Share2, Lock, Presentation,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NativeAdCard } from '@/components/NativeAdCard';
+import { Switch } from '@/components/ui/switch';
 import { Capacitor } from '@capacitor/core';
 import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -41,6 +42,8 @@ import {
   setLiquidGlassEnabled,
   getPageSlideEnabled,
   setPageSlideEnabled,
+  getShowTabNamesEnabled,
+  setShowTabNamesEnabled,
   getAccountProfile,
   saveAccountProfile,
   MAX_BOTTOM_TABS,
@@ -48,8 +51,6 @@ import {
   getLoans,
   getGoals,
   getSubscriptions,
-  getHomeSettings,
-  saveHomeSettings,
   clearAllData,
   triggerForceSync,
   getAdsEnabled,
@@ -57,10 +58,14 @@ import {
   showRewardAd,
   type TabConfig,
   type AccountProfile,
-  type HomeTabSettings
+  generateId,
+  isAutoBackupGracePeriodActive,
+  getAutoBackupProRemovedAt,
+  AUTO_BACKUP_GRACE_PERIOD_MS
 } from '@/lib/storage';
 import { getStoredTheme, setStoredTheme, type ThemeMode } from '@/lib/theme';
 import { getStoredAccentColor, setStoredAccentColor, type AccentColor } from '@/lib/accentColor';
+import { getStoredAppFont, setStoredAppFont, type AppFont } from '@/lib/appFont';
 import { getGooglePhotoUrl, signInWithGoogle, signOutGoogle, subscribeGoogleAuth } from '@/integrations/firebase/auth';
 import { getCurrentGoogleUser } from '@/integrations/firebase/auth';
 import { loadBackupForCurrentUser, saveBackupForCurrentUser } from '@/integrations/firebase/backup';
@@ -68,7 +73,9 @@ import { useToast } from '@/hooks/use-toast';
 import { useBackHandler } from '@/hooks/useBackHandler';
 import { useAdFree } from '@/hooks/useAdFree';
 import { useProGate } from '@/hooks/useProGate';
-import { getProOverride, isDevOverrideEmail, isProUserCached, setProOverride } from '@/lib/proAccess';
+import { getProOverride, isDevOverrideEmail, setProOverride, requestProUpgrade } from '@/lib/proAccess';
+import { isAdminEmail } from '@/integrations/firebase/admin';
+import { requestNotificationPermission, syncScheduledNotifications, checkNotificationPermission } from '@/lib/notifications';
 
 const APP_VERSION = '4.7';
 
@@ -84,7 +91,6 @@ const DEFAULT_TAB_LAYOUT: TabConfig[] = [
   { id: 'transactions', visible: true },
   { id: 'accounts', visible: true },
   { id: 'shared', visible: false },
-  { id: 'sms-transactions', visible: false },
   { id: 'calendar', visible: false },
   { id: 'links', visible: false },
   { id: 'categories', visible: false },
@@ -98,10 +104,18 @@ const DEFAULT_TAB_LAYOUT: TabConfig[] = [
 
 export function SettingsTab({ onBack }: SettingsTabProps) {
   const navigate = useNavigate();
+  const formatTime12h = (time24: string) => {
+    const [h, m] = time24.split(':');
+    const hr = Number(h);
+    const ampm = hr >= 12 ? 'PM' : 'AM';
+    const displayHr = hr % 12 || 12;
+    return `${displayHr}:${m} ${ampm}`;
+  };
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(getStoredTheme());
   const [accentColor, setAccentColorState] = useState<AccentColor>(getStoredAccentColor());
+  const [appFontState, setAppFontState] = useState<AppFont>(getStoredAppFont());
   const [deleteStep, setDeleteStep] = useState<DeleteStep>('closed');
   const [deleteSelections, setDeleteSelections] = useState({ personal: false, shared: false, links: false, more: false });
   const [selectedCurrency, setSelectedCurrency] = useState(getCurrency().code);
@@ -121,22 +135,64 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
   const [showItemPicker, setShowItemPicker] = useState(false);
-  const [proOverrideMode, setProOverrideMode] = useState<'on' | 'off'>(() => (getProOverride() === 'on' ? 'on' : 'off'));
+  const [proOverrideMode, setProOverrideMode] = useState<'force-free' | 'off'>(() => (getProOverride() === 'force-free' ? 'force-free' : 'off'));
 
   const [showCustomize, setShowCustomize] = useState(false);
   const [showAnimationMenu, setShowAnimationMenu] = useState(false);
+  const [showNotificationMenu, setShowNotificationMenu] = useState(false);
+  const [dailyReminder, setDailyReminder] = useState(() => {
+    try {
+      const stored = localStorage.getItem('splitmate_reminder_settings');
+      if (stored) {
+        const parsed = JSON.parse(stored) as { enabled: boolean; time?: string; times?: string[] };
+        const times = parsed.times || (parsed.time ? [parsed.time] : ['20:00']);
+        return { enabled: parsed.enabled, times };
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return { enabled: false, times: ['20:00'] };
+  });
+  const [customReminders, setCustomReminders] = useState<Array<{ id: string; date: string; time: string; message: string; notified?: boolean }>>(() => {
+    try {
+      const stored = localStorage.getItem('splitmate_custom_reminders');
+      if (stored) return JSON.parse(stored);
+    } catch (e) {
+      console.error(e);
+    }
+    return [];
+  });
+  const [newCustomReminder, setNewCustomReminder] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    time: '20:00',
+    message: 'Add entry for today! 💸',
+  });
+  const [hasNotificationPermission, setHasNotificationPermission] = useState(true);
+
+  useEffect(() => {
+    async function updatePermissionState() {
+      const granted = await checkNotificationPermission();
+      setHasNotificationPermission(granted);
+    }
+    if (showNotificationMenu) {
+      updatePermissionState();
+    }
+  }, [showNotificationMenu]);
+
   const [showPrivacy, setShowPrivacy] = useState(false);
-  const [showCurrencyBrowser, setShowCurrencyBrowser] = useState(false);
+  const [showCurrencyPage, setShowCurrencyPage] = useState(false);
+  const [currencyScrolled, setCurrencyScrolled] = useState(false);
   const [showBackupModal, setShowBackupModal] = useState<'none' | 'local' | 'cloud'>('none');
   const [currencySearch, setCurrencySearch] = useState('');
+  const [showTabNames, setShowTabNamesState] = useState(() => getShowTabNamesEnabled());
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOffsetY, setDragOffsetY] = useState(0);
   const [showFullScreenAvatar, setShowFullScreenAvatar] = useState(false);
-  const [activePicker, setActivePicker] = useState<'goals' | 'subs' | 'links' | 'balances' | 'categories' | null>(null);
   const [adsEnabled, setAdsEnabledState] = useState(() => getAdsEnabled());
   const { isAdFree, remainingTime, adFreeUntil } = useAdFree();
   const { isPro, plan } = useProGate();
-  const isEffectivePro = isPro || isProUserCached();
+  const isEffectivePro = isPro;
+  const showAdminPanel = isAdminEmail(profile?.email) || isAdminEmail(getCurrentGoogleUser()?.email);
 
   const adFreeProgress = isAdFree ? Math.max(0, Math.min(1, (adFreeUntil - Date.now()) / (24 * 60 * 60 * 1000))) : 0;
   const adFreeOffset = 157 * (1 - adFreeProgress);
@@ -148,72 +204,30 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   }, []);
 
   useEffect(() => {
-    const handleProChange = () => setProOverrideMode(getProOverride() === 'on' ? 'on' : 'off');
+    const handleProChange = () => setProOverrideMode(getProOverride() === 'force-free' ? 'force-free' : 'off');
     window.addEventListener('splitmate_pro_changed', handleProChange);
     return () => window.removeEventListener('splitmate_pro_changed', handleProChange);
   }, []);
 
-  useEffect(() => {
-    if (isEffectivePro || !profile.nightlyBackupEnabled) {
-      return;
-    }
-
-    const currentSaved = getAccountProfile();
-    if (!currentSaved.nightlyBackupEnabled) {
-      setProfile((prev) => (prev.nightlyBackupEnabled ? { ...prev, nightlyBackupEnabled: false } : prev));
-      return;
-    }
-
-    const updated = { ...currentSaved, nightlyBackupEnabled: false };
-    const saved = saveAccountProfile(updated);
-    if (!saved) return;
-
-    setProfile((prev) => ({ ...prev, nightlyBackupEnabled: false }));
-    if (!isEditingProfile) {
-      setLastSavedProfile(updated);
-    }
-  }, [isEffectivePro, isEditingProfile, profile.nightlyBackupEnabled]);
-
-  useEffect(() => {
-    if (activePicker) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    return () => { document.body.style.overflow = 'unset'; };
-  }, [activePicker]);
-
-  const allPeople = useMemo(() => {
-    const shared = getSharedExpenses().map(e => e.personName);
-    const loans = getLoans().map(l => l.personName);
-    return Array.from(new Set([...shared, ...loans])).filter(Boolean).sort();
-  }, []);
-
-  const allCategories = useMemo(() => {
-    const personal = getPersonalExpenses().map(e => e.category);
-    const shared = getSharedExpenses().map(e => (e as { category?: string }).category).filter(Boolean);
-    return Array.from(new Set([...personal, ...shared])).sort();
-  }, []);
   const dragStartY = useRef(0);
   const dragItemHeight = useRef(0);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const profileRef = useRef<AccountProfile>(getAccountProfile());
-  const [homeSettings, setHomeSettings] = useState<HomeTabSettings>(getHomeSettings());
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const { toast } = useToast();
 
   // Handle system back gestures for various overlays
   const handleCloseCustomize = useCallback(() => setShowCustomize(false), []);
   useBackHandler(showCustomize, handleCloseCustomize);
-  useBackHandler(showCurrencyBrowser, () => setShowCurrencyBrowser(false));
+  useBackHandler(showCurrencyPage, () => setShowCurrencyPage(false));
   useBackHandler(showPrivacy, () => setShowPrivacy(false));
   useBackHandler(showFullScreenAvatar, () => setShowFullScreenAvatar(false));
   useBackHandler(deleteStep !== 'closed', () => setDeleteStep('closed'));
   useBackHandler(showBackupModal !== 'none', () => setShowBackupModal('none'));
   useBackHandler(isEditingProfile, () => setIsEditingProfile(false));
-  useBackHandler(activePicker !== null, () => setActivePicker(null));
+  useBackHandler(showNotificationMenu, () => setShowNotificationMenu(false));
 
   const normalizeProfile = useCallback((value: AccountProfile): AccountProfile => ({
     name: value.name.trim() || 'Guest',
@@ -318,7 +332,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
     setSwipeNavEnabledState(getSwipeNavEnabled());
     setLiquidGlassEnabledState(getLiquidGlassEnabled());
     setPageSlideEnabledState(getPageSlideEnabled());
-    setHomeSettings(getHomeSettings());
     setLastSavedProfile(getAccountProfile());
     // Trigger window events to notify other components (e.g., bottom bars)
     window.dispatchEvent(new Event('splitmate_account_changed'));
@@ -512,14 +525,13 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
     personal: 'Personal',
     transactions: 'Transactions',
     shared: 'Split',
-    'sms-transactions': 'SMS',
     calendar: 'Calendar',
     links: 'Links',
     categories: 'Categories',
     budgets: 'Budgets',
     accounts: 'Accounts',
     loans: 'Loans',
-    goals: 'Goals',
+    goals: 'Savings',
     subscriptions: 'Subscriptions',
     converter: 'Converter',
     more: 'More',
@@ -530,7 +542,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
     personal: User,
     transactions: Activity,
     shared: Users,
-    'sms-transactions': MessageSquare,
     calendar: Calendar,
     links: ExternalLink,
     categories: PieChart,
@@ -548,7 +559,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
     personal: 'text-primary',
     transactions: 'text-primary',
     shared: 'text-warning',
-    'sms-transactions': 'text-primary',
     calendar: 'text-primary',
     links: 'text-primary',
     categories: 'text-primary',
@@ -620,53 +630,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
     const [moved] = reordered.splice(index, 1);
     reordered.splice(targetIndex, 0, moved);
     updateTabConfig([...reordered, ...hidden]);
-  };
-
-  const toggleHomeSetting = (key: keyof Omit<HomeTabSettings, 'currencyRateCodes' | 'sectionOrder'>) => {
-    const next = { ...homeSettings, [key]: !homeSettings[key] };
-    setHomeSettings(next);
-    saveHomeSettings(next);
-  };
-
-  const moveHomeSection = (id: string, direction: 'up' | 'down') => {
-    const order = [...homeSettings.sectionOrder];
-    const index = order.indexOf(id);
-    if (index === -1) return;
-
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= order.length) return;
-
-    [order[index], order[targetIndex]] = [order[targetIndex], order[index]];
-    const next = { ...homeSettings, sectionOrder: order };
-    setHomeSettings(next);
-    saveHomeSettings(next);
-  };
-
-  const toggleSelectedItem = (type: 'links' | 'subs' | 'goals' | 'balances' | 'categories', id: string) => {
-    const keyMap = {
-      links: 'selectedLinkIds',
-      subs: 'selectedSubscriptionIds',
-      goals: 'selectedGoalIds',
-      balances: 'selectedPersonNames',
-      categories: 'selectedCategoryNames'
-    } as const;
-
-    const key = keyMap[type];
-    const current = (homeSettings[key] as string[]) || [];
-    const isSelected = current.includes(id);
-
-    let nextIds: string[];
-    if (isSelected) {
-      nextIds = current.filter(i => i !== id);
-    } else {
-      // Limit to 2 items as requested
-      if (current.length >= 2) return;
-      nextIds = [...current, id];
-    }
-
-    const next = { ...homeSettings, [key]: nextIds };
-    setHomeSettings(next);
-    saveHomeSettings(next);
   };
 
   const handleProfileChange = (key: keyof AccountProfile, value: AccountProfile[keyof AccountProfile]) => {
@@ -828,7 +791,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   }, []);
 
   useEffect(() => {
-    const shouldLock = showCustomize || showCurrencyBrowser || activePicker !== null;
+    const shouldLock = showCustomize || showCurrencyPage;
     const previousBodyOverflow = document.body.style.overflow;
     const previousHtmlOverflow = document.documentElement.style.overflow;
 
@@ -841,7 +804,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overflow = previousHtmlOverflow;
     };
-  }, [showCustomize, showCurrencyBrowser, showBackupModal, activePicker]);
+  }, [showCustomize, showCurrencyPage, showBackupModal]);
 
   const backupStats = useMemo(() => {
     return {
@@ -998,9 +961,9 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   const hasAnySelection = deleteSelections.personal || deleteSelections.shared || deleteSelections.links || deleteSelections.more;
 
   return (
-    <div className="p-4 space-y-6 pb-20">
-      {/* Header — crafted */}
-      <div className="pt-4 pb-1">
+    <div className="w-full h-full overflow-y-auto pb-40 scroll-smooth">
+      {/* Header — sticky */}
+      <div className="sticky top-0 z-30 bg-background px-4 pt-4 pb-1">
         <div className="flex items-center gap-3">
           {onBack && (
             <button
@@ -1018,6 +981,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
         </div>
         <hr className="rule-dashed mt-4" />
       </div>
+      <div className="p-4 space-y-6 pb-20">
 
       {/* Account Profile */}
       <div>
@@ -1078,11 +1042,11 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                   <button
                     onClick={triggerSignOutFlow}
                     disabled={isGoogleAuthBusy}
-                    className="h-10 px-4 rounded-2xl font-bold flex items-center justify-center gap-2 text-xs text-destructive hover:bg-destructive/10 transition-colors"
+                    className="w-10 h-10 rounded-2xl flex items-center justify-center text-destructive hover:bg-destructive/10 transition-colors"
                     style={{ background: 'transparent', border: '1px solid hsl(var(--destructive) / 0.3)' }}
+                    title="Sign Out"
                   >
-                    <LogOut size={14} />
-                    Sign Out
+                    <LogOut size={16} />
                   </button>
                 ) : (
                   // Guest: Edit details and Google Sign-in
@@ -1234,11 +1198,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
           <button
             onClick={() => navigate('/pro')}
             className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all relative overflow-hidden group active:scale-[0.98]"
-            style={{
-              background: isEffectivePro
-                ? 'linear-gradient(135deg, hsl(var(--card)), hsl(var(--muted) / 0.55))'
-                : 'linear-gradient(135deg, hsl(var(--card)), hsl(var(--muted) / 0.35))',
-            }}
           >
             <img
               src="/assets/pro-verified-gold.png"
@@ -1264,11 +1223,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
               <div className="h-px bg-border/20 mx-4" />
               <button
                 className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all relative active:scale-[0.985] group"
-                style={{
-                  background: isAdFree
-                    ? 'linear-gradient(165deg, hsl(var(--card)), hsl(142 70% 45% / 0.04))'
-                    : 'linear-gradient(160deg, hsl(var(--card)), hsl(var(--primary) / 0.03))',
-                }}
                 onClick={async () => {
                   if (isAdFree) return;
                   const success = await showRewardAd();
@@ -1309,32 +1263,32 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
           )}
 
           {/* Test Free Mode — dev only */}
-          {isDevOverrideEmail(profile?.email) && (
+          {(import.meta.env.DEV || isDevOverrideEmail(profile?.email)) && (
             <>
               <div className="h-px bg-border/20 mx-4" />
               <div
                 onClick={() => {
-                  const next = proOverrideMode === 'on' ? 'off' : 'on';
-                  setProOverride(next === 'on' ? 'on' : null);
+                  const next = proOverrideMode === 'force-free' ? 'off' : 'force-free';
+                  setProOverride(next === 'force-free' ? 'force-free' : null);
                   setProOverrideMode(next);
-                  if (next === 'on') {
+                  if (next === 'force-free') {
                     localStorage.removeItem('ad_free_until');
                     setAdsEnabledState(true);
                     setAdsEnabled(true);
                     window.dispatchEvent(new Event('splitmate_ads_changed'));
                   }
                   toast({
-                    title: next === 'on' ? 'Test Free Enabled' : 'Test Free Disabled',
-                    description: next === 'on' ? 'Pro access is forced off locally, including lifetime plans.' : 'Real subscription access is restored.',
+                    title: next === 'force-free' ? 'Test Free Enabled' : 'Test Free Disabled',
+                    description: next === 'force-free' ? 'Pro access is forced off locally, including lifetime plans.' : 'Real subscription access is restored.',
                   });
                 }}
                 className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all cursor-pointer active:scale-[0.985] group"
               >
                 <div className={cn(
                   "shrink-0 transition-colors duration-300",
-                  proOverrideMode === 'on' ? "text-emerald-500" : "text-muted-foreground"
+                  proOverrideMode === 'force-free' ? "text-emerald-500" : "text-muted-foreground"
                 )}>
-                  {proOverrideMode === 'on' ? <Lock size={20} /> : <Crown size={20} />}
+                  {proOverrideMode === 'force-free' ? <Lock size={20} /> : <Crown size={20} />}
                 </div>
                 <div className="flex-1 text-left">
                   <h2 className="font-bold text-sm">Test Free Mode</h2>
@@ -1342,14 +1296,34 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 </div>
                 <div className={cn(
                   "w-12 h-6 rounded-full relative transition-all duration-300 border shrink-0",
-                  proOverrideMode === 'on' ? "bg-emerald-500/20" : "bg-secondary"
+                  proOverrideMode === 'force-free' ? "bg-emerald-500/20" : "bg-secondary"
                 )}>
                   <div className={cn(
                     "absolute top-1 w-4 h-4 rounded-full transition-all duration-300",
-                    proOverrideMode === 'on' ? "left-7 bg-emerald-500" : "left-1 bg-muted-foreground"
+                    proOverrideMode === 'force-free' ? "left-7 bg-emerald-500" : "left-1 bg-muted-foreground"
                   )} />
                 </div>
               </div>
+            </>
+          )}
+
+          {/* Admin Panel — only shown to admin accounts */}
+          {showAdminPanel && (
+            <>
+              <div className="h-px bg-border/20 mx-4" />
+              <button
+                onClick={() => navigate('/admin/pro-users')}
+                className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
+              >
+                <div className="shrink-0 text-amber-500">
+                  <Shield size={20} />
+                </div>
+                <div className="flex-1 text-left">
+                  <h2 className="font-bold text-sm text-foreground">Admin Panel</h2>
+                  <p className="text-[11px] text-muted-foreground">Manage Pro users & subscriptions</p>
+                </div>
+                <ChevronRight size={16} className="text-muted-foreground/60 group-hover:text-amber-500 transition-colors shrink-0" />
+              </button>
             </>
           )}
 
@@ -1364,14 +1338,11 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
           <button
             onClick={() => setShowCustomize(true)}
             className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
-            style={{
-              background: 'linear-gradient(160deg, hsl(var(--card)), hsl(var(--primary) / 0.03))',
-            }}
           >
             <Palette size={20} className="text-white shrink-0" />
             <div className="flex-1 text-left">
               <h2 className="font-bold text-sm">Customization</h2>
-              <p className="text-[11px] text-muted-foreground">Theme, Currency &amp; Bottom Tabs</p>
+              <p className="text-[11px] text-muted-foreground">Theme &amp; Bottom Tabs</p>
             </div>
             <ChevronRight size={16} className="text-muted-foreground" />
           </button>
@@ -1379,22 +1350,52 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
           {/* Divider */}
           <div className="h-px bg-border/20 mx-4" />
 
-          {!isEffectivePro && <NativeAdCard variant="inline" />}
+          {/* Currency */}
+          <button
+            onClick={() => {
+              setCurrencySearch('');
+              setShowCurrencyPage(true);
+            }}
+            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
+          >
+            <Coins size={20} className="text-white shrink-0" />
+            <div className="flex-1 text-left">
+              <h2 className="font-bold text-sm">Currency</h2>
+              <p className="text-[11px] text-muted-foreground">
+                {selectedCurrency} · {CURRENCIES.find(c => c.code === selectedCurrency)?.symbol}
+              </p>
+            </div>
+            <ChevronRight size={16} className="text-muted-foreground" />
+          </button>
 
-          {!isEffectivePro && <div className="h-px bg-border/20 mx-4" />}
+          {/* Divider */}
+          <div className="h-px bg-border/20 mx-4" />
 
           {/* Animation */}
           <button
             onClick={() => setShowAnimationMenu(true)}
             className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
-            style={{
-              background: 'linear-gradient(160deg, hsl(var(--card)), hsl(45 90% 50% / 0.03))',
-            }}
           >
             <Sparkles size={20} className="text-white shrink-0" />
             <div className="flex-1 text-left">
               <h2 className="font-bold text-sm">Animation</h2>
               <p className="text-[11px] text-muted-foreground">Motion &amp; transition effects</p>
+            </div>
+            <ChevronRight size={16} className="text-muted-foreground" />
+          </button>
+
+          {/* Divider */}
+          <div className="h-px bg-border/20 mx-4" />
+
+          {/* Notify Me */}
+          <button
+            onClick={() => setShowNotificationMenu(true)}
+            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
+          >
+            <Bell size={20} className="text-white shrink-0" />
+            <div className="flex-1 text-left">
+              <h2 className="font-bold text-sm">Notify Me</h2>
+              <p className="text-[11px] text-muted-foreground">Schedule daily reminder alerts</p>
             </div>
             <ChevronRight size={16} className="text-muted-foreground" />
           </button>
@@ -1427,114 +1428,78 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                   <div className="w-10 h-1 rounded-full bg-muted/20" />
                 </div>
 
-                <div className="p-6 pb-4 border-b border-border/5 flex items-center justify-between">
+                <div className="p-6 pb-4 border-b border-border/10 flex items-center justify-between">
                   <div>
-                    <h3 className="text-xl font-black tracking-tighter text-foreground">Advanced Animation</h3>
-                    <p className="text-[10px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] mt-1">Experimental UX Props</p>
+                    <h3 className="text-xl font-bold text-foreground">Advanced Animation</h3>
+                    <p className="text-xs text-muted-foreground mt-1">Experimental UX Props</p>
                   </div>
                   <button
                     onClick={() => setShowAnimationMenu(false)}
-                    className="w-11 h-11 rounded-full bg-secondary flex items-center justify-center text-muted-foreground active:scale-90 transition-all border border-border/5 shadow-sm"
+                    className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-muted-foreground active:scale-90 transition-all border border-border/10 shadow-sm"
                   >
-                    <Check size={20} />
+                    <Check size={18} />
                   </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 space-y-6 pb-20">
-                  {/* Liquid Glass Prop */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
-                        <Sparkles size={16} className="text-primary" />
+                <div className="flex-1 overflow-y-auto p-5 pb-10">
+                  <div className="ios-card-modern overflow-hidden flex flex-col divide-y divide-border/30">
+                    {/* Liquid Navigation */}
+                    <div className="p-4 flex items-center gap-3.5">
+                      <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center shrink-0">
+                        <Sparkles size={20} className="text-primary" />
                       </div>
-                      <div className="flex-1">
-                        <h4 className="font-black text-xs uppercase tracking-tight text-foreground">Liquid Navigation</h4>
-                        <p className="text-[10px] font-medium text-muted-foreground leading-none mt-1">Physics-based tab transitions</p>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-sm text-foreground">Liquid Navigation</h4>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Physics-based tab transitions</p>
                       </div>
-                      <div
-                        onClick={() => {
-                          const next = !liquidGlassEnabled;
+                      <Switch
+                        checked={liquidGlassEnabled}
+                        onCheckedChange={(next) => {
                           setLiquidGlassEnabledState(next);
                           setLiquidGlassEnabled(next);
                           window.dispatchEvent(new CustomEvent('splitmate_liquid_glass_changed', { detail: next }));
                         }}
-                        className={cn(
-                          "w-12 h-6 rounded-full relative transition-all duration-500 ease-in-out cursor-pointer",
-                          liquidGlassEnabled ? "bg-primary" : "bg-secondary"
-                        )}
-                      >
-                        <div className={cn(
-                          "absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-500 ease-in-out shadow-sm",
-                          liquidGlassEnabled ? "left-7" : "left-1"
-                        )} />
-                      </div>
+                      />
                     </div>
-                  </div>
 
-                  <div className="h-px bg-border/5" />
-
-                  {/* Page Sliding Prop */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
-                        <ChevronRight size={16} className="text-primary" />
+                    {/* Page Sliding */}
+                    <div className="p-4 flex items-center gap-3.5">
+                      <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center shrink-0">
+                        <ChevronRight size={20} className="text-primary" />
                       </div>
-                      <div className="flex-1">
-                        <h4 className="font-black text-xs uppercase tracking-tight text-foreground">Page Sliding</h4>
-                        <p className="text-[10px] font-medium text-muted-foreground leading-none mt-1">Cross-page sliding motion</p>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-sm text-foreground">Page Sliding</h4>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Cross-page sliding motion</p>
                       </div>
-                      <div
-                        onClick={() => {
-                          const next = !pageSlideEnabled;
+                      <Switch
+                        checked={pageSlideEnabled}
+                        onCheckedChange={(next) => {
                           setPageSlideEnabledState(next);
                           setPageSlideEnabled(next);
                           window.dispatchEvent(new Event('splitmate_page_slide_changed'));
                         }}
-                        className={cn(
-                          "w-12 h-6 rounded-full relative transition-all duration-500 ease-in-out cursor-pointer",
-                          pageSlideEnabled ? "bg-primary" : "bg-secondary"
-                        )}
-                      >
-                        <div className={cn(
-                          "absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-500 ease-in-out shadow-sm",
-                          pageSlideEnabled ? "left-7" : "left-1"
-                        )} />
-                      </div>
+                      />
                     </div>
-                  </div>
 
-                  <div className="h-px bg-border/5" />
-
-                  {/* Swipe Navigation Prop */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
-                        <ArrowLeftRight size={16} className="text-primary" />
+                    {/* Swipe Navigation */}
+                    <div className="p-4 flex items-center gap-3.5">
+                      <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center shrink-0">
+                        <ArrowLeftRight size={20} className="text-primary" />
                       </div>
-                      <div className="flex-1">
-                        <h4 className="font-black text-xs uppercase tracking-tight text-foreground">Swipe Control</h4>
-                        <p className="text-[10px] font-medium text-muted-foreground leading-none mt-1">Edge-swipe gestures</p>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-sm text-foreground">Swipe Control</h4>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Edge-swipe gestures</p>
                       </div>
-                      <div
-                        onClick={() => {
-                          const next = !swipeNavEnabled;
+                      <Switch
+                        checked={swipeNavEnabled}
+                        onCheckedChange={(next) => {
                           setSwipeNavEnabledState(next);
                           setSwipeNavEnabled(next);
                           window.dispatchEvent(new Event('splitmate_swipe_nav_changed'));
                         }}
-                        className={cn(
-                          "w-12 h-6 rounded-full relative transition-all duration-500 ease-in-out cursor-pointer",
-                          swipeNavEnabled ? "bg-primary" : "bg-secondary"
-                        )}
-                      >
-                        <div className={cn(
-                          "absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-500 ease-in-out shadow-sm",
-                          swipeNavEnabled ? "left-7" : "left-1"
-                        )} />
-                      </div>
+                      />
                     </div>
                   </div>
-
                 </div>
               </motion.div>
             </div>
@@ -1565,7 +1530,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
           )}
         </div>
 
-        {isGoogleConnected && (
+        {isGoogleConnected && (isEffectivePro || isAutoBackupGracePeriodActive()) && (
           <div
             onClick={() => {
               const next = !profile.nightlyBackupEnabled;
@@ -1578,7 +1543,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 setLastSavedProfile(updated);
               }
             }}
-            className="w-full flex items-center justify-between p-3.5 rounded-2xl transition-all bg-secondary/20 border border-border/5 active:scale-[0.99] cursor-pointer"
+            className="w-full flex items-center justify-between p-3.5 rounded-3xl transition-all bg-secondary/20 border border-border/5 active:scale-[0.99] cursor-pointer"
           >
             <div className="flex items-center gap-3">
               <div className={cn(
@@ -1588,8 +1553,17 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 <Sparkles size={16} className={profile.nightlyBackupEnabled ? "text-success" : "text-muted-foreground"} />
               </div>
               <div className="text-left">
-                <p className="text-xs font-bold leading-none">Autosave to Cloud</p>
-                <p className="text-[10px] text-muted-foreground mt-1.5 font-medium leading-tight">Syncs daily at 12:00 am</p>
+                <p className="text-xs font-bold leading-none">Daily Backup</p>
+                <p className="text-[10px] text-muted-foreground mt-1.5 font-medium leading-tight">
+                  {!isEffectivePro && isAutoBackupGracePeriodActive()
+                    ? (() => {
+                        const removedAt = getAutoBackupProRemovedAt();
+                        const remainingMs = removedAt ? Math.max(0, AUTO_BACKUP_GRACE_PERIOD_MS - (Date.now() - removedAt)) : 0;
+                        const remainingHours = Math.ceil(remainingMs / (60 * 60 * 1000));
+                        return `Grace period: turns off in ${remainingHours}h unless Pro restored`;
+                      })()
+                    : "Syncs daily at 12:00 am"}
+                </p>
               </div>
             </div>
 
@@ -1608,24 +1582,24 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
         )}
 
         <div className="grid grid-cols-2 gap-2.5">
-          {isGoogleConnected && (
+          {isGoogleConnected && isEffectivePro && (
             <>
               {/* Cloud Backup Item */}
               <button
                 onClick={handleCloudBackup}
                 disabled={isCloudBackupBusy}
-                className="flex items-center gap-3 p-3 rounded-2xl transition-all active:scale-95 disabled:opacity-50"
+                className="flex items-center gap-3 p-3 rounded-3xl transition-all active:scale-95 disabled:opacity-50"
                 style={{
-                  background: 'hsl(var(--success) / 0.08)',
-                  border: '1px solid hsl(var(--success) / 0.12)',
+                  background: 'hsl(var(--secondary) / 0.5)',
+                  border: '1px solid hsl(var(--border) / 0.2)',
                 }}
               >
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'hsl(var(--success) / 0.15)' }}>
-                  <CloudUpload size={18} className="text-success" />
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-background/60 shadow-sm flex-shrink-0">
+                  <CloudUpload size={18} className="text-foreground" />
                 </div>
                 <div className="text-left min-w-0">
-                  <p className="text-[11px] font-bold text-success leading-tight">Cloud Save</p>
-                  <p className="text-[9px] text-success/70 font-medium truncate">Backup</p>
+                  <p className="text-[11px] font-bold leading-tight">Cloud Save</p>
+                  <p className="text-[9px] text-muted-foreground font-medium truncate">Backup</p>
                 </div>
               </button>
 
@@ -1633,18 +1607,18 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
               <button
                 onClick={handleCloudRestore}
                 disabled={isCloudRestoreBusy}
-                className="flex items-center gap-3 p-3 rounded-2xl transition-all active:scale-95 disabled:opacity-50"
+                className="flex items-center gap-3 p-3 rounded-3xl transition-all active:scale-95 disabled:opacity-50"
                 style={{
-                  background: 'hsl(var(--primary) / 0.08)',
-                  border: '1px solid hsl(var(--primary) / 0.12)',
+                  background: 'hsl(var(--secondary) / 0.5)',
+                  border: '1px solid hsl(var(--border) / 0.2)',
                 }}
               >
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'hsl(var(--primary) / 0.15)' }}>
-                  <RotateCcw size={18} className="text-primary" />
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-background/60 shadow-sm flex-shrink-0">
+                  <RotateCcw size={18} className="text-foreground" />
                 </div>
                 <div className="text-left min-w-0">
-                  <p className="text-[11px] font-bold text-primary leading-tight">Cloud Load</p>
-                  <p className="text-[9px] text-primary/70 font-medium truncate">Restore</p>
+                  <p className="text-[11px] font-bold leading-tight">Cloud Load</p>
+                  <p className="text-[9px] text-muted-foreground font-medium truncate">Restore</p>
                 </div>
               </button>
             </>
@@ -1654,7 +1628,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
           <button
             onClick={handleExport}
             disabled={isExporting}
-            className="flex items-center gap-3 p-3 rounded-2xl transition-all active:scale-95 disabled:opacity-50"
+            className="flex items-center gap-3 p-3 rounded-3xl transition-all active:scale-95 disabled:opacity-50"
             style={{
               background: 'hsl(var(--secondary) / 0.5)',
               border: '1px solid hsl(var(--border) / 0.2)',
@@ -1681,7 +1655,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
             />
             <label
               htmlFor="import-file"
-              className="w-full flex items-center gap-3 p-3 rounded-2xl transition-all active:scale-95 cursor-pointer"
+              className="w-full flex items-center gap-3 p-3 rounded-3xl transition-all active:scale-95 cursor-pointer"
               style={{
                 background: 'hsl(var(--secondary) / 0.5)',
                 border: '1px solid hsl(var(--border) / 0.2)',
@@ -1700,6 +1674,24 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
         </div>
       </div>
 
+      {/* Onboarding Restart */}
+      <div className="ios-card-modern overflow-hidden mb-4">
+        <button
+          onClick={() => {
+            localStorage.removeItem('splitmate_onboarding_done');
+            window.location.reload();
+          }}
+          className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
+        >
+          <Presentation size={20} className="text-white shrink-0" />
+          <div className="flex-1 text-left min-w-0">
+            <h2 className="font-bold text-sm text-foreground">Restart Onboarding</h2>
+            <p className="text-[11px] text-muted-foreground">View the intro screens again</p>
+          </div>
+          <ChevronRight size={16} className="text-muted-foreground" />
+        </button>
+      </div>
+
       {/* Danger Zone */}
       <div className="ios-card-modern overflow-hidden" style={{ border: '1px solid hsl(var(--danger) / 0.25)' }}>
         <button
@@ -1708,9 +1700,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
             setDeleteSelections({ personal: false, shared: false, links: false, more: false });
           }}
           className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
-          style={{
-            background: 'linear-gradient(160deg, hsl(var(--card)), hsl(var(--danger) / 0.03))',
-          }}
         >
           <Trash2 size={20} className="text-white shrink-0" />
           <div className="flex-1 text-left">
@@ -1723,17 +1712,18 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
 
       <div>
         <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">ABOUT</p>
-        <div className="ios-card-modern overflow-hidden">
+        <div className="ios-card-modern overflow-hidden flex flex-col divide-y divide-border/30">
+          {/* About Developer */}
           <a
             href="https://x.com/The1UX"
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group no-underline"
+            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all hover:bg-secondary/20 active:bg-secondary/30 active:scale-[0.985] group no-underline"
           >
             <UserCircle2 size={20} className="text-white shrink-0" />
             <div className="flex-1 text-left min-w-0">
               <h2 className="font-bold text-sm text-foreground">About Developer</h2>
-              <p className="text-[11px] text-muted-foreground">Hi, I'm Sandesh! Privacy-first apps.</p>
+              <p className="text-[11px] text-muted-foreground">Hi, I'm The1UX! Privacy-first apps.</p>
             </div>
             <div className="h-8 px-3 rounded-xl bg-foreground text-background text-[10px] font-black uppercase tracking-tighter flex items-center gap-1.5 shrink-0 shadow-sm">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
@@ -1741,6 +1731,36 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
               </svg>
               Follow
             </div>
+          </a>
+
+          {/* Privacy Policy */}
+          <a
+            href="/privacy-policy.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all hover:bg-secondary/20 active:bg-secondary/30 active:scale-[0.985] group no-underline"
+          >
+            <Shield size={20} className="text-muted-foreground shrink-0" />
+            <div className="flex-1 text-left min-w-0">
+              <h2 className="font-bold text-sm text-foreground">Privacy Policy</h2>
+              <p className="text-[11px] text-muted-foreground">How we handle your data</p>
+            </div>
+            <ExternalLink size={16} className="text-muted-foreground" />
+          </a>
+
+          {/* Terms & Conditions */}
+          <a
+            href="/terms-and-conditions.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all hover:bg-secondary/20 active:bg-secondary/30 active:scale-[0.985] group no-underline"
+          >
+            <Info size={20} className="text-muted-foreground shrink-0" />
+            <div className="flex-1 text-left min-w-0">
+              <h2 className="font-bold text-sm text-foreground">Terms & Conditions</h2>
+              <p className="text-[11px] text-muted-foreground">App usage rules and guidelines</p>
+            </div>
+            <ExternalLink size={16} className="text-muted-foreground" />
           </a>
         </div>
       </div>
@@ -1750,7 +1770,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
 
 
       {/* ── Customization Full-Page ── */}
-      {showCustomize && !showCurrencyBrowser && createPortal(
+      {showCustomize && createPortal(
         <div
           className="fixed inset-x-0 bottom-0 z-[10000] flex flex-col bg-background overscroll-none"
           style={{
@@ -1831,12 +1851,19 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                     { id: 'green' as AccentColor, label: 'Green', bgClass: 'bg-[#10b981]' },
                     { id: 'blue' as AccentColor, label: 'Blue', bgClass: 'bg-[#3b82f6]' },
                     { id: 'red' as AccentColor, label: 'Red', bgClass: 'bg-[#f43f5e]' },
-                  ]).map(({ id, label, bgClass }) => {
+                  ]).map(({ id, label, bgClass }, index) => {
                     const active = accentColor === id;
+                    const isProColor = index > 0;
+                    const locked = isProColor && !isEffectivePro;
+                    
                     return (
                       <button
                         key={id}
                         onClick={() => {
+                          if (locked) {
+                            requestProUpgrade('customization', 'Upgrade to unlock premium accent colors.');
+                            return;
+                          }
                           if (accentColor === id) return;
                           setAccentColorState(id);
                           setStoredAccentColor(id);
@@ -1844,11 +1871,14 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                         }}
                         className={cn(
                           "w-12 h-12 rounded-full flex items-center justify-center relative active:scale-90 transition-all border-2",
-                          active ? "border-primary bg-primary/10" : "border-transparent hover:border-border/40"
+                          active ? "border-primary bg-primary/10" : "border-transparent hover:border-border/40",
+                          locked && "opacity-60 grayscale-[0.5]"
                         )}
                         title={label}
                       >
-                        <div className={cn("w-8 h-8 rounded-full shrink-0 shadow-sm", bgClass)} />
+                        <div className={cn("w-8 h-8 rounded-full shrink-0 shadow-sm flex items-center justify-center", bgClass)}>
+                          {locked && <Lock size={12} className="text-white/90" strokeWidth={3} />}
+                        </div>
                       </button>
                     );
                   })}
@@ -1856,322 +1886,81 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
               </div>
             </section>
 
-            {/* Currency */}
+            {/* App Font Section */}
             <section>
               <div className="section-head mb-3">
-                <h2>Main Currency</h2>
-                <span className="mono-label">03 / Money</span>
+                <h2>App Font</h2>
+                <span className="mono-label">FONT STYLE</span>
               </div>
-              <div className="slab-flat p-5 space-y-4">
-                <div className="flex items-baseline justify-between">
-                  <p className="text-[13px] text-muted-foreground leading-snug">
-                    Used across every screen.
-                  </p>
-                  <span className="text-[11px] font-bold text-primary tabular tracking-wide">
-                    {selectedCurrency} · {CURRENCIES.find(c => c.code === selectedCurrency)?.name}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-5 gap-2">
-                  {quickCurrencies.map((c) => {
-                    const active = selectedCurrency === c.code;
+              <div className="slab-flat p-5">
+                <div className="flex flex-col gap-2">
+                  {([
+                    { id: 'nothing' as AppFont, label: 'Nothing (Dotted)', class: 'font-preview-nothing' },
+                    { id: 'samsung' as AppFont, label: 'Samsung Sans', class: 'font-preview-samsung' },
+                    { id: 'google' as AppFont, label: 'Google Sans', class: 'font-preview-google' },
+                    { id: 'system' as AppFont, label: 'System Default', class: 'font-preview-system' },
+                  ]).map(({ id, label, class: fontClass }, index) => {
+                    const active = appFontState === id;
+                    const isProFont = index < 3; // First 3 are custom fonts
+                    const locked = isProFont && !isEffectivePro;
+                    
                     return (
                       <button
-                        key={c.code}
-                        onClick={() => handleCurrencyChange(c.code)}
+                        key={id}
+                        onClick={() => {
+                          if (locked) {
+                            requestProUpgrade('customization', 'Upgrade to unlock premium fonts.');
+                            return;
+                          }
+                          if (appFontState === id) return;
+                          setAppFontState(id);
+                          setStoredAppFont(id);
+                          toast({ title: 'Font Updated', description: `${label} font is now active.` });
+                        }}
                         className={cn(
-                          "flex flex-col items-center gap-1.5 py-3 rounded-2xl border transition-all active:scale-95",
-                          active
-                            ? "bg-primary/10 border-primary/50"
-                            : "bg-secondary/30 border-border/55"
+                          "w-full h-14 rounded-[1rem] flex items-center justify-between px-4 active:scale-95 transition-all border-2",
+                          active ? "border-primary bg-primary/10 text-primary" : "border-border/30 bg-secondary/30 hover:border-border/60 text-foreground",
+                          locked && "opacity-60 grayscale-[0.5]"
                         )}
                       >
-                        <span className={cn("text-xl font-bold leading-none", active ? "text-primary" : "text-foreground")}>
-                          {c.symbol}
+                        <span className={cn("text-[15px]", fontClass, active ? "font-bold" : "font-medium")}>
+                          {label}
                         </span>
-                        <span className={cn("text-[10px] font-bold tracking-wider", active ? "text-primary" : "text-muted-foreground")}>
-                          {c.code}
-                        </span>
+                        {locked ? (
+                          <Lock size={16} className="text-muted-foreground" />
+                        ) : active ? (
+                          <Check size={18} strokeWidth={3} className="text-primary" />
+                        ) : null}
                       </button>
                     );
                   })}
                 </div>
-
-                <button
-                  onClick={() => {
-                    setCurrencySearch('');
-                    setShowCurrencyBrowser(true);
-                  }}
-                  className="btn-ghost-dashed w-full !py-3 gap-2"
-                >
-                  <Search size={14} />
-                  Browse all currencies
-                </button>
               </div>
             </section>
-
-
-            {/* Home Dashboard section */}
-            <section>
-              <div className="section-head mb-3">
-                <h2>Home Dashboard</h2>
-                <span className="mono-label">04 / Widgets</span>
-              </div>
-              <div className="slab-flat p-5 space-y-4">
-                <p className="text-[13px] text-muted-foreground leading-snug">
-                  Toggle widgets on or off, and drag the arrows to <span className="text-foreground font-semibold">reorder</span> what shows first on Home.
-                </p>
-
-
-              <div className="space-y-2.5">
-                {homeSettings.sectionOrder.map((sectionId, index) => {
-                  const item = [
-                    { id: 'stats', label: 'Stats & Totals', icon: Activity, desc: 'Incoming, outgoing & person counts', settingKey: 'showStats' },
-                    { id: 'spending', label: 'Spending Breakdown', icon: PieChart, desc: 'Category-wise distribution chart', settingKey: 'showSpendingBreakdown' },
-                    { id: 'balances', label: 'Top Balances', icon: Users, desc: 'Quick view of people who owe you', settingKey: 'showTopBalances' },
-                    { id: 'categories', label: 'Category Insights', icon: LayoutGrid, desc: 'Detailed spending by category', settingKey: 'showCategories' },
-                    { id: 'budgets', label: 'My Budgets', icon: Landmark, desc: 'Track your budget limits', settingKey: 'showBudgets' },
-                    { id: 'converter', label: 'Currency Converter', icon: Globe, desc: 'Quick exchange rate tool', settingKey: 'showConverter' },
-                    { id: 'personal', label: 'Recent Personal', icon: User, desc: 'Your latest private expenses', settingKey: 'showRecentPersonal' },
-                    { id: 'shared', label: 'Recent Shared', icon: Users, desc: 'Latest activity in shared tabs', settingKey: 'showRecentShared' },
-                    { id: 'goals', label: 'Active Goals', icon: Target, desc: 'Track your saving progress', settingKey: 'showGoals' },
-                    { id: 'loans', label: 'Ongoing Loans', icon: Landmark, desc: 'View borrowed & given loans', settingKey: 'showLoans' },
-                    { id: 'subs', label: 'Upcoming Bills', icon: Repeat, desc: 'Next due subscriptions', settingKey: 'showSubscriptions' },
-                    { id: 'links', label: 'Pinned Links', icon: ExternalLink, desc: 'Quick access to top websites', settingKey: 'showPinnedLinks' },
-                    { id: 'rates', label: 'Live Rates', icon: Globe, desc: 'Market exchange rates', settingKey: 'showCurrencyRates' },
-                  ].find(i => i.id === sectionId);
-
-                  if (!item) return null;
-                  const isEnabled = homeSettings[item.settingKey as keyof HomeTabSettings] as boolean;
-
-                  return (
-                    <div
-                      key={item.id}
-                      className={cn(
-                        "w-full flex items-center gap-3 p-3 rounded-2xl transition-all border",
-                        isEnabled
-                          ? "bg-primary/10 border-primary/20"
-                          : "bg-secondary/20 border-transparent grayscale-[0.6] opacity-70"
-                      )}
-                    >
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleHomeSetting(item.settingKey as keyof Omit<HomeTabSettings, 'currencyRateCodes' | 'sectionOrder'>);
-                        }}
-                        className="flex-1 flex items-center gap-3 text-left min-w-0"
-                      >
-                        <div className={cn(
-                          "w-10 h-10 rounded-xl flex items-center justify-center transition-colors shrink-0",
-                          isEnabled ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"
-                        )}>
-                          <item.icon size={18} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className={cn("font-bold text-sm leading-tight", isEnabled ? "text-foreground" : "text-muted-foreground")}>{item.label}</p>
-                          <p className={cn("text-[10px] font-medium mt-0.5 truncate", isEnabled ? "text-muted-foreground" : "text-muted-foreground/70")}>{item.desc}</p>
-                        </div>
-                        <div className={cn(
-                          "w-5 h-5 rounded-full flex items-center justify-center border transition-all shrink-0",
-                          isEnabled ? "bg-primary border-primary" : "bg-transparent border-border"
-                        )}>
-                          {isEnabled && <Check size={12} className="text-primary-foreground" strokeWidth={3} />}
-                        </div>
-                      </button>
-
-                      {isEnabled && ['goals', 'subs', 'links', 'balances', 'categories'].includes(item.id) && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActivePicker(item.id as 'goals' | 'subs' | 'links' | 'balances' | 'categories');
-                          }}
-                          className="w-8 h-8 rounded-lg bg-secondary/30 flex items-center justify-center hover:bg-secondary/50 active:scale-90 transition-all ml-1 shrink-0"
-                        >
-                          <ChevronRight size={14} className="text-muted-foreground" />
-                        </button>
-                      )}
-
-                      <div className="flex flex-col gap-1 pl-2 border-l border-border/10">
-                        <button
-                          type="button"
-                          disabled={index === 0}
-                          onClick={(e) => { e.stopPropagation(); moveHomeSection(item.id, 'up'); }}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center bg-transparent text-muted-foreground disabled:opacity-30 active:scale-90 transition-all hover:bg-secondary/40"
-                        >
-                          <ChevronUp size={14} strokeWidth={2.5} />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={index === homeSettings.sectionOrder.length - 1}
-                          onClick={(e) => { e.stopPropagation(); moveHomeSection(item.id, 'down'); }}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center bg-transparent text-muted-foreground disabled:opacity-30 active:scale-90 transition-all hover:bg-secondary/40"
-                        >
-                          <ChevronDown size={14} strokeWidth={2.5} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            </section>
-
-
-            {/* Item Picker Modal */}
-            {createPortal(
-              <AnimatePresence>
-                {activePicker && (
-                  <div className="fixed inset-0 z-[99999] flex items-end justify-center p-4 pb-20 sm:pb-4 pointer-events-none">
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      onClick={() => setActivePicker(null)}
-                      className="absolute inset-0 bg-black/60 backdrop-blur-md pointer-events-auto"
-                    />
-                    <motion.div
-                      initial={{ y: "100%", opacity: 0 }}
-                      animate={{ y: 0, opacity: 1 }}
-                      exit={{ y: "100%", opacity: 0 }}
-                      transition={{ type: "spring", damping: 28, stiffness: 220 }}
-                      className="relative w-full max-w-md bg-card border border-border/10 rounded-[1.5rem] shadow-2xl z-[120] overflow-hidden flex flex-col max-h-[75vh] mb-4 pointer-events-auto"
-                    >
-                      {/* Drag Indicator */}
-                      <div className="flex justify-center pt-3 pb-0">
-                        <div className="w-10 h-1 rounded-full bg-muted/20" />
-                      </div>
-
-                      <div className="p-6 pb-4 border-b border-border/5 flex items-center justify-between">
-                        <div>
-                          <h3 className="text-xl font-black tracking-tighter text-foreground capitalize">Select {activePicker}</h3>
-                          <p className="text-[10px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] mt-1">Core Dashboard Elements</p>
-                        </div>
-                        <button
-                          onClick={() => setActivePicker(null)}
-                          className="w-11 h-11 rounded-full bg-secondary flex items-center justify-center text-muted-foreground active:scale-90 transition-all border border-border/5 shadow-sm"
-                        >
-                          <Check size={20} />
-                        </button>
-                      </div>
-
-                      <div className="flex-1 overflow-y-auto p-6 space-y-3 pb-10">
-                        {activePicker === 'goals' && getGoals().map(goal => {
-                          const isSelected = homeSettings.selectedGoalIds.includes(goal.id);
-                          return (
-                            <div
-                              key={goal.id}
-                              onClick={() => toggleSelectedItem('goals', goal.id)}
-                              className={cn(
-                                "p-4 rounded-2xl border transition-all flex items-center justify-between",
-                                isSelected ? "bg-primary/10 border-primary/20 shadow-sm" : "bg-secondary/10 border-transparent opacity-70"
-                              )}
-                            >
-                              <span className="font-bold text-sm">{goal.name}</span>
-                              {isSelected && <div className="w-6 h-6 bg-primary rounded-xl flex items-center justify-center"><Check size={14} className="text-primary-foreground" strokeWidth={3} /></div>}
-                            </div>
-                          );
-                        })}
-
-                        {activePicker === 'subs' && getSubscriptions().map(sub => {
-                          const isSelected = homeSettings.selectedSubscriptionIds.includes(sub.id);
-                          return (
-                            <div
-                              key={sub.id}
-                              onClick={() => toggleSelectedItem('subs', sub.id)}
-                              className={cn(
-                                "p-4 rounded-2xl border transition-all flex items-center justify-between",
-                                isSelected ? "bg-primary/10 border-primary/20 shadow-sm" : "bg-secondary/10 border-transparent opacity-70"
-                              )}
-                            >
-                              <span className="font-bold text-sm">{sub.appName}</span>
-                              {isSelected && <div className="w-6 h-6 bg-primary rounded-xl flex items-center justify-center"><Check size={14} className="text-primary-foreground" strokeWidth={3} /></div>}
-                            </div>
-                          );
-                        })}
-
-                        {activePicker === 'links' && getLinks().map(link => {
-                          const isSelected = homeSettings.selectedLinkIds.includes(link.id);
-                          return (
-                            <div
-                              key={link.id}
-                              onClick={() => toggleSelectedItem('links', link.id)}
-                              className={cn(
-                                "p-4 rounded-2xl border transition-all flex items-center justify-between",
-                                isSelected ? "bg-primary/10 border-primary/20 shadow-sm" : "bg-secondary/10 border-transparent opacity-70"
-                              )}
-                            >
-                              <span className="font-bold text-sm truncate pr-2">{link.title || link.name}</span>
-                              {isSelected && <div className="w-6 h-6 bg-primary rounded-xl flex items-center justify-center"><Check size={14} className="text-primary-foreground" strokeWidth={3} /></div>}
-                            </div>
-                          );
-                        })}
-
-                        {activePicker === 'balances' && allPeople.map(person => {
-                          const isSelected = homeSettings.selectedPersonNames.includes(person);
-                          return (
-                            <div
-                              key={person}
-                              onClick={() => toggleSelectedItem('balances', person)}
-                              className={cn(
-                                "p-4 rounded-2xl border transition-all flex items-center justify-between",
-                                isSelected ? "bg-primary/10 border-primary/20 shadow-sm" : "bg-secondary/10 border-transparent opacity-70"
-                              )}
-                            >
-                              <span className="font-bold text-sm">{person}</span>
-                              {isSelected && <div className="w-6 h-6 bg-primary rounded-xl flex items-center justify-center"><Check size={14} className="text-primary-foreground" strokeWidth={3} /></div>}
-                            </div>
-                          );
-                        })}
-
-                        {activePicker === 'categories' && allCategories.map(cat => {
-                          const isSelected = homeSettings.selectedCategoryNames.includes(cat);
-                          return (
-                            <div
-                              key={cat}
-                              onClick={() => toggleSelectedItem('categories', cat)}
-                              className={cn(
-                                "p-4 rounded-2xl border transition-all flex items-center justify-between",
-                                isSelected ? "bg-primary/10 border-primary/20 shadow-sm" : "bg-secondary/10 border-transparent opacity-70"
-                              )}
-                            >
-                              <span className="font-bold text-sm">{cat}</span>
-                              {isSelected && <div className="w-6 h-6 bg-primary rounded-xl flex items-center justify-center"><Check size={14} className="text-primary-foreground" strokeWidth={3} /></div>}
-                            </div>
-                          );
-                        })}
-
-                        {((activePicker === 'goals' && getGoals().length === 0) ||
-                          (activePicker === 'subs' && getSubscriptions().length === 0) ||
-                          (activePicker === 'links' && getLinks().length === 0) ||
-                          (activePicker === 'balances' && allPeople.length === 0) ||
-                          (activePicker === 'categories' && allCategories.length === 0)) && (
-                            <div className="py-20 text-center space-y-3">
-                              <div className="w-14 h-14 bg-secondary/20 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
-                                <LayoutGrid size={24} className="text-muted-foreground opacity-50" />
-                              </div>
-                              <p className="text-sm font-bold text-muted-foreground">No {activePicker} found</p>
-                            </div>
-                          )}
-                      </div>
-                    </motion.div>
-                  </div>
-                )}
-              </AnimatePresence>,
-              document.body
-            )}
-
-            {/* Divider */}
-            <div className="h-px" style={{ background: 'hsl(var(--border) / 0.3)' }} />
 
             {/* Bottom Tabs section */}
             <section>
               <div className="section-head mb-3">
                 <h2>Bottom Navigation</h2>
-                <span className="mono-label">05 / Tabs</span>
+                <span className="mono-label">03 / Tabs</span>
               </div>
               <div className="slab-flat p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-bold text-foreground">Show Tab Names</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">Display labels under icons</p>
+                  </div>
+                  <Switch
+                    checked={showTabNames}
+                    onCheckedChange={(checked) => {
+                      setShowTabNamesState(checked);
+                      setShowTabNamesEnabled(checked);
+                    }}
+                  />
+                </div>
+
+                <div className="h-px bg-border/40" />
+
                 <p className="text-[13px] text-muted-foreground leading-snug">
                   Reorder the tabs at the bottom of the app. Use the arrows or <span className="text-foreground font-semibold">long-press &amp; drag</span>.
                 </p>
@@ -2219,9 +2008,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                             <span className="font-bold text-sm block truncate text-foreground leading-tight">
                               {TAB_LABELS[tab.id] || tab.id}
                             </span>
-                            <span className="mono-label">
-                              {tab.id === 'home' ? 'Default · first tab' : isFixed ? 'Pinned' : `Position ${index + 1}`}
-                            </span>
                           </div>
                         </div>
 
@@ -2260,7 +2046,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 Reset everything to defaults
               </button>
               <p className="text-[11px] text-muted-foreground text-center mt-2 leading-snug">
-                Restores theme, currency, widgets, and tab order. Your data stays safe.
+                Restores theme, style, and tab order. Your data stays safe.
               </p>
             </section>
 
@@ -2269,70 +2055,414 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
         document.body
       )}
 
-      {showCustomize && showCurrencyBrowser && createPortal(
+      {showCurrencyPage && createPortal(
         <div className="fixed inset-0 z-[10001] flex flex-col" style={{ background: 'hsl(var(--background))', overscrollBehavior: 'contain' }}>
-          <div className="flex items-center gap-4 px-6 pt-12 pb-4">
-            <button
-              onClick={() => setShowCurrencyBrowser(false)}
-              className="w-11 h-11 rounded-2xl bg-secondary/80 border border-border/10 flex items-center justify-center active:scale-90 transition-all shadow-sm"
-            >
-              <ChevronLeft size={20} strokeWidth={2.5} />
-            </button>
-            <div className="flex-1">
-              <h1 className="text-xl font-bold">All Currencies</h1>
-              <p className="text-xs text-muted-foreground">Search and choose your currency</p>
+          {/* Top Header */}
+          <div className="flex items-center justify-between px-5 pt-12 pb-3 shrink-0">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  setShowCurrencyPage(false);
+                }}
+                className="w-10 h-10 rounded-2xl bg-secondary/60 border border-border/55 flex items-center justify-center active:scale-90 transition-all"
+              >
+                <ChevronLeft size={18} strokeWidth={2.5} />
+              </button>
+              <h1 className="text-xl font-bold">Currency</h1>
             </div>
+
+            {/* Top right selected currency badge when scrolled */}
+            {(() => {
+              const sel = CURRENCIES.find(c => c.code === selectedCurrency);
+              return sel ? (
+                <div
+                  className={cn(
+                    "w-10 h-10 rounded-2xl border-2 border-primary/60 bg-primary/10 flex items-center justify-center font-black text-primary text-base transition-all duration-300 shrink-0",
+                    currencyScrolled ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
+                  )}
+                  title={`${sel.name} (${sel.code})`}
+                >
+                  {sel.symbol}
+                </div>
+              ) : null;
+            })()}
           </div>
 
-          <div className="px-5 pb-4">
-            <div className="relative">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                value={currencySearch}
-                onChange={(e) => setCurrencySearch(e.target.value)}
-                placeholder="Search by name, code, or symbol"
-                className="w-full h-11 pl-10 pr-3 rounded-2xl text-sm"
-                style={{ background: 'hsl(var(--muted) / 0.3)', border: '1px solid hsl(var(--border) / 0.2)' }}
-                autoFocus
-              />
-            </div>
-          </div>
+          <div
+            className="flex-1 overflow-y-auto px-5 pb-6"
+            style={{ overscrollBehavior: 'contain' }}
+            onScroll={(e) => {
+              const isScrolled = e.currentTarget.scrollTop > 50;
+              if (isScrolled !== currencyScrolled) {
+                setCurrencyScrolled(isScrolled);
+              }
+            }}
+          >
+            {/* Selected currency hero */}
+            {(() => {
+              const sel = CURRENCIES.find(c => c.code === selectedCurrency);
+              return sel ? (
+                <div className="flex flex-col items-center gap-1.5 py-4">
+                  <div className="w-20 h-20 rounded-full border-2 border-primary/60 bg-primary/10 flex items-center justify-center shadow-inner">
+                    <span className="text-3xl font-black text-primary leading-none">{sel.symbol}</span>
+                  </div>
+                  <span className="text-sm font-bold text-foreground mt-1">{sel.code}</span>
+                  <span className="text-xs text-muted-foreground">{sel.name}</span>
+                </div>
+              ) : null;
+            })()}
 
-          <div className="flex-1 overflow-y-auto px-5 pb-6 space-y-2" style={{ overscrollBehavior: 'contain' }}>
+            {/* Search bar - sticky right below the header when scrolled */}
+            <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-md pt-1 pb-3">
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  value={currencySearch}
+                  onChange={(e) => setCurrencySearch(e.target.value)}
+                  placeholder="Search by name, code, or symbol"
+                  className="w-full h-11 pl-10 pr-3 rounded-2xl text-sm"
+                  style={{ background: 'hsl(var(--muted) / 0.3)', border: '1px solid hsl(var(--border) / 0.2)' }}
+                  autoFocus
+                />
+              </div>
+            </div>
+
             {filteredCurrencies.length === 0 ? (
               <div className="ios-card-modern p-4 text-sm text-muted-foreground text-center">
-                No currency found for "{currencySearch}".
+                No currency found for &quot;{currencySearch}&quot;.
               </div>
             ) : (
-              filteredCurrencies.map((currency) => {
-                const isSelected = selectedCurrency === currency.code;
-                return (
+              <div className="ios-card-modern overflow-hidden">
+                {filteredCurrencies.map((currency, idx) => {
+                  const isSelected = selectedCurrency === currency.code;
+                  return (
+                    <React.Fragment key={currency.code}>
+                      {idx > 0 && <div className="h-px bg-border/20 mx-4" />}
+                      <button
+                        onClick={() => {
+                          handleCurrencyChange(currency.code);
+                        }}
+                        className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985]"
+                      >
+                        {/* Symbol on left */}
+                        <div
+                          className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg shrink-0"
+                          style={{
+                            background: isSelected ? 'hsl(var(--primary) / 0.12)' : 'hsl(var(--secondary) / 0.6)',
+                            color: isSelected ? 'hsl(var(--primary))' : 'hsl(var(--foreground))',
+                          }}
+                        >
+                          {currency.symbol}
+                        </div>
+                        {/* Name + code on right */}
+                        <div className="flex-1 text-left min-w-0">
+                          <p className={`font-semibold text-sm truncate ${isSelected ? 'text-primary' : 'text-foreground'}`}>
+                            {currency.name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{currency.code}</p>
+                        </div>
+                        {isSelected && <Check size={16} className="text-primary shrink-0" />}
+                      </button>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Reminders & Notifications Portal ── */}
+      {showNotificationMenu && createPortal(
+        <div
+          className="fixed inset-x-0 bottom-0 z-[10000] flex flex-col bg-background overscroll-none animate-in slide-in-from-bottom duration-300"
+          style={{
+            top: '-200px',
+            paddingTop: '200px',
+            height: 'calc(100dvh + 200px)',
+            width: '100vw',
+            background: 'hsl(var(--background))',
+          }}
+        >
+          {/* Header */}
+          <div className="px-5 pt-12 pb-4">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowNotificationMenu(false)}
+                className="w-10 h-10 rounded-2xl bg-secondary/60 border border-border/55 flex items-center justify-center active:scale-95 transition-all"
+                aria-label="Back"
+              >
+                <ChevronLeft size={18} strokeWidth={2.5} />
+              </button>
+              <h1 className="text-xl font-bold tracking-tight text-foreground">Notify Me</h1>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-5 pb-10 space-y-6">
+            {/* Notification Permission Banner */}
+            {!hasNotificationPermission && (
+              <div className="slab-flat p-4 bg-primary/5 border border-primary/20 space-y-3 rounded-3xl">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-primary/15 flex items-center justify-center text-primary shrink-0 mt-0.5">
+                    <Bell size={15} strokeWidth={2.5} />
+                  </div>
+                  <div className="space-y-0.5 text-left">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-primary">Enable Alerts</h4>
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      Grant notification permission to allow SplitMate to remind you on this device.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={async () => {
+                    const granted = await requestNotificationPermission();
+                    if (granted) {
+                      setHasNotificationPermission(true);
+                      toast({ title: 'Notifications Enabled', description: 'You will now receive alerts for your reminders.' });
+                    } else {
+                      toast({ title: 'Permission Denied', description: 'Please enable notifications in your device settings.', variant: 'destructive' });
+                    }
+                  }}
+                  className="w-full h-10 rounded-xl bg-primary text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all"
+                >
+                  Grant Permission
+                </button>
+              </div>
+            )}
+
+            {/* Daily Reminder Setup */}
+            <section>
+              <div className="section-head mb-3">
+                <h2>Daily Reminder</h2>
+                <span className="mono-label">01 / Every Day</span>
+              </div>
+              <div className="slab-flat p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-left">
+                    <h3 className="font-bold text-sm">Daily Alert</h3>
+                    <p className="text-[11px] text-muted-foreground mt-1">Remind me to log today's expenses</p>
+                  </div>
+                  <Switch
+                    checked={dailyReminder.enabled}
+                    onCheckedChange={async (next) => {
+                      if (next) {
+                        const granted = await requestNotificationPermission();
+                        setHasNotificationPermission(granted);
+                        if (!granted) {
+                          toast({
+                            title: "Permission Required",
+                            description: "Please enable notifications to receive reminders.",
+                            variant: "destructive"
+                          });
+                          return;
+                        }
+                      }
+                      const updated = { ...dailyReminder, enabled: next };
+                      setDailyReminder(updated);
+                      localStorage.setItem('splitmate_reminder_settings', JSON.stringify(updated));
+                      await syncScheduledNotifications();
+                      toast({
+                        title: next ? "Daily Reminders Active" : "Daily Reminders Paused",
+                        description: next ? `We will notify you at ${updated.times.map(t => formatTime12h(t)).join(', ')} every day.` : "You won't receive daily reminder alerts.",
+                      });
+                    }}
+                  />
+                </div>
+
+                {dailyReminder.enabled && (
+                  <div className="pt-3 border-t border-border/10 animate-in slide-in-from-top-2 duration-200 text-left space-y-3">
+                    <label className="block text-[10px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] px-1">Alert Times</label>
+                    <div className="space-y-2.5">
+                      {dailyReminder.times.map((time, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <input
+                            type="time"
+                            value={time}
+                            onChange={async (e) => {
+                              const nextTimes = [...dailyReminder.times];
+                              nextTimes[idx] = e.target.value;
+                              const updated = { ...dailyReminder, times: nextTimes };
+                              setDailyReminder(updated);
+                              localStorage.setItem('splitmate_reminder_settings', JSON.stringify(updated));
+                              await syncScheduledNotifications();
+                            }}
+                            className="flex-1 h-12 px-4 rounded-2xl text-[14px] font-black bg-secondary/30 border border-border/10 focus:ring-2 focus:ring-primary/20 transition-all font-mono"
+                          />
+                          {dailyReminder.times.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const nextTimes = dailyReminder.times.filter((_, i) => i !== idx);
+                                const updated = { ...dailyReminder, times: nextTimes };
+                                setDailyReminder(updated);
+                                localStorage.setItem('splitmate_reminder_settings', JSON.stringify(updated));
+                                await syncScheduledNotifications();
+                                toast({ title: 'Time Removed', description: 'Reminder slot removed.' });
+                              }}
+                              className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center active:scale-95 transition-all"
+                            >
+                              <X size={16} strokeWidth={2.5} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {dailyReminder.times.length < 3 && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const nextTimes = [...dailyReminder.times, '12:00'];
+                          const updated = { ...dailyReminder, times: nextTimes };
+                          setDailyReminder(updated);
+                          localStorage.setItem('splitmate_reminder_settings', JSON.stringify(updated));
+                          await syncScheduledNotifications();
+                          toast({ title: 'Time Slot Added', description: `You can schedule up to 3 slots.` });
+                        }}
+                        className="w-full h-11 rounded-2xl bg-secondary/50 border border-dashed border-border/20 text-[10px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 text-muted-foreground hover:text-foreground"
+                      >
+                        <Plus size={12} strokeWidth={3} />
+                        Add Time Slot ({dailyReminder.times.length}/3)
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Custom Specific Date Reminders */}
+            <section>
+              <div className="section-head mb-3">
+                <h2>One-time Reminder</h2>
+                <span className="mono-label">02 / Custom Date</span>
+              </div>
+              <div className="slab-flat p-5 space-y-4 text-left">
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  Schedule a specific date and time to alert you. Great for month-ends or payday.
+                </p>
+
+                <div className="space-y-3.5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <label className="block text-[9px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] px-1">Select Date</label>
+                      <input
+                        type="date"
+                        value={newCustomReminder.date}
+                        onChange={(e) => setNewCustomReminder(p => ({ ...p, date: e.target.value }))}
+                        className="w-full h-12 px-4 rounded-2xl text-xs font-bold bg-secondary/30 border border-border/10 focus:ring-2 focus:ring-primary/20 transition-all"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="block text-[9px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] px-1">Select Time</label>
+                      <input
+                        type="time"
+                        value={newCustomReminder.time}
+                        onChange={(e) => setNewCustomReminder(p => ({ ...p, time: e.target.value }))}
+                        className="w-full h-12 px-4 rounded-2xl text-xs font-bold bg-secondary/30 border border-border/10 focus:ring-2 focus:ring-primary/20 transition-all font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-[9px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] px-1">Message</label>
+                    <input
+                      type="text"
+                      value={newCustomReminder.message}
+                      onChange={(e) => setNewCustomReminder(p => ({ ...p, message: e.target.value }))}
+                      placeholder="Add entry for today! 💸"
+                      className="w-full h-12 px-4 rounded-2xl text-xs font-bold bg-secondary/30 border border-border/10 focus:ring-2 focus:ring-primary/20 transition-all"
+                    />
+                  </div>
+
                   <button
-                    key={currency.code}
-                    onClick={() => {
-                      handleCurrencyChange(currency.code);
-                      setShowCurrencyBrowser(false);
+                    onClick={async () => {
+                      if (!newCustomReminder.date || !newCustomReminder.time) return;
+                      const granted = await requestNotificationPermission();
+                      setHasNotificationPermission(granted);
+                      if (!granted) {
+                        toast({
+                          title: "Permission Required",
+                          description: "Please enable notifications to receive custom alerts.",
+                          variant: "destructive"
+                        });
+                        return;
+                      }
+
+                      const reminder = {
+                        id: generateId(),
+                        date: newCustomReminder.date,
+                        time: newCustomReminder.time,
+                        message: newCustomReminder.message.trim() || 'Add entry for today! 💸',
+                        notified: false
+                      };
+                      const updated = [...customReminders, reminder].sort((a,b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+                      setCustomReminders(updated);
+                      localStorage.setItem('splitmate_custom_reminders', JSON.stringify(updated));
+                      await syncScheduledNotifications();
+                      toast({ title: 'Reminder Scheduled', description: `Alert set for ${new Date(reminder.date).toLocaleDateString()} at ${formatTime12h(reminder.time)}` });
+                      setNewCustomReminder({
+                        date: new Date().toISOString().slice(0, 10),
+                        time: '20:00',
+                        message: 'Add entry for today! 💸',
+                      });
                     }}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all duration-200"
-                    style={{
-                      background: isSelected ? 'hsl(var(--primary) / 0.1)' : 'hsl(var(--card))',
-                      border: `1px solid ${isSelected ? 'hsl(var(--primary) / 0.2)' : 'hsl(var(--border) / 0.25)'}`,
-                    }}
+                    className="w-full h-12 rounded-2xl bg-primary text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/10"
                   >
-                    <div
-                      className="w-10 h-10 rounded-lg flex items-center justify-center font-bold"
-                      style={{ background: 'hsl(var(--secondary) / 0.65)', color: isSelected ? 'hsl(var(--primary))' : 'hsl(var(--foreground))' }}
-                    >
-                      {currency.symbol}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm truncate">{currency.name}</p>
-                      <p className="text-xs text-muted-foreground">{currency.code}</p>
-                    </div>
-                    {isSelected && <Check size={16} className="text-primary" />}
+                    <Plus size={14} strokeWidth={2.5} />
+                    Schedule Alert
                   </button>
-                );
-              })
+                </div>
+              </div>
+            </section>
+
+            {/* List of Custom Reminders */}
+            {customReminders.length > 0 && (
+              <section>
+                <div className="section-head mb-3">
+                  <h2>Active Alerts</h2>
+                  <span className="mono-label">SCHEDULED Reminders</span>
+                </div>
+                <div className="space-y-2.5">
+                  {customReminders.map(reminder => (
+                    <div
+                      key={reminder.id}
+                      className={cn(
+                        "p-4 rounded-3xl border text-left flex items-center justify-between gap-3.5 transition-all",
+                        reminder.notified
+                          ? "bg-secondary/20 border-border/5 opacity-50"
+                          : "bg-card border-border/10 shadow-sm"
+                      )}
+                    >
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black text-foreground/80 uppercase">
+                            {new Date(reminder.date).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                          </span>
+                          <span className="text-[10px] font-bold text-muted-foreground font-mono">{formatTime12h(reminder.time)}</span>
+                          {reminder.notified && (
+                            <span className="text-[8px] font-black bg-success/15 text-success px-1.5 py-0.5 rounded-md uppercase">Sent</span>
+                          )}
+                        </div>
+                        <p className="text-xs font-semibold text-foreground/90 truncate leading-tight">{reminder.message}</p>
+                      </div>
+
+                      <button
+                        onClick={async () => {
+                          const updated = customReminders.filter(r => r.id !== reminder.id);
+                          setCustomReminders(updated);
+                          localStorage.setItem('splitmate_custom_reminders', JSON.stringify(updated));
+                          await syncScheduledNotifications();
+                          toast({ title: 'Reminder Deleted', description: 'Reminder was removed.' });
+                        }}
+                        className="w-9 h-9 rounded-xl bg-destructive/10 text-destructive flex items-center justify-center hover:bg-destructive hover:text-white transition-all shrink-0"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
             )}
           </div>
         </div>,
@@ -2366,10 +2496,10 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 {/* Select all */}
                 <button
                   onClick={selectAllForDelete}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold text-muted-foreground"
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-xs font-semibold text-muted-foreground"
                   style={{ background: 'hsl(var(--secondary) / 0.5)' }}
                 >
-                  <div className="w-5 h-5 rounded-md border flex items-center justify-center"
+                  <div className="w-5 h-5 rounded-full border flex items-center justify-center"
                     style={{
                       background: deleteSelections.personal && deleteSelections.shared && deleteSelections.links && deleteSelections.more ? 'hsl(var(--danger))' : 'transparent',
                       borderColor: deleteSelections.personal && deleteSelections.shared && deleteSelections.links && deleteSelections.more ? 'hsl(var(--danger))' : 'hsl(var(--border))',
@@ -2382,13 +2512,13 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 {/* Personal */}
                 <button
                   onClick={() => toggleDeleteSelection('personal')}
-                  className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-150 text-left"
+                  className="w-full flex items-center gap-3 px-4 py-3.5 rounded-[1.5rem] transition-all duration-150 text-left"
                   style={{
                     background: deleteSelections.personal ? 'hsl(var(--danger) / 0.08)' : 'hsl(var(--secondary) / 0.5)',
                     border: `1px solid ${deleteSelections.personal ? 'hsl(var(--danger) / 0.25)' : 'hsl(var(--border) / 0.25)'}`,
                   }}
                 >
-                  <div className="w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0"
+                  <div className="w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0"
                     style={{
                       background: deleteSelections.personal ? 'hsl(var(--danger))' : 'transparent',
                       borderColor: deleteSelections.personal ? 'hsl(var(--danger))' : 'hsl(var(--border))',
@@ -2407,13 +2537,13 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 {/* Shared */}
                 <button
                   onClick={() => toggleDeleteSelection('shared')}
-                  className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-150 text-left"
+                  className="w-full flex items-center gap-3 px-4 py-3.5 rounded-[1.5rem] transition-all duration-150 text-left"
                   style={{
                     background: deleteSelections.shared ? 'hsl(var(--danger) / 0.08)' : 'hsl(var(--secondary) / 0.5)',
                     border: `1px solid ${deleteSelections.shared ? 'hsl(var(--danger) / 0.25)' : 'hsl(var(--border) / 0.25)'}`,
                   }}
                 >
-                  <div className="w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0"
+                  <div className="w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0"
                     style={{
                       background: deleteSelections.shared ? 'hsl(var(--danger))' : 'transparent',
                       borderColor: deleteSelections.shared ? 'hsl(var(--danger))' : 'hsl(var(--border))',
@@ -2432,13 +2562,13 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 {/* Links */}
                 <button
                   onClick={() => toggleDeleteSelection('links')}
-                  className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-150 text-left"
+                  className="w-full flex items-center gap-3 px-4 py-3.5 rounded-[1.5rem] transition-all duration-150 text-left"
                   style={{
                     background: deleteSelections.links ? 'hsl(var(--danger) / 0.08)' : 'hsl(var(--secondary) / 0.5)',
                     border: `1px solid ${deleteSelections.links ? 'hsl(var(--danger) / 0.25)' : 'hsl(var(--border) / 0.25)'}`,
                   }}
                 >
-                  <div className="w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0"
+                  <div className="w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0"
                     style={{
                       background: deleteSelections.links ? 'hsl(var(--danger))' : 'transparent',
                       borderColor: deleteSelections.links ? 'hsl(var(--danger))' : 'hsl(var(--border))',
@@ -2457,13 +2587,13 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 {/* More Features */}
                 <button
                   onClick={() => toggleDeleteSelection('more')}
-                  className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-150 text-left"
+                  className="w-full flex items-center gap-3 px-4 py-3.5 rounded-[1.5rem] transition-all duration-150 text-left"
                   style={{
                     background: deleteSelections.more ? 'hsl(var(--danger) / 0.08)' : 'hsl(var(--secondary) / 0.5)',
                     border: `1px solid ${deleteSelections.more ? 'hsl(var(--danger) / 0.25)' : 'hsl(var(--border) / 0.25)'}`,
                   }}
                 >
-                  <div className="w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0"
+                  <div className="w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0"
                     style={{
                       background: deleteSelections.more ? 'hsl(var(--danger))' : 'transparent',
                       borderColor: deleteSelections.more ? 'hsl(var(--danger))' : 'hsl(var(--border))',
@@ -2483,7 +2613,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                 <div className="flex gap-2 pt-1">
                   <button
                     onClick={() => setDeleteStep('closed')}
-                    className="flex-1 px-4 py-3 rounded-2xl font-semibold text-sm"
+                    className="flex-1 px-4 py-3 rounded-[1.25rem] font-semibold text-sm"
                     style={{ background: 'hsl(var(--secondary))', border: '1px solid hsl(var(--border) / 0.3)' }}
                   >
                     Cancel
@@ -2491,7 +2621,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                   <button
                     onClick={() => hasAnySelection && setDeleteStep('confirm')}
                     disabled={!hasAnySelection}
-                    className="flex-1 px-4 py-3 rounded-2xl font-semibold text-sm disabled:opacity-30 transition-opacity"
+                    className="flex-1 px-4 py-3 rounded-[1.25rem] font-semibold text-sm disabled:opacity-30 transition-opacity"
                     style={{
                       background: 'hsl(var(--danger))',
                       color: 'white',
@@ -2616,7 +2746,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                     { label: 'Personal Expenses', count: backupStats.personal, icon: User },
                     { label: 'Shared Groups & Bills', count: backupStats.shared, icon: Users },
                     { label: 'Loans & Debts', count: backupStats.loans, icon: Landmark },
-                    { label: 'Financial Goals', count: backupStats.goals, icon: Target },
+                    { label: 'Savings Targets', count: backupStats.goals, icon: Target },
                     { label: 'Cloud Links', count: backupStats.links, icon: ExternalLink },
                     { label: 'Subscriptions', count: backupStats.subscriptions, icon: Repeat },
                   ].map((item, i) => (
@@ -2695,6 +2825,12 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
                   <p className="text-xs text-muted-foreground">
                     Signing in simply allows you to backup your app data securely to your own Google Drive.
                     We do not track you, sell your data, or access any files outside of this app's backup folder.
+                  </p>
+                </div>
+                <div className="p-3 rounded-2xl" style={{ background: 'hsl(var(--secondary) / 0.5)', border: '1px solid hsl(var(--border) / 0.3)' }}>
+                  <h4 className="font-semibold text-xs mb-1">Receipt & Proof Images Privacy</h4>
+                  <p className="text-xs text-muted-foreground">
+                    For your privacy, attached proof and bill images are stored strictly on your local device and never uploaded to any servers. Note that clearing app data or uninstalling the app will permanently delete stored images.
                   </p>
                 </div>
               </div>
@@ -2800,6 +2936,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
         </div>,
         document.body
       )}
+    </div>
     </div>
   );
 }

@@ -1,9 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
     <uses-permission android:name="com.android.vending.BILLING" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -46,6 +46,45 @@
             </intent-filter>
 
         </activity>
+
+        <!-- Widget: Total Brief (4×2) -->
+        <receiver
+            android:name=".TotalBriefWidget"
+            android:exported="true"
+            android:label="@string/widget_total_brief_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_total_brief_info" />
+        </receiver>
+
+        <!-- Widget: Quick Add Personal Expense (2×1) -->
+        <receiver
+            android:name=".QuickAddPersonalWidget"
+            android:exported="true"
+            android:label="@string/widget_quick_personal_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_quick_add_personal_info" />
+        </receiver>
+
+        <!-- Widget: Quick Add Shared / Split (2×1) -->
+        <receiver
+            android:name=".QuickAddSharedWidget"
+            android:exported="true"
+            android:label="@string/widget_quick_shared_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_quick_add_shared_info" />
+        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"

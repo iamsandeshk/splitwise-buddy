@@ -215,23 +215,21 @@ export function CalendarTab({ onOpenAccount, onBack, bannerAdActive = true }: Ca
             <button
               type="button"
               onClick={onBack}
-              className="w-11 h-11 rounded-2xl flex items-center justify-center mt-1 bg-secondary/80 border border-border/10 active:scale-95 transition-all shadow-sm"
+              className="w-11 h-11 rounded-2xl slab flex items-center justify-center active:scale-90 transition-all mt-0.5"
               aria-label="Back"
             >
-              <ArrowLeft size={18} strokeWidth={2.5} />
+              <ChevronLeft size={20} strokeWidth={2.5} />
             </button>
           )}
           <div className="space-y-0.5">
-            <h1 className="text-2xl font-bold tracking-tight leading-none">Transaction Calendar</h1>
-            <p className="text-[13px] text-muted-foreground font-medium opacity-80 max-w-[320px] leading-tight">
-              Track days with activity and tap a date to view all income and outgoing transactions.
-            </p>
+            <h1 className="text-[28px] font-bold leading-none tracking-tight">Calendar<span className="text-primary">.</span></h1>
+            <p className="text-xs text-muted-foreground mt-1.5 tracking-wide">Track days with spending activity</p>
           </div>
         </div>
         {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
       </div>
 
-      <div className="rounded-3xl border border-border/15 bg-gradient-to-b from-card/90 to-card/60 p-4 space-y-4 shadow-[0_10px_40px_-30px_hsl(var(--foreground)/0.4)]">
+      <div className="rounded-[1.5rem] border border-border/15 bg-gradient-to-b from-card/90 to-card/60 p-4 space-y-4">
         <div className="flex items-center justify-between">
           <button
             type="button"
@@ -303,7 +301,7 @@ export function CalendarTab({ onOpenAccount, onBack, bannerAdActive = true }: Ca
 
       </div>
 
-      <div className="rounded-3xl border border-border/15 bg-card/70 p-4 space-y-3">
+      <div className="rounded-[1.5rem] border border-border/15 bg-card/70 p-4 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-bold">Selected Day</p>
@@ -314,13 +312,13 @@ export function CalendarTab({ onOpenAccount, onBack, bannerAdActive = true }: Ca
 
         {selectedDayTransactions.length > 0 && (
           <div className="grid grid-cols-2 gap-2">
-            <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/8 p-3">
+            <div className="rounded-[1.5rem] border border-emerald-500/15 bg-emerald-500/8 p-3">
               <p className="text-[10px] uppercase tracking-wider text-emerald-600 font-bold">Income</p>
               <p className="text-sm font-semibold text-emerald-600">
                 <MoneyDisplay amount={Math.abs(selectedDayIncome)} showSign />
               </p>
             </div>
-            <div className="rounded-2xl border border-rose-500/15 bg-rose-500/8 p-3">
+            <div className="rounded-[1.5rem] border border-rose-500/15 bg-rose-500/8 p-3">
               <p className="text-[10px] uppercase tracking-wider text-rose-500 font-bold">Outgoing</p>
               <p className="text-sm font-semibold text-rose-500">
                 <MoneyDisplay amount={-Math.abs(selectedDayOutgoing)} showSign />
@@ -334,14 +332,14 @@ export function CalendarTab({ onOpenAccount, onBack, bannerAdActive = true }: Ca
         ) : (
           <div className="space-y-2">
             {selectedDayTransactions.map((item) => (
-              <div key={`${item.source}-${item.id}`} className="rounded-2xl border border-border/10 bg-secondary/20 px-3 py-2.5 flex items-center justify-between gap-3">
+              <div key={`${item.source}-${item.id}`} className="rounded-[1.5rem] border border-border/10 bg-secondary/20 px-3 py-2.5 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <div
                     className={cn(
-                      'w-10 h-10 rounded-full border flex items-center justify-center shrink-0',
+                      'w-10 h-10 rounded-full border flex items-center justify-center shrink-0 bg-transparent',
                       item.direction === 'income'
-                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600'
-                        : 'border-rose-500/30 bg-rose-500/10 text-rose-500',
+                        ? 'border-border/20 text-emerald-600'
+                        : 'border-border/20 text-rose-500',
                     )}
                     aria-hidden="true"
                   >

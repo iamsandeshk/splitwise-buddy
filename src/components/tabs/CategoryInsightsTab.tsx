@@ -202,35 +202,35 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
             <button
               type="button"
               onClick={onBack}
-              className="w-11 h-11 rounded-2xl flex items-center justify-center mt-1 bg-secondary/80 border border-border/10 active:scale-95 transition-all"
+              className="w-11 h-11 rounded-2xl slab flex items-center justify-center active:scale-90 transition-all mt-0.5"
             >
-              <ArrowLeft size={20} strokeWidth={2.5} />
+              <ChevronLeft size={20} strokeWidth={2.5} />
             </button>
           )}
           <div className="space-y-1">
-            <h1 className="text-3xl font-black tracking-tight leading-none">Categories</h1>
-            <p className="text-sm text-muted-foreground font-medium opacity-60">Insight into your spending</p>
+            <h1 className="text-[28px] font-bold leading-none tracking-tight">Categories<span className="text-primary">.</span></h1>
+            <p className="text-xs text-muted-foreground mt-1.5 tracking-wide">Insight into your spending</p>
           </div>
         </div>
         {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
       </div>
 
       {/* Modern Month Strip */}
-      <div className="relative -mx-4 px-4 py-2 bg-gradient-to-b from-transparent to-secondary/5">
+      <div className="relative -mx-4 px-4 py-1">
         {jumpDirection === 'left' && (
           <div className="absolute left-2 top-1/2 -translate-y-1/2 z-20">
              <button
                onClick={handleJumpToCurrentMonth}
-               className="w-8 h-8 rounded-full bg-primary/20 backdrop-blur-md border border-primary/40 flex items-center justify-center text-primary shadow-md animate-pulse"
+               className="w-7 h-7 rounded-full bg-primary/20 backdrop-blur-md border border-primary/40 flex items-center justify-center text-primary shadow-md animate-pulse"
              >
-               <ChevronLeft size={16} strokeWidth={3} />
+               <ChevronLeft size={14} strokeWidth={2.5} />
              </button>
           </div>
         )}
 
         <div
           ref={monthTabsRef}
-          className="flex items-center gap-3 overflow-x-auto pb-4 scrollbar-hide no-scrollbar"
+          className="flex items-center gap-2 overflow-x-auto pt-1 pb-2 scrollbar-hide no-scrollbar"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {monthOptions.map((month) => {
@@ -242,10 +242,10 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
                 ref={month.key === currentMonthKey ? currentMonthChipRef : null}
                 onClick={() => setSelectedMonthKey(month.key)}
                 className={cn(
-                   "px-5 py-2.5 rounded-[1.25rem] text-[11px] font-black uppercase tracking-[0.1em] whitespace-nowrap transition-all duration-300 flex-shrink-0 border-2",
+                   "px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap transition-all duration-200 flex-shrink-0 border",
                    isActive 
-                   ? "bg-primary text-primary-foreground border-primary scale-105" 
-                   : "bg-card text-muted-foreground/60 border-transparent hover:border-border/30 hover:bg-secondary/30"
+                   ? "bg-primary text-primary-foreground border-primary shadow-sm shadow-primary/25" 
+                   : "bg-card/80 text-muted-foreground/60 border-border/15 hover:border-border/30 hover:bg-secondary/30"
                 )}
               >
                 {month.label}
@@ -258,16 +258,16 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
           <div className="absolute right-2 top-1/2 -translate-y-1/2 z-20">
              <button
                onClick={handleJumpToCurrentMonth}
-               className="w-8 h-8 rounded-full bg-primary/20 backdrop-blur-md border border-primary/40 flex items-center justify-center text-primary shadow-md animate-pulse"
+               className="w-7 h-7 rounded-full bg-primary/20 backdrop-blur-md border border-primary/40 flex items-center justify-center text-primary shadow-md animate-pulse"
              >
-               <ChevronRight size={16} strokeWidth={3} />
+               <ChevronRight size={14} strokeWidth={2.5} />
              </button>
           </div>
         )}
       </div>
 
       {/* Main Spend Card */}
-      <div className="relative group overflow-hidden rounded-[2.5rem] p-8 text-center bg-card border border-border/40 shadow-sm transition-all hover:shadow-xl hover:-translate-y-1">
+      <div className="relative group overflow-hidden rounded-[1.5rem] p-8 text-center bg-card border border-border/40 shadow-sm transition-all hover:shadow-xl hover:-translate-y-1">
          <div className="absolute top-0 right-0 p-8 opacity-[0.03] group-hover:opacity-[0.05] transition-opacity">
             <TrendingUp size={120} strokeWidth={3} className="text-foreground" />
          </div>
@@ -283,7 +283,7 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
       {chartData.length > 0 ? (
         <div className="space-y-6">
           {/* Chart Section */}
-          <div className="ios-card-modern p-6 space-y-4 rounded-[2.5rem] bg-card border border-border/40">
+          <div className="ios-card-modern p-6 space-y-4 rounded-[1.5rem] bg-card border border-border/40">
             <div className="flex items-center justify-between">
                <h3 className="font-black text-[13px] uppercase tracking-widest flex items-center gap-2.5">
                   <div className="w-9 h-9 bg-purple-500/10 rounded-xl flex items-center justify-center text-purple-600">
@@ -294,7 +294,7 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
                <p className="text-[10px] font-black text-muted-foreground/40 uppercase tracking-widest">Line Analysis</p>
             </div>
             <div className="p-2 rounded-[2rem] bg-secondary/5 border border-border/5">
-               <ExpenseChart data={chartData} type="line" height={240} />
+               <ExpenseChart data={[{ name: '', value: 0 }, ...chartData]} type="line" height={240} />
             </div>
           </div>
 
@@ -312,7 +312,7 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
                   return (
                     <div key={item.name} className="contents">
                       <div 
-                        className="group relative flex flex-col p-5 rounded-[2.25rem] bg-card border border-border/30 shadow-sm transition-all hover:shadow-md active:scale-[0.98]"
+                        className="group relative flex flex-col p-5 rounded-[1.5rem] bg-card border border-border/30 shadow-sm transition-all hover:shadow-md active:scale-[0.98]"
                       >
                         <div className="flex items-center justify-between gap-4 mb-4">
                           <div className="flex items-center gap-3">
@@ -359,7 +359,7 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
           </div>
         </div>
       ) : (
-        <div className="p-16 text-center rounded-[3rem] bg-secondary/15 border border-dashed border-border/40">
+        <div className="p-16 text-center rounded-[1.5rem] bg-secondary/15 border border-dashed border-border/40">
            <PieChart className="mx-auto mb-4 text-muted-foreground/20" size={56} strokeWidth={1.5} />
            <p className="text-sm font-bold text-muted-foreground/50 italic italic px-6 leading-relaxed"> No spending patterns detected for this cycle. Start tracking to see insights.</p>
         </div>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ExternalLink, Edit, Trash2, Pin, PinOff, Copy, Lock, Unlock, KeyRound, X } from 'lucide-react';
 import { LinkItem, deleteLink, toggleLinkPin, toggleLinkLock, saveLink, getGroups } from '@/lib/storage';
 import { useToast } from '@/hooks/use-toast';
@@ -216,7 +217,6 @@ export const LinkCard = ({ link, onRefresh, viewMode = 'list', isGroupView = fal
                 onClick={handleOpen}
                 style={{
                   border: '1px solid hsl(var(--border) / 0.5)',
-                  boxShadow: '0 15px 40px -20px hsl(var(--foreground) / 0.15)',
                   aspectRatio: '0.85/1',
                 }}
               >
@@ -329,7 +329,7 @@ export const LinkCard = ({ link, onRefresh, viewMode = 'list', isGroupView = fal
 
            {/* Hidden UI Layers */}
            <EditLinkModal link={link} isOpen={showEditModal} onClose={() => setShowEditModal(false)} onSave={onRefresh} />
-           {showDeleteConfirm && (
+           {showDeleteConfirm && createPortal(
              <div className="fixed inset-0 z-[250] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setShowDeleteConfirm(false)}>
                 <div className="w-full max-w-md bg-card rounded-[2.5rem] p-7 pt-9 pb-10 space-y-6 animate-in slide-in-from-bottom-10 border border-border/10 duration-300 shadow-2xl" onClick={e => e.stopPropagation()}>
                    <div className="text-center space-y-2">
@@ -339,12 +339,13 @@ export const LinkCard = ({ link, onRefresh, viewMode = 'list', isGroupView = fal
                    </div>
                    <div className="grid grid-cols-2 gap-4 pt-4">
                       <button onClick={() => setShowDeleteConfirm(false)} className="h-14 rounded-2xl bg-secondary/50 font-bold active:scale-95 transition-all">Cancel</button>
-                      <button onClick={handleDelete} className="h-14 rounded-2xl bg-destructive text-white font-black shadow-lg shadow-destructive/20 active:scale-95 transition-all">Delete</button>
+                      <button onClick={handleDelete} className="h-14 rounded-2xl bg-destructive text-white font-black active:scale-95 transition-all">Delete</button>
                    </div>
                 </div>
-             </div>
+             </div>,
+             document.body
            )}
-           {showUnlockPrompt && (
+           {showUnlockPrompt && createPortal(
               <div className="fixed inset-0 z-[250] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => { setShowUnlockPrompt(false); setPinInput(''); }}>
                 <div className="w-full max-w-md bg-card rounded-[2.5rem] p-7 pt-9 pb-10 space-y-6 animate-in slide-in-from-bottom-10 border border-border/10 duration-300 shadow-2xl" onClick={e => e.stopPropagation()}>
                    <div className="text-center space-y-2">
@@ -360,9 +361,10 @@ export const LinkCard = ({ link, onRefresh, viewMode = 'list', isGroupView = fal
                       </div>
                    </div>
                 </div>
-              </div>
+              </div>,
+              document.body
            )}
-           {showSetPinPrompt && (
+           {showSetPinPrompt && createPortal(
               <div className="fixed inset-0 z-[250] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => { setShowSetPinPrompt(false); setNewPinInput(''); }}>
                 <div className="w-full max-w-md bg-card rounded-[2.5rem] p-7 pt-9 pb-10 space-y-6 animate-in slide-in-from-bottom-10 border border-border/10 duration-300 shadow-2xl" onClick={e => e.stopPropagation()}>
                    <div className="text-center space-y-2">
@@ -391,7 +393,8 @@ export const LinkCard = ({ link, onRefresh, viewMode = 'list', isGroupView = fal
                       </div>
                    </div>
                 </div>
-              </div>
+              </div>,
+              document.body
            )}
         </div>
       </ContextMenuTrigger>

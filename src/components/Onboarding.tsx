@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useEffect } from 'react';
-import { Wallet, Users, BookmarkPlus, BarChart3, ChevronRight, ChevronLeft, Sun, Moon, Monitor, Check, Plus, Home, User, ExternalLink, Settings, Tag, ArrowDownRight, ArrowUpRight, Folder, Pin, UserCircle2, MessageSquare } from 'lucide-react';
-import { CURRENCIES, setCurrency, setOnboardingDone, saveAccountProfile, importData, type CurrencyInfo } from '@/lib/storage';
+import { Wallet, Users, BookmarkPlus, BarChart3, ChevronRight, ChevronLeft, Sun, Moon, Monitor, Check, Plus, Home, User, ExternalLink, Settings, Tag, ArrowDownRight, ArrowUpRight, Folder, Pin, UserCircle2 } from 'lucide-react';
+import { CURRENCIES, setCurrency, setOnboardingDone, saveAccountProfile, importData, getAccountProfile, type CurrencyInfo } from '@/lib/storage';
 import { setStoredTheme, type ThemeMode } from '@/lib/theme';
-import { signInWithGoogle, getGooglePhotoUrl } from '@/integrations/firebase/auth';
+import { signInWithGoogle, getGooglePhotoUrl, getCurrentGoogleUser } from '@/integrations/firebase/auth';
 import { loadBackupForCurrentUser } from '@/integrations/firebase/backup';
 import { useToast } from '@/hooks/use-toast';
 
@@ -17,7 +17,7 @@ function DashboardPreview() {
   return (
     <div className="w-full max-w-[280px] mx-auto space-y-2.5">
       {/* Balance card */}
-      <div className="rounded-2xl p-4 text-left"
+      <div className="rounded-[1.5rem] p-5 text-left"
         style={{ background: 'hsl(var(--primary) / 0.08)', border: '1px solid hsl(var(--primary) / 0.12)' }}>
         <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-widest">Net Balance</p>
         <p className="text-2xl font-extrabold mt-1" style={{ color: 'hsl(var(--success))' }}>+₹2,450</p>
@@ -33,12 +33,12 @@ function DashboardPreview() {
         </div>
       </div>
       {/* Quick actions */}
-      <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-xl py-2.5 px-3 flex items-center gap-2"
+      <div className="grid grid-cols-2 gap-2 mt-1">
+        <div className="rounded-[1.25rem] py-3 px-3 flex items-center gap-2"
           style={{ background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))', color: 'white' }}>
           <Plus size={12} /> <span className="text-[10px] font-bold">Personal</span>
         </div>
-        <div className="rounded-xl py-2.5 px-3 flex items-center gap-2"
+        <div className="rounded-[1.25rem] py-3 px-3 flex items-center gap-2"
           style={{ background: 'hsl(var(--card) / 0.9)', border: '1px solid hsl(var(--border) / 0.3)' }}>
           <Users size={12} className="text-primary" /> <span className="text-[10px] font-semibold">Shared</span>
         </div>
@@ -82,8 +82,8 @@ function PersonalPreview() {
 
 function SharedPreview() {
   const people = [
-    { name: 'Ajay', initial: 'A', amount: '+₹1,200', positive: true },
-    { name: 'Priya', initial: 'P', amount: '-₹800', positive: false },
+    { name: 'Ansh', initial: 'A', amount: '+₹1,200', positive: true },
+    { name: 'The1UX', initial: 'T', amount: '-₹800', positive: false },
   ];
   return (
     <div className="w-full max-w-[280px] mx-auto space-y-2">
@@ -153,26 +153,6 @@ function LinksPreview() {
   );
 }
 
-function SmsPermissionPreview() {
-  return (
-    <div className="w-full max-w-[280px] mx-auto rounded-3xl p-4 text-left" style={{ background: 'hsl(var(--card) / 0.78)', border: '1px solid hsl(var(--border) / 0.2)' }}>
-      <div className="flex items-center gap-3">
-        <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'hsl(var(--primary) / 0.1)', color: 'hsl(var(--primary))' }}>
-          <MessageSquare size={18} />
-        </div>
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Android permission</p>
-          <p className="text-sm font-bold">SMS capture stays on</p>
-        </div>
-      </div>
-
-      <div className="mt-4 space-y-2 text-xs text-muted-foreground leading-relaxed">
-        <p>SplitMate asks for READ_SMS only when you turn on SMS capture from SMS Transactions.</p>
-        <p>Only financial transaction SMS are processed, and parsed results are stored in SMS Transactions for manual review.</p>
-      </div>
-    </div>
-  );
-}
 
 const STEPS = [
   {
@@ -215,16 +195,19 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   const [selectedCurrency, setSelectedCurrency] = useState<string>('INR');
   const { toast } = useToast();
 
+  const isGoogleConnected = Boolean(getCurrentGoogleUser() || getAccountProfile()?.email);
+
   const isFeatureStep = step < STEPS.length;
   const isThemeStep = step === STEPS.length;
   const isCurrencyStep = step === STEPS.length + 1;
-  const isPermissionStep = step === STEPS.length + 2;
-  const isSignInStep = step === STEPS.length + 3;
-  const totalSteps = STEPS.length + 4;
+  const isSignInStep = isGoogleConnected ? false : step === STEPS.length + 2;
+  const totalSteps = isGoogleConnected ? STEPS.length + 2 : STEPS.length + 3;
 
   const handleNext = () => {
     if (step < totalSteps - 1) {
       setStep(step + 1);
+    } else {
+      handleFinish();
     }
   };
 
@@ -307,8 +290,8 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                 }}
               >
                 {selectedTheme === 'light' ? <Sun size={40} className="text-foreground" /> :
-                 selectedTheme === 'dark' ? <Moon size={40} className="text-foreground" /> :
-                 <Monitor size={40} className="text-foreground" />}
+                  selectedTheme === 'dark' ? <Moon size={40} className="text-foreground" /> :
+                    <Monitor size={40} className="text-foreground" />}
               </div>
             </div>
 
@@ -374,59 +357,40 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             <p className="text-sm text-muted-foreground mb-6">Choose your primary currency</p>
 
             <div className="w-full relative">
-            <div className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none z-10" style={{ background: 'linear-gradient(to bottom, transparent, hsl(var(--background)))' }} />
-            <div className="grid grid-cols-2 gap-2.5 max-h-[320px] overflow-y-auto pb-8">
-              {CURRENCIES.map((cur) => {
-                const active = selectedCurrency === cur.code;
-                return (
-                  <button
-                    key={cur.code}
-                    onClick={() => setSelectedCurrency(cur.code)}
-                    className="flex items-center gap-3 px-4 py-3.5 rounded-2xl text-left transition-all duration-200"
-                    style={{
-                      background: active ? 'hsl(var(--primary) / 0.1)' : 'hsl(var(--card) / 0.7)',
-                      border: `1.5px solid ${active ? 'hsl(var(--primary) / 0.4)' : 'hsl(var(--border) / 0.25)'}`,
-                    }}
-                  >
-                    <span className="text-lg font-bold flex-shrink-0 w-7 text-center"
-                      style={{ color: active ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))' }}>
-                      {cur.symbol}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-xs">{cur.code}</p>
-                      <p className="text-[10px] text-muted-foreground truncate">{cur.name}</p>
-                    </div>
-                    {active && (
-                      <Check size={14} className="text-primary flex-shrink-0" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            </div>
-          </div>
-        )}
-
-        {isPermissionStep && (
-          <div className="flex flex-col items-center text-center max-w-sm w-full">
-            <div className="relative mb-8">
-              <div
-                className="w-24 h-24 rounded-[2rem] flex items-center justify-center"
-                style={{
-                  background: 'linear-gradient(135deg, hsl(var(--primary) / 0.15), hsl(var(--primary) / 0.05))',
-                  border: '1px solid hsl(var(--primary) / 0.2)',
-                }}
-              >
-                <MessageSquare size={40} className="text-primary" />
+              <div className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none z-10" style={{ background: 'linear-gradient(to bottom, transparent, hsl(var(--background)))' }} />
+              <div className="grid grid-cols-2 gap-2.5 max-h-[320px] overflow-y-auto pb-8">
+                {CURRENCIES.map((cur) => {
+                  const active = selectedCurrency === cur.code;
+                  return (
+                    <button
+                      key={cur.code}
+                      onClick={() => setSelectedCurrency(cur.code)}
+                      className="flex items-center gap-3 px-4 py-3.5 rounded-2xl text-left transition-all duration-200"
+                      style={{
+                        background: active ? 'hsl(var(--primary) / 0.1)' : 'hsl(var(--card) / 0.7)',
+                        border: `1.5px solid ${active ? 'hsl(var(--primary) / 0.4)' : 'hsl(var(--border) / 0.25)'}`,
+                      }}
+                    >
+                      <span className="text-lg font-bold flex-shrink-0 w-7 text-center"
+                        style={{ color: active ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))' }}>
+                        {cur.symbol}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-xs">{cur.code}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{cur.name}</p>
+                      </div>
+                      {active && (
+                        <Check size={14} className="text-primary flex-shrink-0" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-
-            <h1 className="text-2xl font-extrabold mb-2">Enable SMS capture</h1>
-            <p className="text-sm text-muted-foreground mb-6">We’ll ask Android for SMS access so transaction messages can be detected automatically.</p>
-
-            <SmsPermissionPreview />
           </div>
         )}
+
+
 
         {isSignInStep && (
           <div className="flex flex-col items-center text-center max-w-sm w-full">
@@ -471,10 +435,10 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                       });
                       handleFinish();
                     }
-                  } catch (error: any) {
+                  } catch (error) {
                     toast({
                       title: "Sign In Failed",
-                      description: error.message || "Could not connect to Google.",
+                      description: error instanceof Error ? error.message : "Could not connect to Google.",
                       variant: "destructive"
                     });
                   }
@@ -512,33 +476,32 @@ export function Onboarding({ onComplete }: OnboardingProps) {
         <div className="flex items-center justify-center max-w-sm mx-auto w-full gap-4">
           {/* Left Action: Skip or Back */}
           <div className="flex-1">
-            {isFeatureStep ? (
+            {step === 0 ? (
               <button
                 onClick={handleFinish}
-                className="w-full h-[68px] rounded-[34px] font-black text-[15px] uppercase tracking-wider text-muted-foreground bg-secondary/80 border border-border/10 active:scale-[0.96] transition-all"
+                className="w-full h-[56px] rounded-[1.25rem] font-bold text-sm uppercase tracking-wider text-muted-foreground bg-secondary/80 border border-border/10 active:scale-[0.96] transition-all"
               >
                 Skip
               </button>
-            ) : (step > 0 && (
+            ) : (
               <button
                 onClick={handleBack}
-                className="w-[68px] h-[68px] rounded-full flex items-center justify-center bg-secondary border border-border/10 active:scale-[0.9] transition-all"
+                className="w-full h-[56px] rounded-[1.25rem] font-bold text-sm uppercase tracking-wider text-muted-foreground bg-secondary/80 border border-border/10 active:scale-[0.96] transition-all"
               >
-                <ChevronLeft size={28} className="text-muted-foreground" />
+                Back
               </button>
-            ))}
+            )}
           </div>
 
           {/* Right Action: Next or Let's Go */}
-          <div className={`${isFeatureStep || isThemeStep || isCurrencyStep || isPermissionStep ? 'flex-1' : 'hidden'}`}>
+          <div className={`${isFeatureStep || isThemeStep || isCurrencyStep ? 'flex-1' : 'hidden'}`}>
             {!isSignInStep && (
               <button
                 onClick={handleNext}
-                className="w-full h-[68px] rounded-[34px] font-black text-[15px] uppercase tracking-tight flex items-center justify-center transition-all duration-300 active:scale-[0.96]"
+                className="w-full h-[56px] rounded-[1.25rem] font-bold text-sm uppercase tracking-tight flex items-center justify-center transition-all duration-300 active:scale-[0.96]"
                 style={{
-                  background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
+                  background: 'hsl(var(--primary))',
                   color: 'white',
-                  boxShadow: '0 12px 30px -10px hsl(var(--primary) / 0.6)',
                 }}
               >
                 <span>{step === 0 ? "Let's Go" : isCurrencyStep ? 'Setup' : 'Continue'}</span>

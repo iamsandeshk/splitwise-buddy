@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { getCurrentGoogleUser, getFirebaseApp } from './auth';
 import { isProUserCached } from '@/lib/proAccess';
+import { isAutoBackupGracePeriodActive } from '@/lib/storage';
 
 export interface CloudBackupInfo {
   payload: string;
@@ -110,7 +111,7 @@ async function enforceCloudActionWithOptions(
   kind: 'backup' | 'restore',
   options?: CloudLimitOptions,
 ) {
-  if (options?.silentIfFree && !isProUserCached()) {
+  if (options?.silentIfFree && !isProUserCached() && !isAutoBackupGracePeriodActive()) {
     throw new Error('free-user-skip');
   }
 

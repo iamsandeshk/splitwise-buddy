@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { UserCircle2, Sparkles } from 'lucide-react';
 import { getAccountProfile } from '@/lib/storage';
-import { isProUserCached } from '@/lib/proAccess';
+import { useProGate } from '@/hooks/useProGate';
 import { useNavigate } from 'react-router-dom';
 
 interface AccountQuickButtonProps {
@@ -12,7 +12,7 @@ interface AccountQuickButtonProps {
 export function AccountQuickButton({ onClick, size = 44 }: AccountQuickButtonProps) {
   const [accountAvatar, setAccountAvatar] = useState(() => getAccountProfile().avatar || '');
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
-  const [isPro, setIsPro] = useState(() => isProUserCached());
+  const { isPro, loading: proLoading } = useProGate();
   const navigate = useNavigate();
 
   const sanitizeAvatarUrl = (value?: string) => {
@@ -34,24 +34,18 @@ export function AccountQuickButton({ onClick, size = 44 }: AccountQuickButtonPro
       setAccountAvatar(nextAvatar);
       setAvatarLoadFailed(false);
     };
-    const syncPro = () => setIsPro(isProUserCached());
     syncAccount();
-    syncPro();
     window.addEventListener('splitmate_account_changed', syncAccount);
-    window.addEventListener('splitmate_pro_changed', syncPro);
     window.addEventListener('focus', syncAccount);
-    window.addEventListener('focus', syncPro);
     return () => {
       window.removeEventListener('splitmate_account_changed', syncAccount);
-      window.removeEventListener('splitmate_pro_changed', syncPro);
       window.removeEventListener('focus', syncAccount);
-      window.removeEventListener('focus', syncPro);
     };
   }, []);
 
   return (
     <div className="flex items-center gap-3 shrink-0">
-      {!isPro && (
+      {!proLoading && !isPro && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -61,7 +55,6 @@ export function AccountQuickButton({ onClick, size = 44 }: AccountQuickButtonPro
           style={{
             background: 'linear-gradient(135deg, hsl(45 100% 50%), hsl(35 100% 50%))',
             color: '#000',
-            boxShadow: '0 4px 14px -4px hsl(40 100% 50% / 0.5)',
           }}
         >
           <Sparkles size={13} className="mr-1.5" />
@@ -78,7 +71,6 @@ export function AccountQuickButton({ onClick, size = 44 }: AccountQuickButtonPro
           background: 'hsl(var(--card) / 0.9)',
           border: '1px solid hsl(var(--border) / 0.45)',
           backdropFilter: 'blur(18px)',
-          boxShadow: '0 10px 28px -12px hsl(var(--primary) / 0.38)',
         }}
         aria-label="Open account"
       >

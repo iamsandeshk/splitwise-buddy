@@ -19,18 +19,20 @@ import { LoansTab } from '@/components/tabs/LoansTab';
 import { GoalsTab } from '@/components/tabs/GoalsTab';
 import { SubscriptionsTab } from '@/components/tabs/SubscriptionsTab';
 import { ConverterTab } from '@/components/tabs/ConverterTab';
-import { SmsTransactionsTab } from '@/components/tabs/SmsTransactionsTab';
+
 import { CalendarTab } from '@/components/tabs/CalendarTab';
 import { TransactionsTab } from '@/components/tabs/TransactionsTab';
+import { RecurringPaymentsTab } from '@/components/tabs/RecurringPaymentsTab';
 import { Onboarding } from '@/components/Onboarding';
 import { isOnboardingDone } from '@/lib/storage';
-import { getTabConfig, getSwipeNavEnabled, getLastActiveTab, setLastActiveTab, getPageSlideEnabled, getPersonBalances, getPersonProfile, savePersonProfile, getPendingSyncUpdates, removePendingSyncUpdate, applySyncUpdate, getRejectionUpdates, removeRejectionUpdate, addRejectionUpdate, getAccountProfile, generateId, type PendingSyncUpdate, type RejectionUpdate } from '@/lib/storage';
+import { getTabConfig, getSwipeNavEnabled, getLastActiveTab, setLastActiveTab, getPageSlideEnabled, getPersonBalances, getPersonProfile, savePersonProfile, getPendingSyncUpdates, removePendingSyncUpdate, applySyncUpdate, getRejectionUpdates, removeRejectionUpdate, addRejectionUpdate, getAccountProfile, generateId, processRecurringPayments, processSubscriptionBilling, type PendingSyncUpdate, type RejectionUpdate } from '@/lib/storage';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import { useToast } from '@/hooks/use-toast';
 import { useNightlyBackup } from '@/hooks/useNightlyBackup';
 import { useBackHandler } from '@/hooks/useBackHandler';
-import { useSmsCapture } from '@/hooks/useSmsCapture';
+import { syncScheduledNotifications } from '@/lib/notifications';
+
 import { cn } from '@/lib/utils';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
 import { useBannerAd } from '@/hooks/useBannerAd';
@@ -43,7 +45,6 @@ const moreCardTabIds = new Set([
   'personal',
   'shared',
   'transactions',
-  'sms-transactions',
   'calendar',
   'links',
   'categories',
@@ -53,12 +54,122 @@ const moreCardTabIds = new Set([
   'goals',
   'subscriptions',
   'converter',
+  'recurring',
 ]);
 
 const Index = () => {
   useNightlyBackup();
   const location = useLocation();
   const { toast } = useToast();
+
+  // Auto-post any due recurring payments and subscriptions, and sync scheduled alarms on each session load
+  useEffect(() => {
+    processRecurringPayments();
+    processSubscriptionBilling();
+    syncScheduledNotifications();
+  }, []);
+
+  // Check reminders and send notifications
+  useEffect(() => {
+    const checkReminders = () => {
+      const settingsStr = localStorage.getItem('splitmate_reminder_settings');
+      const customStr = localStorage.getItem('splitmate_custom_reminders');
+
+      const now = new Date();
+      const todayStr = now.toISOString().slice(0, 10);
+      const currentHourMin = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+      // 1. Check daily reminder
+      if (settingsStr) {
+        try {
+          const settings = JSON.parse(settingsStr) as { 
+            enabled: boolean; 
+            time?: string; 
+            times?: string[]; 
+            lastNotifiedDate?: string; 
+            lastNotifiedDates?: Record<string, string>; 
+          };
+          if (settings.enabled) {
+            const times = settings.times || (settings.time ? [settings.time] : ['20:00']);
+            const lastNotifiedDates = settings.lastNotifiedDates || {};
+            let modified = false;
+
+            times.forEach(time => {
+              if (time === currentHourMin && lastNotifiedDates[time] !== todayStr) {
+                const title = "Reminder 💸";
+                const options = { body: "Time to add your entries for the day!" };
+                
+                if ('Notification' in window && Notification.permission === 'granted') {
+                  new Notification(title, options);
+                }
+                
+                toast({
+                  title: "Reminder",
+                  description: "Time to add your entries for the day!",
+                });
+
+                lastNotifiedDates[time] = todayStr;
+                modified = true;
+              }
+            });
+
+            if (modified) {
+              settings.times = times;
+              settings.lastNotifiedDates = lastNotifiedDates;
+              localStorage.setItem('splitmate_reminder_settings', JSON.stringify(settings));
+              syncScheduledNotifications();
+            }
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      // 2. Check custom date/time reminders
+      if (customStr) {
+        try {
+          const customList = JSON.parse(customStr) as Array<{ id: string; date: string; time: string; message: string; notified?: boolean }>;
+          let modified = false;
+          
+          const updatedList = customList.map(reminder => {
+            if (reminder.notified) return reminder;
+            
+            const reminderDate = reminder.date; 
+            const reminderTime = reminder.time; 
+            
+            if (reminderDate === todayStr && reminderTime <= currentHourMin) {
+              const title = "Custom Reminder ⏰";
+              const options = { body: reminder.message || "Time to add your entries!" };
+              
+              if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(title, options);
+              }
+              
+              toast({
+                title: "Custom Reminder",
+                description: reminder.message || "Time to add your entries!",
+              });
+              
+              modified = true;
+              return { ...reminder, notified: true };
+            }
+            return reminder;
+          });
+
+          if (modified) {
+            localStorage.setItem('splitmate_custom_reminders', JSON.stringify(updatedList));
+            syncScheduledNotifications();
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    };
+
+    const interval = setInterval(checkReminders, 10000);
+    checkReminders(); 
+    return () => clearInterval(interval);
+  }, [toast]);
 
   const [activeTab, setActiveTab] = useState(() => getLastActiveTab());
   const [tabConfig, setTabConfig] = useState(() => getTabConfig());
@@ -99,21 +210,80 @@ const Index = () => {
     }
   }, [toast]);
 
+  const getSearchFromUrl = (urlStr: string) => {
+    if (!urlStr) return '';
+    const qIndex = urlStr.indexOf('?');
+    return qIndex !== -1 ? urlStr.substring(qIndex) : '';
+  };
+
   useEffect(() => {
-    // 1. Initial Web URL check
-    processInvite(window.location.search);
+    // 1. Initial Web URL check (Capacitor handles cold start deep links via getLaunchUrl)
+    CapacitorApp.getLaunchUrl().then((ret) => {
+      if (ret && ret.url) {
+        processInvite(getSearchFromUrl(ret.url));
+      } else {
+        processInvite(window.location.search);
+      }
+    });
 
     // 2. Deep Link listener for App
     const handleDeepLink = CapacitorApp.addListener('appUrlOpen', (data: { url: string }) => {
-      // url might be like: splitmate://invite?invite_email=...
-      const url = new URL(data.url);
-      processInvite(url.search);
+      processInvite(getSearchFromUrl(data.url));
     });
 
     return () => {
       handleDeepLink.then(h => h.remove());
     };
   }, [processInvite]);
+
+  // Handle widget deep link actions (add_personal, add_shared, view_brief)
+  useEffect(() => {
+    const processWidgetAction = (searchStr: string, isColdStart = false) => {
+      const params = new URLSearchParams(searchStr);
+      const widgetAction = params.get('widget_action');
+      if (!widgetAction) return;
+
+      // Clean the URL to prevent re-triggering
+      const cleanUrl = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, '', cleanUrl);
+
+      // Use a longer delay on cold start to let the DOM and Router fully settle
+      const delay = isColdStart ? 1200 : 300;
+      setTimeout(() => {
+        if (widgetAction === 'add_personal') {
+          setActiveTab('personal');
+          setShowAddPersonalModal(true);
+        } else if (widgetAction === 'add_shared') {
+          setActiveTab('shared');
+          setShowAddSharedModal(true);
+        } else if (widgetAction === 'view_brief') {
+          setActiveTab('home');
+        }
+      }, delay);
+    };
+
+    // 1. Check initial URL (Capacitor handles cold start deep links via getLaunchUrl)
+    CapacitorApp.getLaunchUrl().then((ret) => {
+      if (ret && ret.url) {
+        processWidgetAction(getSearchFromUrl(ret.url), true);
+      } else {
+        processWidgetAction(window.location.search, true); // Fallback for web
+      }
+    }).catch(() => {});
+
+    // 2. Listen for deep links from widget taps while app is running
+    const handleWidgetDeepLink = CapacitorApp.addListener('appUrlOpen', (data: { url: string }) => {
+      try {
+        processWidgetAction(getSearchFromUrl(data.url), false);
+      } catch {
+        // Ignore malformed URLs
+      }
+    });
+
+    return () => {
+      handleWidgetDeepLink.then(h => h.remove());
+    };
+  }, []);
 
   useEffect(() => {
     const handleContextMenu = (e: MouseEvent) => {
@@ -161,6 +331,16 @@ const Index = () => {
     };
   }, [activeTab]);
 
+  // Reset scroll position on tab change
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    // If there's a specific scroll container, reset it too
+    const scrollContainer = document.querySelector('main > div');
+    if (scrollContainer) {
+      scrollContainer.scrollTop = 0;
+    }
+  }, [activeTab]);
+
   // Ref to track and avoid side-effect loops
   const isInternalNavigationRef = useRef(false);
 
@@ -182,8 +362,14 @@ const Index = () => {
   const [isFabVisible, setIsFabVisible] = useState(true);
   const tabHistoryRef = useRef<string[]>([]);
   const lastBackPressAtRef = useRef(0);
+  const lastScrollTopRef = useRef(0);
 
-  useSmsCapture(!showOnboarding);
+  useEffect(() => {
+    setIsFabVisible(true);
+    lastScrollTopRef.current = 0;
+  }, [activeTab]);
+
+
 
   // Handle cross-page navigation state (e.g., from PersonDetailsPage)
   useEffect(() => {
@@ -355,7 +541,7 @@ const Index = () => {
         return;
       }
 
-      if (activeTab !== 'account' && !allTabs.includes(activeTab)) {
+      if (activeTab !== 'account' && !moreCardTabIds.has(activeTab) && !allTabs.includes(activeTab)) {
         setActiveTab(visibleTabs[0]);
       }
     };
@@ -445,14 +631,33 @@ const Index = () => {
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
-    const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 120;
-    
-    if (isAtBottom && isFabVisible) {
-      setIsFabVisible(false);
-    } else if (!isAtBottom && !isFabVisible) {
-      setIsFabVisible(true);
+    const scrollTop = target.scrollTop;
+    const maxScroll = target.scrollHeight - target.clientHeight;
+
+    // If content is short or barely scrollable, keep FAB always visible
+    if (maxScroll < 200 || scrollTop <= 50) {
+      if (!isFabVisible) setIsFabVisible(true);
+      lastScrollTopRef.current = scrollTop;
+      return;
     }
+
+    const isScrollingUp = scrollTop < lastScrollTopRef.current - 5;
+    const isScrollingDown = scrollTop > lastScrollTopRef.current + 5;
+    const isAtBottom = maxScroll - scrollTop < 60;
+
+    if (isAtBottom) {
+      if (isFabVisible) setIsFabVisible(false);
+    } else if (isScrollingUp) {
+      // User scrolls back up -> immediately restore FAB!
+      if (!isFabVisible) setIsFabVisible(true);
+    } else if (isScrollingDown && scrollTop > 120) {
+      if (isFabVisible) setIsFabVisible(false);
+    }
+
+    lastScrollTopRef.current = scrollTop;
   };
+
+  const isStickyTab = ['account', 'transactions', 'personal', 'more', 'loans', 'home'].includes(activeTab);
 
   const renderActiveTab = () => {
     switch (activeTab) {
@@ -463,11 +668,12 @@ const Index = () => {
             onAddShared={() => setShowAddSharedModal(true)}
             onOpenAccount={openAccountTab}
             onNavigateToTab={navigateToTab}
+            onScroll={handleScroll}
           />
         );
       case 'personal':
         return (
-          <PersonalTab onOpenAccount={openAccountTab} onBack={isTabInMore('personal') ? handleFeatureBack : undefined} bannerAdActive={isTabInMore('personal')} />
+          <PersonalTab onOpenAccount={openAccountTab} onBack={isTabInMore('personal') ? handleFeatureBack : undefined} bannerAdActive={isTabInMore('personal')} onScroll={handleScroll} />
         );
       case 'shared':
         return (
@@ -504,7 +710,7 @@ const Index = () => {
         );
       case 'loans':
         return (
-          <LoansTab onOpenAccount={openAccountTab} onBack={isTabInMore('loans') ? handleFeatureBack : undefined} bannerAdActive={isTabInMore('loans')} />
+          <LoansTab onOpenAccount={openAccountTab} onBack={isTabInMore('loans') ? handleFeatureBack : undefined} bannerAdActive={isTabInMore('loans')} onScroll={handleScroll} />
         );
       case 'goals':
         return (
@@ -518,13 +724,18 @@ const Index = () => {
         return (
           <ConverterTab onOpenAccount={openAccountTab} onBack={isTabInMore('converter') ? handleFeatureBack : undefined} bannerAdActive={isTabInMore('converter')} />
         );
-      case 'sms-transactions':
-        return (
-          <SmsTransactionsTab onOpenAccount={openAccountTab} onBack={isTabInMore('sms-transactions') ? handleFeatureBack : undefined} bannerAdActive={isTabInMore('sms-transactions')} />
-        );
+
       case 'calendar':
         return (
           <CalendarTab onOpenAccount={openAccountTab} onBack={isTabInMore('calendar') ? handleFeatureBack : undefined} bannerAdActive={isTabInMore('calendar')} />
+        );
+      case 'recurring':
+        return (
+          <RecurringPaymentsTab
+            onOpenAccount={openAccountTab}
+            onBack={handleFeatureBack}
+            bannerAdActive={true}
+          />
         );
       case 'account':
         return (
@@ -545,25 +756,25 @@ const Index = () => {
   const variants = {
     enter: (direction: number) => ({
       x: (pageSlideEnabled && direction !== 0) ? (direction > 0 ? '100%' : '-100%') : 0,
-      opacity: 0,
-      scale: pageSlideEnabled ? 0.99 : 1,
+      opacity: pageSlideEnabled ? 1 : 0,
+      scale: pageSlideEnabled ? 0.97 : 1,
     }),
     center: {
       x: 0,
       opacity: 1,
       scale: 1,
       transition: {
-        x: { type: "spring" as const, stiffness: 260, damping: 26 },
+        x: { type: "spring" as const, stiffness: 350, damping: 35, mass: 0.8 },
         opacity: { duration: 0.2 },
-        scale: { duration: 0.2 }
+        scale: { type: "spring" as const, stiffness: 350, damping: 35, mass: 0.8 }
       }
     },
     exit: (direction: number) => ({
-      x: (pageSlideEnabled && direction !== 0) ? (direction > 0 ? '-100%' : '100%') : 0,
+      x: (pageSlideEnabled && direction !== 0) ? (direction > 0 ? '-20%' : '100%') : 0,
       opacity: 0,
-      scale: 1,
+      scale: pageSlideEnabled ? 0.97 : 1,
       transition: {
-        x: { type: "spring" as const, stiffness: 260, damping: 26 },
+        x: { type: "spring" as const, stiffness: 350, damping: 35, mass: 0.8 },
         opacity: { duration: 0.2 }
       }
     }),
@@ -576,7 +787,10 @@ const Index = () => {
       )}
 
       {/* Main Content Area - We use grid to prevent jumps and flicker during tab slide */}
-      <main className="grid grid-cols-1 grid-rows-1 items-start min-h-screen pt-safe-top overflow-hidden relative bg-transparent">
+      <main className={cn(
+        "grid grid-cols-1 grid-rows-1 items-start pt-safe-top overflow-hidden relative bg-transparent",
+        isStickyTab ? "h-screen" : "min-h-screen"
+      )}>
         <AnimatePresence initial={false} custom={direction} mode="popLayout">
           <motion.div
             key={activeTab}
@@ -590,7 +804,10 @@ const Index = () => {
               willChange: 'transform, opacity',
             }}
             onScroll={handleScroll}
-            className="w-full h-full overflow-y-auto pb-40 scroll-smooth"
+            className={cn(
+              "w-full h-full scroll-smooth",
+              isStickyTab ? "overflow-hidden" : "overflow-y-auto pb-40"
+            )}
           >
             {renderActiveTab()}
           </motion.div>

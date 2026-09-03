@@ -73,13 +73,20 @@ export default function GroupDetailsPage() {
     };
   }, []);
 
-  const group = useMemo(() =>
-    getGroupBalances().find(g => g.groupId === groupId), [groupId, refreshKey]);
+  const group = useMemo(() => {
+    void refreshKey;
+    return getGroupBalances().find(g => g.groupId === groupId);
+  }, [groupId, refreshKey]);
 
-  const staticGroup = useMemo(() =>
-    groupId ? getFriendGroup(groupId) : null, [groupId, refreshKey]);
+  const staticGroup = useMemo(() => {
+    void refreshKey;
+    return groupId ? getFriendGroup(groupId) : null;
+  }, [groupId, refreshKey]);
 
-  const accountName = useMemo(() => getAccountProfile().name, [refreshKey]);
+  const accountName = useMemo(() => {
+    void refreshKey;
+    return getAccountProfile().name;
+  }, [refreshKey]);
 
   const isManager = useMemo(() => {
     if (!staticGroup) return false;
@@ -90,7 +97,7 @@ export default function GroupDetailsPage() {
     }
     // Fallback for legacy groups without managerEmail
     return staticGroup.managerName === 'me' || !staticGroup.managerName;
-  }, [staticGroup, accountName, refreshKey]);
+  }, [staticGroup]);
 
   useEffect(() => {
     if (!groupId) navigate('/?tab=shared');
@@ -98,7 +105,7 @@ export default function GroupDetailsPage() {
   }, [group, groupId, navigate, refreshKey]);
 
   const activeTransactions = useMemo(() =>
-    group?.transactions.filter(tx => !tx.settled) || [], [group, refreshKey]);
+    group?.transactions.filter(tx => !tx.settled) || [], [group]);
 
   const historyTransactions = useMemo(() => {
     if (!group) return [];
@@ -106,7 +113,7 @@ export default function GroupDetailsPage() {
     return [...group.transactions].sort((a, b) =>
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
-  }, [group, refreshKey]);
+  }, [group]);
 
   // ALL members' net positions computed across ALL group transactions
   const memberNetBalances = useMemo(() => {
@@ -115,20 +122,20 @@ export default function GroupDetailsPage() {
     return Object.entries(positions)
       .map(([name, net]) => ({ name, net }))
       .sort((a, b) => b.net - a.net);
-  }, [group, refreshKey]);
+  }, [group]);
 
   // ALL simplified debts — every pair, not just involving 'me'
   const simplifiedDebts = useMemo(() => {
     if (!group) return [];
     return getMinimalGroupSettlements(group.groupId);
-  }, [group, refreshKey]);
+  }, [group]);
 
   const totalGroupSpend = useMemo(() => {
     if (!group) return 0;
     return group.transactions
       .filter(tx => tx.category !== 'Settlement')
       .reduce((sum, tx) => sum + tx.amount, 0);
-  }, [group, refreshKey]);
+  }, [group]);
 
   // Dynamic name coloring
   const getNameColor = (name: string) => {
@@ -548,12 +555,6 @@ export default function GroupDetailsPage() {
                         </div>
                       </div>
                     </div>
-                    {/* Native Ad Placement: Show after 1st record, then every 5th */}
-                    {!isAdFree && idx % 5 === 0 && (
-                      <div className="pt-0.5">
-                        <NativeAdCard />
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -766,8 +767,8 @@ export default function GroupDetailsPage() {
                     // Update manager name if I'm the manager of this group
                     if (staticGroup.managerName === accountName) {
                       staticGroup.managerName = profile.name;
-                      const groups = JSON.parse(localStorage.getItem('splitmate_friend_groups') || '[]');
-                      const idx = groups.findIndex((g: any) => g.id === groupId);
+                      const groups = JSON.parse(localStorage.getItem('splitmate_friend_groups') || '[]') as FriendGroup[];
+                      const idx = groups.findIndex((g: FriendGroup) => g.id === groupId);
                       if (idx >= 0) {
                         groups[idx].managerName = profile.name;
                         localStorage.setItem('splitmate_friend_groups', JSON.stringify(groups));
@@ -947,8 +948,8 @@ export default function GroupDetailsPage() {
               </button>
               <button
                 onClick={() => {
-                  const groups = JSON.parse(localStorage.getItem('splitmate_friend_groups') || '[]');
-                  const cg = groups.find((g: any) => g.id === groupId);
+                  const groups = JSON.parse(localStorage.getItem('splitmate_friend_groups') || '[]') as FriendGroup[];
+                  const cg = groups.find((g: FriendGroup) => g.id === groupId);
                   if (cg) {
                     if (!cg.memberEmails) cg.memberEmails = {};
                     cg.memberEmails[mappingConfirmMember] = mappingEmail.trim().toLowerCase();
@@ -1009,8 +1010,8 @@ export default function GroupDetailsPage() {
               </button>
               <button
                 onClick={() => {
-                  const groups = JSON.parse(localStorage.getItem('splitmate_friend_groups') || '[]');
-                  const cg = groups.find((g: any) => g.id === groupId);
+                  const groups = JSON.parse(localStorage.getItem('splitmate_friend_groups') || '[]') as FriendGroup[];
+                  const cg = groups.find((g: FriendGroup) => g.id === groupId);
                   if (cg && transferConfirmMember) {
                     cg.managerName = transferConfirmMember;
                     // Set managerEmail so other devices can resolve the manager by email

@@ -1,6 +1,5 @@
-
 import { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, Plus, Search, Folder, ExternalLink, Pin, X, Bookmark, Globe, LayoutGrid, List, Lock } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, Plus, Search, Folder, ExternalLink, Pin, X, Bookmark, Globe, LayoutGrid, List, Lock } from 'lucide-react';
 import { getLinks, getGroups, LinkItem, LinkGroup, FREE_LIMITS } from '@/lib/storage';
 import { AddLinkModal } from '@/components/modals/AddLinkModal';
 import { AddGroupModal } from '@/components/modals/AddGroupModal';
@@ -8,9 +7,11 @@ import { LinkCard } from '@/components/LinkCard';
 import { GroupCard } from '@/components/GroupCard';
 import { GroupModal } from '@/components/modals/GroupModal';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
+import { useBackHandler } from '@/hooks/useBackHandler';
+import { useToast } from '@/hooks/use-toast';
 import { useBannerAd } from '@/hooks/useBannerAd';
-import { useProGate } from '@/hooks/useProGate';
 import { requestProUpgrade } from '@/lib/proAccess';
+import { useProGate } from '@/hooks/useProGate';
 import { cn } from '@/lib/utils';
 
 interface LinksTabProps {
@@ -19,7 +20,7 @@ interface LinksTabProps {
   bannerAdActive?: boolean;
 }
 
-export const LinksTab = ({ onOpenAccount, onBack, bannerAdActive = true }: LinksTabProps) => {
+export function LinksTab({ onOpenAccount, onBack, bannerAdActive = true }: LinksTabProps) {
   useBannerAd(bannerAdActive);
   const { isPro } = useProGate();
   const [links, setLinks] = useState<LinkItem[]>([]);
@@ -40,8 +41,9 @@ export const LinksTab = ({ onOpenAccount, onBack, bannerAdActive = true }: Links
 
   useEffect(() => {
     loadData();
-    const handleTriggerAdd = (e: any) => {
-      if (e.detail?.tabId === 'links') setShowAddLinkModal(true);
+    const handleTriggerAdd = (e: Event) => {
+      const detail = (e as CustomEvent<{ tabId?: string }>).detail;
+      if (detail?.tabId === 'links') setShowAddLinkModal(true);
     };
     window.addEventListener('splitmate_trigger_add', handleTriggerAdd);
     return () => window.removeEventListener('splitmate_trigger_add', handleTriggerAdd);
@@ -93,15 +95,14 @@ export const LinksTab = ({ onOpenAccount, onBack, bannerAdActive = true }: Links
               <button
                 type="button"
                 onClick={onBack}
-                className="w-9 h-9 rounded-xl flex items-center justify-center mt-0.5"
-                style={{ background: 'hsl(var(--secondary))', border: '1px solid hsl(var(--border) / 0.3)' }}
+                className="w-11 h-11 rounded-2xl slab flex items-center justify-center active:scale-90 transition-all mt-0.5"
                 aria-label="Back"
               >
-                <ArrowLeft size={16} />
+                <ChevronLeft size={20} strokeWidth={2.5} />
               </button>
             )}
             <div>
-              <h1 className="text-2xl font-bold">Links</h1>
+              <h1 className="text-[28px] font-bold leading-none tracking-tight">Links<span className="text-primary">.</span></h1>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {totalItems > 0 ? `${groups.length} groups · ${links.filter(l => !l.groupId).length} links` : 'Your bookmarks & groups'}
               </p>
@@ -291,7 +292,6 @@ export const LinksTab = ({ onOpenAccount, onBack, bannerAdActive = true }: Links
               style={{
                 background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
                 color: 'white',
-                boxShadow: '0 4px 14px -4px hsl(var(--primary) / 0.5)',
               }}
             >
               <Plus size={15} /> Add Link

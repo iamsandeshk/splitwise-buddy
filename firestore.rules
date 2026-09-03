@@ -1,46 +1,96 @@
-// Firestore security rules for the app's database.
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ✅ Personal cloud backup — only owner can read/write their own backup
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.token.email)) ||
+        request.auth.token.email in ['sandeshkullolli4@gmail.com', 'try.sandeshk@gmail.com']
+      );
+    }
+
+    // Admin config document (for admin panel authentication)
+    match /config/admin {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Admins registry list
+    match /admins/{email} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Top-level Pro Users list for Admin Panel & User Verification
+    match /pro_users/{docId} {
+      allow read: if isAuthenticated() && (
+        isOwner(docId) ||
+        isAdmin() ||
+        (request.auth.token.email != null && request.auth.token.email.lower() == docId.lower())
+      );
+      allow write: if isOwner(docId) || isAdmin();
+    }
+
+    // Pro access grants by Gmail ID
+    match /pro_emails/{email} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        (request.auth.token.email != null && request.auth.token.email.lower() == email.lower())
+      );
+      allow write: if isAdmin();
+    }
+
+    // Banned users collection
+    match /banned_users/{docId} {
+      allow read: if isAuthenticated();
+      allow write, delete: if isAdmin();
+    }
+
+    // Each user's personal backup — owner only
     match /users/{uid}/backups/{docId} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if isOwner(uid);
     }
 
-    // ✅ Pro premium record — owner only
-    match /premium/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
-    }
-
-    // ✅ Legacy Pro subscription record — owner only
+    // Each user's Pro subscription — owner or admin
     match /users/{uid}/subscription/{docId} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isOwner(uid) || isAdmin();
     }
 
-    // ✅ P2P Sync inbox — anyone authenticated can write to any inbox
-    // (sender pushes to receiver's slot using their email as the target key)
-    // Only the targeted email can read; anyone authenticated can write (to deliver updates)
+    // Collection Group query for Admin Pro Users page
+    match /{path=**}/subscription/{docId} {
+      allow read: if isAdmin();
+    }
+
+    // P2P Sync inbox
     match /sync_inbox/{docId} {
-      allow read: if request.auth != null
+      allow read: if isAuthenticated()
                   && request.auth.token.email != null
-                  && resource.data.targetEmail == request.auth.token.email;
-      allow write: if request.auth != null;
-      allow delete: if request.auth != null
+                  && (resource.data.targetEmail == request.auth.token.email || resource.data.fromEmail == request.auth.token.email);
+      allow write: if isAuthenticated();
+      allow delete: if isAuthenticated()
                     && request.auth.token.email != null
-                    && resource.data.targetEmail == request.auth.token.email;
+                    && (resource.data.targetEmail == request.auth.token.email || resource.data.fromEmail == request.auth.token.email);
     }
 
-    // ✅ P2P Sync group — same rules as inbox but for group updates
+    // P2P Sync group
     match /sync_group/{docId} {
-      allow read: if request.auth != null
+      allow read: if isAuthenticated()
                   && request.auth.token.email != null
-                  && resource.data.targetEmail == request.auth.token.email;
-      allow write: if request.auth != null;
-      allow delete: if request.auth != null
+                  && (resource.data.targetEmail == request.auth.token.email || resource.data.fromEmail == request.auth.token.email);
+      allow write: if isAuthenticated();
+      allow delete: if isAuthenticated()
                     && request.auth.token.email != null
-                    && resource.data.targetEmail == request.auth.token.email;
+                    && (resource.data.targetEmail == request.auth.token.email || resource.data.fromEmail == request.auth.token.email);
     }
 
   }

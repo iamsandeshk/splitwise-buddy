@@ -1,9 +1,9 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Home, User, Users, ExternalLink, Ellipsis,
-  Landmark, Target, Repeat, WalletCards, PieChart, ArrowLeftRight, CreditCard, ListOrdered
+  Landmark, Target, Repeat, WalletCards, PieChart, ArrowLeftRight, CreditCard, ListOrdered, CalendarDays, CalendarClock
 } from 'lucide-react';
-import { getTabConfig, type TabConfig, getLiquidGlassEnabled } from '@/lib/storage';
+import { getTabConfig, type TabConfig, getLiquidGlassEnabled, getShowTabNamesEnabled } from '@/lib/storage';
 
 interface BottomNavigationProps {
   activeTab: string;
@@ -20,9 +20,11 @@ const ALL_NAV_ITEMS = [
   { id: 'budgets',       label: 'Budget',   icon: WalletCards },
   { id: 'accounts',      label: 'Accounts', icon: CreditCard },
   { id: 'loans',         label: 'Loans',    icon: Landmark },
-  { id: 'goals',         label: 'Goals',    icon: Target },
+  { id: 'goals',         label: 'Savings',   icon: Target },
   { id: 'subscriptions', label: 'Subs',     icon: Repeat },
   { id: 'converter',     label: 'Conv',     icon: ArrowLeftRight },
+  { id: 'calendar',      label: 'Calendar', icon: CalendarDays },
+  { id: 'recurring',     label: 'Recurring',icon: CalendarClock },
   { id: 'more',          label: 'More',     icon: Ellipsis },
 ];
 
@@ -194,6 +196,7 @@ const GLASS_STYLES = `
     align-items: center;
     justify-content: center;
     gap: 2px;
+    height: 54px;
     padding: 8px 0;
     flex: 1;
     min-width: 0;
@@ -208,7 +211,7 @@ const GLASS_STYLES = `
     transition: transform 0.18s cubic-bezier(0.34,1.56,0.64,1);
   }
   .lg-tab-btn:active {
-    transform: scale(0.86);
+    transform: scale(0.92);
   }
 
   .lg-icon {
@@ -244,22 +247,18 @@ const GLASS_STYLES = `
   .light .lg-icon.active {
     color: hsl(var(--primary));
     transform: scale(1.10) translateY(-1px);
-    filter: drop-shadow(0 2px 6px hsl(var(--primary) / 0.35));
     transition:
       color 0.22s ease,
-      transform 0.42s cubic-bezier(0.34,1.56,0.64,1),
-      filter 0.22s ease;
+      transform 0.42s cubic-bezier(0.34,1.56,0.64,1);
   }
 
   /* ── DARK active icon — ember glow */
   :root:not(.light) .lg-icon.active {
     color: hsl(var(--primary-glow));
     transform: scale(1.10) translateY(-1px);
-    filter: drop-shadow(0 0 10px hsl(var(--primary) / 0.55));
     transition:
       color 0.22s ease,
-      transform 0.42s cubic-bezier(0.34,1.56,0.64,1),
-      filter 0.22s ease;
+      transform 0.42s cubic-bezier(0.34,1.56,0.64,1);
   }
 
   .lg-icon.active.popping {
@@ -267,7 +266,7 @@ const GLASS_STYLES = `
   }
 
   .lg-label {
-    font-family: 'Manrope', system-ui, sans-serif;
+    font-family: var(--font-body);
     font-size: 9.5px;
     letter-spacing: 0.04em;
     white-space: nowrap;
@@ -338,6 +337,7 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
   const [poppingTab, setPoppingTab]    = useState<string | null>(null);
   const [tabConfig, setTabConfigState] = useState<TabConfig[]>(getTabConfig());
   const [liquidGlassEnabled, setLiquidGlassEnabled] = useState(() => getLiquidGlassEnabled());
+  const [showTabNames, setShowTabNames] = useState(() => getShowTabNamesEnabled());
 
   useInjectStyles('lg-nav-styles', GLASS_STYLES);
 
@@ -345,11 +345,16 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
     setTabConfigState(getTabConfig());
     const onChangeTabs = () => setTabConfigState(getTabConfig());
     const onChangeLiquid = (e: Event) => setLiquidGlassEnabled((e as CustomEvent<boolean>).detail);
+    const onChangeTabNames = (e: Event) => setShowTabNames((e as CustomEvent<boolean>).detail);
+    
     window.addEventListener('splitmate_tab_config_changed', onChangeTabs);
     window.addEventListener('splitmate_liquid_glass_changed', onChangeLiquid);
+    window.addEventListener('splitmate_show_tab_names_changed', onChangeTabNames);
+    
     return () => {
       window.removeEventListener('splitmate_tab_config_changed', onChangeTabs);
       window.removeEventListener('splitmate_liquid_glass_changed', onChangeLiquid);
+      window.removeEventListener('splitmate_show_tab_names_changed', onChangeTabNames);
     };
   }, []);
 
@@ -406,11 +411,11 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
     >
       <div className={`lg-bar pointer-events-auto mx-2 max-w-[440px] w-[calc(100%-1rem)] ${liquidGlassEnabled ? 'lg-glass-active' : ''}`}
         style={{
-          background: liquidGlassEnabled ? undefined : 'hsl(var(--secondary) / 0.82)',
-          border: liquidGlassEnabled ? undefined : '1px solid hsl(var(--border) / 0.2)',
-          backdropFilter: liquidGlassEnabled ? undefined : 'blur(12px)',
-          WebkitBackdropFilter: liquidGlassEnabled ? undefined : 'blur(12px)',
-          boxShadow: liquidGlassEnabled ? undefined : '0 10px 30px -10px rgba(0,0,0,0.1)',
+          background: liquidGlassEnabled ? undefined : 'hsl(var(--card))',
+          border: liquidGlassEnabled ? undefined : '1px solid hsl(var(--border) / 0.4)',
+          backdropFilter: liquidGlassEnabled ? undefined : 'none',
+          WebkitBackdropFilter: liquidGlassEnabled ? undefined : 'none',
+          boxShadow: liquidGlassEnabled ? undefined : '0 10px 30px -10px rgba(0,0,0,0.5)',
         }}
       >
         <div
@@ -436,7 +441,7 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
             const Icon      = item.icon;
             const isActive  = activeTab === item.id;
             const isPopping = poppingTab === item.id;
-            const shouldFillIcon = isActive && item.id !== 'accounts';
+            const shouldFillIcon = isActive && !['accounts', 'recurring', 'calendar'].includes(item.id);
 
             return (
               <button
@@ -492,14 +497,16 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
                   )}
                 </div>
 
-                <span 
-                  className={`lg-label ${isActive ? 'active' : 'inactive'}`}
-                  style={{
-                    transition: liquidGlassEnabled ? undefined : 'transform 0.2s ease, opacity 0.2s ease, color 0.1s ease'
-                  }}
-                >
-                  {item.label}
-                </span>
+                {showTabNames && (
+                  <span 
+                    className={`lg-label ${isActive ? 'active' : 'inactive'}`}
+                    style={{
+                      transition: liquidGlassEnabled ? undefined : 'transform 0.2s ease, opacity 0.2s ease, color 0.1s ease'
+                    }}
+                  >
+                    {item.label}
+                  </span>
+                )}
               </button>
             );
           })}

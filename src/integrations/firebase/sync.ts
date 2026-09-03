@@ -6,17 +6,46 @@ import {
   doc,
   setDoc,
   deleteDoc,
-  getFirestore
+  getFirestore,
+  type DocumentData,
+  type QueryDocumentSnapshot,
+  type DocumentChange,
+  type QuerySnapshot,
 } from 'firebase/firestore';
 
+import type { SharedExpense } from '@/lib/storage';
 import { getCurrentGoogleUser, getFirebaseApp } from './auth';
 
 const db = getFirestore(getFirebaseApp());
 
+/** Shape of a sync update document stored in Firestore */
+export interface SyncUpdate {
+  id?: string;
+  type?: string;
+  expense?: SharedExpense | { id?: string; groupId?: string; [key: string]: unknown };
+  groupName?: string;
+  groupMembers?: string[];
+  memberEmails?: Record<string, string>;
+  syncEmails?: string[];
+  fromEmail?: string;
+  fromName?: string;
+  targetEmail?: string;
+  reason?: string;
+  amount?: number;
+  timestamp?: string;
+  createdAt?: number;
+  ttlExpireAt?: Date;
+  syncDocId?: string;
+  syncCollection?: string;
+  isCloudUpdate?: boolean;
+  isSentUpdate?: boolean;
+  [key: string]: unknown;
+}
+
 /**
  * 🚀 PUSH UPDATE TO CLOUD
  */
-export async function pushUpdateToCloud(update: any, targetEmail: string) {
+export async function pushUpdateToCloud(update: SyncUpdate, targetEmail: string) {
   const user = getCurrentGoogleUser();
   if (!user?.email) return;
 
@@ -47,7 +76,7 @@ export async function pushUpdateToCloud(update: any, targetEmail: string) {
  * 📡 REAL-TIME LISTENER
  */
 export function subscribeToMySyncUpdates(
-  callback: (updates: any[]) => void
+  callback: (updates: SyncUpdate[]) => void
 ) {
   const user = getCurrentGoogleUser();
   if (!user?.email) return () => { };
@@ -64,24 +93,24 @@ export function subscribeToMySyncUpdates(
     where('targetEmail', '==', myEmail)
   );
 
-  const handleSnapshot = (snapshot: any, colName: string) => {
+  const handleSnapshot = (snapshot: QuerySnapshot<DocumentData>, colName: string) => {
     console.log(`✅ SNAPSHOT SIZE [${colName}]:`, snapshot.size);
 
     const updates = snapshot.docChanges()
-      .filter((change: any) => {
-        const data = change.doc.data();
+      .filter((change: DocumentChange<DocumentData>) => {
+        const data = change.doc.data() as SyncUpdate;
         if (!data?.expense || !data?.fromEmail) return false;
         if (data.fromEmail === myEmail) return false;
         return change.type === 'added';
       })
-      .map((change: any) => ({
-        ...change.doc.data(),
-        id: change.doc.data().id, // Preserve inner ID
-        syncDocId: change.doc.id, // 🔥 Required for acknowledgement
-        syncCollection: colName,  // Determine which col to delete from
+      .map((change: DocumentChange<DocumentData>): SyncUpdate => ({
+        ...(change.doc.data() as SyncUpdate),
+        id: (change.doc.data() as SyncUpdate).id,
+        syncDocId: change.doc.id,
+        syncCollection: colName,
         isCloudUpdate: true
       }))
-      .sort((a: any, b: any) => (a.createdAt || 0) - (b.createdAt || 0)); // Local fallback for ordering
+      .sort((a: SyncUpdate, b: SyncUpdate) => (a.createdAt || 0) - (b.createdAt || 0));
 
     if (updates.length > 0) {
       console.log(`🔥 RECEIVED [${colName}]:`, updates);
@@ -99,7 +128,7 @@ export function subscribeToMySyncUpdates(
 /**
  * 📥 MANUAL FETCH (ONE-SHOT)
  */
-export async function fetchMySyncUpdates(): Promise<any[]> {
+export async function fetchMySyncUpdates(): Promise<SyncUpdate[]> {
   const user = getCurrentGoogleUser();
   if (!user?.email) return [];
 
@@ -122,28 +151,100 @@ export async function fetchMySyncUpdates(): Promise<any[]> {
       getDocs(qGroup)
     ]);
 
-    const docsIn = snapInbox.docs.map(doc => ({
-      ...doc.data(),
-      id: doc.data().id,
-      syncDocId: doc.id,
+    const docsIn = snapInbox.docs.map((d: QueryDocumentSnapshot<DocumentData>): SyncUpdate => ({
+      ...(d.data() as SyncUpdate),
+      id: (d.data() as SyncUpdate).id,
+      syncDocId: d.id,
       syncCollection: 'sync_inbox',
       isCloudUpdate: true
     }));
 
-    const docsGrp = snapGroup.docs.map(doc => ({
-      ...doc.data(),
-      id: doc.data().id,
-      syncDocId: doc.id,
+    const docsGrp = snapGroup.docs.map((d: QueryDocumentSnapshot<DocumentData>): SyncUpdate => ({
+      ...(d.data() as SyncUpdate),
+      id: (d.data() as SyncUpdate).id,
+      syncDocId: d.id,
       syncCollection: 'sync_group',
       isCloudUpdate: true
     }));
 
     return [...docsIn, ...docsGrp]
-      .sort((a: any, b: any) => (a.createdAt || 0) - (b.createdAt || 0))
-      .filter((data: any) => data.fromEmail !== myEmail);
+      .sort((a: SyncUpdate, b: SyncUpdate) => (a.createdAt || 0) - (b.createdAt || 0))
+      .filter((data: SyncUpdate) => data.fromEmail !== myEmail);
   } catch (error) {
     console.error('❌ Failed to fetch sync updates:', error);
     return [];
+  }
+}
+
+/**
+ * 📤 FETCH SENT SYNC UPDATES (Sent by me, awaiting target user acceptance)
+ */
+export async function fetchSentSyncUpdates(): Promise<SyncUpdate[]> {
+  const user = getCurrentGoogleUser();
+  if (!user?.email) return [];
+
+  const myEmail = user.email.toLowerCase().trim();
+  const { getDocs } = await import('firebase/firestore');
+
+  const qInbox = query(
+    collection(db, 'sync_inbox'),
+    where('fromEmail', '==', myEmail)
+  );
+
+  const qGroup = query(
+    collection(db, 'sync_group'),
+    where('fromEmail', '==', myEmail)
+  );
+
+  try {
+    const [snapInbox, snapGroup] = await Promise.all([
+      getDocs(qInbox),
+      getDocs(qGroup)
+    ]);
+
+    const docsIn = snapInbox.docs.map((d: QueryDocumentSnapshot<DocumentData>): SyncUpdate => ({
+      ...(d.data() as SyncUpdate),
+      id: (d.data() as SyncUpdate).id || d.id,
+      syncDocId: d.id,
+      syncCollection: 'sync_inbox',
+      isSentUpdate: true
+    }));
+
+    const docsGrp = snapGroup.docs.map((d: QueryDocumentSnapshot<DocumentData>): SyncUpdate => ({
+      ...(d.data() as SyncUpdate),
+      id: (d.data() as SyncUpdate).id || d.id,
+      syncDocId: d.id,
+      syncCollection: 'sync_group',
+      isSentUpdate: true
+    }));
+
+    return [...docsIn, ...docsGrp]
+      .sort((a: SyncUpdate, b: SyncUpdate) => (b.createdAt || 0) - (a.createdAt || 0));
+  } catch (error) {
+    console.error('❌ Failed to fetch sent sync updates:', error);
+    return [];
+  }
+}
+
+/**
+ * 🔄 RESEND SYNC UPDATE (Pushes fresh createdAt to wake up recipient)
+ */
+export async function resendSyncUpdate(update: SyncUpdate): Promise<void> {
+  if (!update.targetEmail) return;
+  await pushUpdateToCloud({
+    ...update,
+    createdAt: Date.now()
+  }, update.targetEmail);
+}
+
+/**
+ * 🗑️ CANCEL SENT SYNC UPDATE
+ */
+export async function cancelSentSyncUpdate(syncDocId: string, syncCollection: string = 'sync_inbox'): Promise<void> {
+  try {
+    await deleteDoc(doc(db, syncCollection, syncDocId));
+  } catch (error) {
+    console.error('❌ Failed to cancel sent sync update:', error);
   }
 }
 
