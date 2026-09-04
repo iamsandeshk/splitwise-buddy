@@ -71,6 +71,11 @@
 
 # Keep BillingClient API classes used by the purchase plugin.
 -keep class com.android.billingclient.api.** { *; }
+-dontwarn com.android.billingclient.**
+-dontwarn cc.fovea.**
+-dontwarn com.alexdisler.**
+-dontwarn org.apache.cordova.**
+-dontwarn com.getcapacitor.**
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +89,11 @@
 # Keep Firebase component annotations/metadata.
 -keepattributes RuntimeVisibleAnnotations,RuntimeInvisibleAnnotations
 -keepattributes RuntimeVisibleParameterAnnotations,RuntimeInvisibleParameterAnnotations
+-dontwarn com.google.firebase.**
+
+# Suppress missing class warnings for optional authentication providers not included in the project
+# (@capacitor-firebase/authentication references Facebook SDK stubs even when Facebook login is not used)
+-dontwarn com.facebook.**
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +112,8 @@
 # AdMob classes used by the native ad plugin.
 -keep class com.google.android.gms.ads.** { *; }
 -keep class com.google.ads.** { *; }
+-dontwarn com.google.android.gms.**
+-dontwarn com.google.ads.**
 
 
 # ---------------------------------------------------------------------------

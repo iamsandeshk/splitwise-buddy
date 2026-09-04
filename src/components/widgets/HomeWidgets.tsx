@@ -205,7 +205,6 @@ export function SubscriptionsWidget({ onNavigate }: { onNavigate: (id: string) =
             <div 
               key={sub.id} 
               onClick={() => {
-                setPendingOpenItem('subscriptions', sub.id);
                 onNavigate('subscriptions');
               }}
               className="py-2 flex items-center justify-between group/sub cursor-pointer active:scale-[0.98] transition-all hover:bg-white/[0.02] -mx-2 px-2 rounded-xl"

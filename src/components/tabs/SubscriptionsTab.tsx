@@ -1021,19 +1021,25 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                           className="w-16 h-16 rounded-[22.5%] overflow-hidden flex items-center justify-center bg-black/40 border border-border/10 shadow-xl"
                           style={{ clipPath: 'inset(0% round 22.5%)' }}
                        >
-                          <img src={selectedItem.logoUrl} className="w-full h-full object-cover" alt="" />
+                          {selectedItem.logoUrl ? (
+                            <img src={selectedItem.logoUrl} className="w-full h-full object-cover" alt="" />
+                          ) : (
+                            <span className="text-xl font-bold text-primary">{selectedItem.appName?.charAt(0) || 'S'}</span>
+                          )}
                        </div>
                        <div>
                           <h2 className="text-xl font-bold tracking-tight">{selectedItem.appName}</h2>
-                          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">{selectedItem.cycle} Subscription</p>
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">{selectedItem.cycle || 'monthly'} Subscription</p>
                        </div>
                     </div>
 
                     <div className="bg-secondary/15 rounded-2xl p-4 text-center border border-border/5 my-2">
                        <p className="text-3xl font-black text-destructive tracking-tighter leading-tight flex items-center justify-center">
-                         <MoneyDisplay amount={-selectedItem.amount} size="lg" />
+                         <MoneyDisplay amount={-(Number(selectedItem.amount) || 0)} size="lg" />
                        </p>
-                       <p className="text-[9px] font-bold text-muted-foreground mt-1 uppercase tracking-widest leading-none">per {selectedItem.cycle.replace('ly', '').replace('i', 'y')}</p>
+                       <p className="text-[9px] font-bold text-muted-foreground mt-1 uppercase tracking-widest leading-none">
+                         {selectedItem.cycle === 'lifetime' ? 'one-time payment' : `per ${(selectedItem.cycle || 'monthly').replace('ly', '').replace('i', 'y')}`}
+                       </p>
                     </div>
 
                     <div className="space-y-3">
@@ -1043,7 +1049,12 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                              <span className="text-xs font-bold">Next Renewal</span>
                           </div>
                           <span className="text-xs font-black text-primary">
-                             in {getDaysUntilDue(selectedItem.startDate || selectedItem.createdAt, selectedItem.cycle, selectedItem.createdAt)} days
+                             {selectedItem.cycle === 'lifetime'
+                               ? 'Lifetime Access'
+                               : (() => {
+                                   const days = getDaysUntilDue(selectedItem.startDate || selectedItem.createdAt, selectedItem.cycle, selectedItem.createdAt);
+                                   return days !== null ? `in ${days} days` : 'Not scheduled';
+                                 })()}
                           </span>
                        </div>
                     </div>
