@@ -8,6 +8,7 @@ import PersonDetailsPage from "./pages/PersonDetailsPage";
 import GroupDetailsPage from "./pages/GroupDetailsPage";
 import ProPlanPage from "./pages/ProPlanPage";
 import AdminProUsersPage from "./pages/AdminProUsersPage";
+import BackupRestorePage from "./pages/BackupRestorePage";
 import NotFound from "./pages/NotFound";
 import { SyncManager } from "@/components/SyncManager";
 import { WidgetSync } from "@/components/WidgetSync";
@@ -126,6 +127,7 @@ const App = () => {
                   <Route path="/group/:groupId" element={<GroupDetailsPage />} />
                   <Route path="/pro" element={<ProPlanPage />} />
                   <Route path="/admin/pro-users" element={<AdminProUsersPage />} />
+                  <Route path="/backup" element={<BackupRestorePage />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </BrowserRouter>

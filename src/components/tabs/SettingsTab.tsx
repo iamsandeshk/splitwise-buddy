@@ -3,12 +3,12 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
-  Download, Upload, Trash2, Info, Moon, Sun, Monitor, Smartphone,
-  Database, FileJson, AlertTriangle, Check, X, ChevronRight,
+  Trash2, Info, Moon, Sun, Monitor, Smartphone,
+  Database, AlertTriangle, Check, X, ChevronRight,
   ChevronLeft, ChevronUp, ChevronDown, Shield, Coins, LayoutGrid,
   Eye, EyeOff, GripVertical, Palette, Coffee, RotateCcw,
   UserCircle2, Save, Camera, ArrowLeft, LogIn, LogOut, Search,
-  Pencil, CloudUpload, Home, User, Users, ExternalLink, PieChart,
+  Pencil, Home, User, Users, ExternalLink, PieChart,
   WalletCards, Landmark, Target, Repeat, ArrowLeftRight, Globe, Sparkles,
   Calendar, MessageSquare,
   FileSpreadsheet, HardDrive, Activity, CheckSquare, Plus, RefreshCw, HelpCircle, Bell, Settings, CreditCard, Link as LinkIcon, Crown, Share2, Lock, Presentation,
@@ -18,11 +18,8 @@ import { cn } from '@/lib/utils';
 import { NativeAdCard } from '@/components/NativeAdCard';
 import { Switch } from '@/components/ui/switch';
 import { Capacitor } from '@capacitor/core';
-import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
-import { Share } from '@capacitor/share';
 import {
   exportAllData,
-  importData,
   getPersonalExpenses,
   getSharedExpenses,
   getLinks,
@@ -111,8 +108,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
     const displayHr = hr % 12 || 12;
     return `${displayHr}:${m} ${ampm}`;
   };
-  const [isExporting, setIsExporting] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(getStoredTheme());
   const [accentColor, setAccentColorState] = useState<AccentColor>(getStoredAccentColor());
   const [appFontState, setAppFontState] = useState<AppFont>(getStoredAppFont());
@@ -129,8 +124,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isGoogleConnected, setIsGoogleConnected] = useState(() => Boolean(getCurrentGoogleUser() || getAccountProfile().email));
   const [isGoogleAuthBusy, setIsGoogleAuthBusy] = useState(false);
-  const [isCloudBackupBusy, setIsCloudBackupBusy] = useState(false);
-  const [isCloudRestoreBusy, setIsCloudRestoreBusy] = useState(false);
   const [cloudBackupUpdatedAt, setCloudBackupUpdatedAt] = useState<Date | null>(null);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
@@ -182,7 +175,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showCurrencyPage, setShowCurrencyPage] = useState(false);
   const [currencyScrolled, setCurrencyScrolled] = useState(false);
-  const [showBackupModal, setShowBackupModal] = useState<'none' | 'local' | 'cloud'>('none');
   const [currencySearch, setCurrencySearch] = useState('');
   const [showTabNames, setShowTabNamesState] = useState(() => getShowTabNamesEnabled());
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -225,7 +217,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   useBackHandler(showPrivacy, () => setShowPrivacy(false));
   useBackHandler(showFullScreenAvatar, () => setShowFullScreenAvatar(false));
   useBackHandler(deleteStep !== 'closed', () => setDeleteStep('closed'));
-  useBackHandler(showBackupModal !== 'none', () => setShowBackupModal('none'));
   useBackHandler(isEditingProfile, () => setIsEditingProfile(false));
   useBackHandler(showNotificationMenu, () => setShowNotificationMenu(false));
 
@@ -374,97 +365,20 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
     }
   };
 
-  const handleCloudBackup = async () => {
-    if (!isGoogleConnected) {
-      toast({ title: 'Sign in required', description: 'Sign in with Google to save cloud backup.', variant: 'destructive' });
-      return;
-    }
-
-    if (showBackupModal === 'none') {
-      setShowBackupModal('cloud');
-      return;
-    }
-
-    setShowBackupModal('none');
-    setIsCloudBackupBusy(true);
-    try {
-      const payload = exportAllData();
-      await saveBackupForCurrentUser(payload, APP_VERSION);
-
-      // Perform a force sync of all shared expenses to ensure peers are up to date
-      triggerForceSync();
-
-      const now = new Date();
-      setCloudBackupUpdatedAt(now);
-      toast({ title: 'Cloud backup saved', description: 'Backup linked to your Google account.' });
-    } catch (error) {
-      const message = (error as { message?: string } | null)?.message || 'Could not upload backup to cloud.';
-      const isDailyLimit = /free cloud backup already used for today/i.test(message);
-      toast({
-        title: isDailyLimit ? 'Free backup used for today' : 'Cloud backup failed',
-        description: message,
-        variant: isDailyLimit ? 'default' : 'destructive',
-      });
-    } finally {
-      setIsCloudBackupBusy(false);
-    }
-  };
-
   const handleSilentCloudBackup = async () => {
     if (!isGoogleConnected) return;
-    setIsCloudBackupBusy(true);
     try {
       const payload = exportAllData();
       await saveBackupForCurrentUser(payload, APP_VERSION, { silentIfFree: true });
       setCloudBackupUpdatedAt(new Date());
     } catch (e) {
       console.error('Silent backup failed', e);
-    } finally {
-      setIsCloudBackupBusy(false);
     }
   };
 
   const triggerSignOutFlow = () => {
     void handleSilentCloudBackup();
     setShowSignOutConfirm(true);
-  };
-
-  const handleCloudRestore = async () => {
-    if (!isGoogleConnected) {
-      toast({ title: 'Sign in required', description: 'Sign in with Google to restore cloud backup.', variant: 'destructive' });
-      return;
-    }
-
-    setIsCloudRestoreBusy(true);
-    try {
-      const backup = await loadBackupForCurrentUser();
-      if (!backup?.payload) {
-        toast({ title: 'No cloud backup found', description: 'Save one first from this account.' });
-        return;
-      }
-
-      const success = importData(backup.payload);
-      if (!success) {
-        toast({ title: 'Cloud restore failed', description: 'Backup format is invalid.', variant: 'destructive' });
-        return;
-      }
-
-      setCloudBackupUpdatedAt(backup.updatedAt ?? new Date());
-      toast({ title: 'Cloud restore complete', description: 'App data restored from your Google account backup.' });
-
-      // Refresh UI state without reloading
-      refreshComponentState();
-    } catch (error) {
-      const message = (error as { message?: string } | null)?.message || 'Could not fetch cloud backup.';
-      const isDailyLimit = /free cloud restore already used for today/i.test(message);
-      toast({
-        title: isDailyLimit ? 'Free restore used for today' : 'Cloud restore failed',
-        description: message,
-        variant: isDailyLimit ? 'default' : 'destructive',
-      });
-    } finally {
-      setIsCloudRestoreBusy(false);
-    }
   };
 
   const handleGoogleSignOut = async () => {
@@ -804,19 +718,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overflow = previousHtmlOverflow;
     };
-  }, [showCustomize, showCurrencyPage, showBackupModal]);
-
-  const backupStats = useMemo(() => {
-    return {
-      personal: getPersonalExpenses().length,
-      shared: getSharedExpenses().length,
-      groups: getGroups().length,
-      links: getLinks().length,
-      loans: getLoans().length,
-      goals: getGoals().length,
-      subscriptions: getSubscriptions().length,
-    };
-  }, []);
+  }, [showCustomize, showCurrencyPage]);
 
   const orderedCurrencies = useMemo(() => {
     const selected = CURRENCIES.find((currency) => currency.code === selectedCurrency);
@@ -835,87 +737,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
       currency.symbol.toLowerCase().includes(q)
     );
   }, [currencySearch, orderedCurrencies]);
-
-  const handleExport = async () => {
-    if (showBackupModal === 'none') {
-      setShowBackupModal('local');
-      return;
-    }
-
-    setShowBackupModal('none');
-    setIsExporting(true);
-    try {
-      const data = exportAllData();
-      const fileName = `splitmate-backup-${new Date().toISOString().split('T')[0]}.json`;
-      if (Capacitor.isNativePlatform()) {
-        const saved = await Filesystem.writeFile({
-          path: `backups/${fileName}`,
-          data,
-          directory: Directory.Documents,
-          encoding: Encoding.UTF8,
-          recursive: true,
-        });
-
-        const canShare = await Share.canShare();
-        if (canShare.value) {
-          await Share.share({
-            title: 'SplitMate Backup',
-            text: 'Your backup JSON is ready.',
-            url: saved.uri,
-            dialogTitle: 'Save or share backup file',
-          });
-        }
-
-        toast({
-          title: 'Exported!',
-          description: `Saved to Documents/backups/${fileName}`,
-        });
-      } else {
-        const blob = new Blob([data], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = fileName;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-
-        // Small delay before cleanup
-        setTimeout(() => {
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-        }, 200);
-
-        toast({ title: 'Exported!', description: `Saved as ${fileName}` });
-      }
-    } catch {
-      toast({ title: "Export Failed", description: "Unable to save the file.", variant: "destructive" });
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setIsImporting(true);
-    try {
-      const text = await file.text();
-      const success = importData(text);
-      if (success) {
-        toast({ title: "Imported!", description: "Data restored successfully." });
-        setTimeout(() => window.location.reload(), 800);
-      } else {
-        toast({ title: "Import Failed", description: "Invalid file format.", variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Import Failed", description: "Couldn't read the file.", variant: "destructive" });
-    } finally {
-      setIsImporting(false);
-      event.target.value = '';
-    }
-  };
 
   const toggleDeleteSelection = (key: 'personal' | 'shared' | 'links' | 'more') => {
     setDeleteSelections(prev => ({ ...prev, [key]: !prev[key] }));
@@ -1513,164 +1334,38 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
       {/* Backup & Restore */}
       <div>
         <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">DATA</p>
-        <div className="ios-card-modern p-3.5 space-y-3">
-        <div className="flex items-center justify-between gap-4 mb-1">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 bg-secondary rounded-xl flex items-center justify-center">
-              <Database size={13} className="text-muted-foreground" />
-            </div>
-            <h2 className="font-semibold text-sm">Backup & Restore</h2>
-          </div>
-          {isGoogleConnected && (
-            <p className="text-[10px] text-muted-foreground font-medium italic opacity-80">
-              {cloudBackupUpdatedAt
-                ? `Sync: ${cloudBackupUpdatedAt.toLocaleDateString()}`
-                : 'Not synced'}
-            </p>
-          )}
-        </div>
-
-        {isGoogleConnected && (isEffectivePro || isAutoBackupGracePeriodActive()) && (
-          <div
-            onClick={() => {
-              const next = !profile.nightlyBackupEnabled;
-              const currentSaved = getAccountProfile();
-              const updated = { ...currentSaved, nightlyBackupEnabled: next };
-              const saved = saveAccountProfile(updated);
-              if (!saved) return;
-              handleProfileChange('nightlyBackupEnabled', next);
-              if (!isEditingProfile) {
-                setLastSavedProfile(updated);
-              }
-            }}
-            className="w-full flex items-center justify-between p-3.5 rounded-3xl transition-all bg-secondary/20 border border-border/5 active:scale-[0.99] cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <div className={cn(
-                "w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-500",
-                profile.nightlyBackupEnabled ? "bg-success/10 rotate-12" : "bg-muted/10 opacity-70"
-              )}>
-                <Sparkles size={16} className={profile.nightlyBackupEnabled ? "text-success" : "text-muted-foreground"} />
-              </div>
-              <div className="text-left">
-                <p className="text-xs font-bold leading-none">Daily Backup</p>
-                <p className="text-[10px] text-muted-foreground mt-1.5 font-medium leading-tight">
-                  {!isEffectivePro && isAutoBackupGracePeriodActive()
-                    ? (() => {
-                        const removedAt = getAutoBackupProRemovedAt();
-                        const remainingMs = removedAt ? Math.max(0, AUTO_BACKUP_GRACE_PERIOD_MS - (Date.now() - removedAt)) : 0;
-                        const remainingHours = Math.ceil(remainingMs / (60 * 60 * 1000));
-                        return `Grace period: turns off in ${remainingHours}h unless Pro restored`;
-                      })()
-                    : "Syncs daily at 12:00 am"}
-                </p>
-              </div>
-            </div>
-
-            <div className={cn(
-              "w-10 h-5 rounded-full relative transition-all duration-300 border border-border/10",
-              profile.nightlyBackupEnabled ? "bg-success/20" : "bg-secondary/60"
-            )}>
-              <div className={cn(
-                "absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all duration-300 shadow-sm flex items-center justify-center",
-                profile.nightlyBackupEnabled ? "left-6 bg-success" : "left-0.5 bg-muted-foreground"
-              )}>
-                {profile.nightlyBackupEnabled && <Check size={8} className="text-white" strokeWidth={5} />}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-2.5">
-          {isGoogleConnected && isEffectivePro && (
-            <>
-              {/* Cloud Backup Item */}
-              <button
-                onClick={handleCloudBackup}
-                disabled={isCloudBackupBusy}
-                className="flex items-center gap-3 p-3 rounded-3xl transition-all active:scale-95 disabled:opacity-50"
-                style={{
-                  background: 'hsl(var(--secondary) / 0.5)',
-                  border: '1px solid hsl(var(--border) / 0.2)',
-                }}
-              >
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-background/60 shadow-sm flex-shrink-0">
-                  <CloudUpload size={18} className="text-foreground" />
-                </div>
-                <div className="text-left min-w-0">
-                  <p className="text-[11px] font-bold leading-tight">Cloud Save</p>
-                  <p className="text-[9px] text-muted-foreground font-medium truncate">Backup</p>
-                </div>
-              </button>
-
-              {/* Cloud Restore Item */}
-              <button
-                onClick={handleCloudRestore}
-                disabled={isCloudRestoreBusy}
-                className="flex items-center gap-3 p-3 rounded-3xl transition-all active:scale-95 disabled:opacity-50"
-                style={{
-                  background: 'hsl(var(--secondary) / 0.5)',
-                  border: '1px solid hsl(var(--border) / 0.2)',
-                }}
-              >
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-background/60 shadow-sm flex-shrink-0">
-                  <RotateCcw size={18} className="text-foreground" />
-                </div>
-                <div className="text-left min-w-0">
-                  <p className="text-[11px] font-bold leading-tight">Cloud Load</p>
-                  <p className="text-[9px] text-muted-foreground font-medium truncate">Restore</p>
-                </div>
-              </button>
-            </>
-          )}
-
-          {/* Export JSON Item */}
+        <div className="ios-card-modern overflow-hidden">
           <button
-            onClick={handleExport}
-            disabled={isExporting}
-            className="flex items-center gap-3 p-3 rounded-3xl transition-all active:scale-95 disabled:opacity-50"
-            style={{
-              background: 'hsl(var(--secondary) / 0.5)',
-              border: '1px solid hsl(var(--border) / 0.2)',
-            }}
+            onClick={() => navigate('/backup')}
+            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
           >
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-background/60 shadow-sm flex-shrink-0">
-              <Upload size={18} className="text-foreground" />
+            <Database size={20} className="text-white shrink-0" />
+            <div className="flex-1 text-left min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold text-sm text-foreground">Backup &amp; Restore</h2>
+                {isGoogleConnected && profile.nightlyBackupEnabled && (
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-success/15 text-success">
+                    Auto
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-muted-foreground truncate">
+                {isGoogleConnected
+                  ? cloudBackupUpdatedAt
+                    ? `Synced ${cloudBackupUpdatedAt.toLocaleDateString()}`
+                    : 'Cloud sync & local data backup'
+                  : 'Cloud sync, daily backup & file export'}
+              </p>
             </div>
-            <div className="text-left min-w-0">
-              <p className="text-[11px] font-bold leading-tight">Export File</p>
-              <p className="text-[9px] text-muted-foreground font-medium truncate">JSON File</p>
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              {cloudBackupUpdatedAt && (
+                <span className="text-[11px] font-medium text-muted-foreground/70 hidden xs:inline">
+                  {cloudBackupUpdatedAt.toLocaleDateString()}
+                </span>
+              )}
+              <ChevronRight size={16} className="text-muted-foreground shrink-0" />
             </div>
           </button>
-
-          {/* Import JSON Item */}
-          <div className="relative">
-            <input
-              type="file"
-              accept=".json"
-              onChange={handleImport}
-              disabled={isImporting}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-              id="import-file"
-            />
-            <label
-              htmlFor="import-file"
-              className="w-full flex items-center gap-3 p-3 rounded-3xl transition-all active:scale-95 cursor-pointer"
-              style={{
-                background: 'hsl(var(--secondary) / 0.5)',
-                border: '1px solid hsl(var(--border) / 0.2)',
-              }}
-            >
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-background/60 shadow-sm flex-shrink-0">
-                <Download size={18} className="text-foreground" />
-              </div>
-              <div className="text-left min-w-0">
-                <p className="text-[11px] font-bold leading-tight">Import File</p>
-                <p className="text-[9px] text-muted-foreground font-medium truncate">JSON File</p>
-              </div>
-            </label>
-          </div>
-        </div>
         </div>
       </div>
 
@@ -2706,90 +2401,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
         document.body
       )}
 
-      {/* ── Backup Confirmation Modal ── */}
-      {showBackupModal !== 'none' && createPortal(
-        <div className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center p-4 sm:p-0"
-          style={{ background: 'hsl(0 0% 0% / 0.45)', backdropFilter: 'blur(8px)' }}
-          onClick={() => setShowBackupModal('none')}
-        >
-          <div
-            className="w-full max-w-sm rounded-[2rem] overflow-hidden animate-in fade-in slide-in-from-bottom-8 duration-300"
-            style={{
-              background: 'hsl(var(--card))',
-              boxShadow: '0 20px 40px -10px rgb(0 0 0 / 0.3)'
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="p-6 space-y-6">
-              <div className="flex flex-col items-center text-center space-y-3 pt-2">
-                <div className="w-16 h-16 rounded-full flex items-center justify-center shadow-sm"
-                  style={{ background: showBackupModal === 'local' ? 'hsl(var(--primary) / 0.1)' : 'hsl(var(--success) / 0.1)' }}>
-                  {showBackupModal === 'local' ? (
-                    <FileJson size={28} className="text-primary" />
-                  ) : (
-                    <CloudUpload size={28} className="text-success" />
-                  )}
-                </div>
-                <div>
-                  <h3 className="text-2xl font-black tracking-tight text-gray-900 leading-none">
-                    {showBackupModal === 'local' ? 'Export Data' : 'Cloud Backup'}
-                  </h3>
-                  <p className="text-sm font-medium text-muted-foreground mt-2">
-                    Review your data summary before proceeding.
-                  </p>
-                </div>
-              </div>
-
-              <div className="bg-secondary/40 p-4 rounded-3xl border border-border/5">
-                <div className="space-y-3">
-                  {[
-                    { label: 'Personal Expenses', count: backupStats.personal, icon: User },
-                    { label: 'Shared Groups & Bills', count: backupStats.shared, icon: Users },
-                    { label: 'Loans & Debts', count: backupStats.loans, icon: Landmark },
-                    { label: 'Savings Targets', count: backupStats.goals, icon: Target },
-                    { label: 'Cloud Links', count: backupStats.links, icon: ExternalLink },
-                    { label: 'Subscriptions', count: backupStats.subscriptions, icon: Repeat },
-                  ].map((item, i) => (
-                    <div key={i} className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center shadow-sm border border-border/10">
-                          <item.icon size={12} className="text-gray-500" />
-                        </div>
-                        <span className="text-xs font-bold text-gray-700">{item.label}</span>
-                      </div>
-                      <span className="text-[11px] font-black w-7 h-7 shrink-0 flex items-center justify-center rounded-full"
-                        style={{
-                          background: showBackupModal === 'local' ? 'hsl(var(--primary) / 0.1)' : 'hsl(var(--success) / 0.1)',
-                          color: showBackupModal === 'local' ? 'hsl(var(--primary))' : 'hsl(var(--success))'
-                        }}>
-                        {item.count}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-2.5">
-                <button
-                  onClick={showBackupModal === 'local' ? handleExport : handleCloudBackup}
-                  className="w-full py-4 rounded-2xl font-bold text-sm text-white shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
-                  style={{ background: showBackupModal === 'local' ? 'hsl(var(--primary))' : 'hsl(var(--success))' }}
-                >
-                  {showBackupModal === 'local' ? <Download size={18} /> : <CloudUpload size={18} />}
-                  {showBackupModal === 'local' ? 'Export to Device' : 'Backup to Cloud'}
-                </button>
-                <button
-                  onClick={() => setShowBackupModal('none')}
-                  className="w-full py-4 rounded-2xl font-bold text-sm text-gray-500 bg-secondary hover:bg-secondary/80 active:scale-95 transition-all"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
 
       {/* ── Privacy Info Modal ── */}
       {showPrivacy && createPortal(
