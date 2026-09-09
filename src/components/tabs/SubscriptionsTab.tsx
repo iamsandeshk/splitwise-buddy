@@ -398,64 +398,85 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
   };
 
   return (
-    <div className="min-h-screen bg-transparent text-foreground pb-24 relative">
-      <div className="px-4 pt-14 pb-6 space-y-6">
-        <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-transparent text-foreground pb-32 relative font-sans">
+      <div className="px-5 pt-14 pb-5 space-y-5">
+        <div className="flex items-start gap-3">
           {onBack && (
             <button
               onClick={onBack}
-              className="w-11 h-11 rounded-2xl slab flex items-center justify-center active:scale-90 transition-all mt-0.5"
+              className="w-11 h-11 rounded-[var(--radius)] slab-flat flex items-center justify-center active:scale-95 transition-transform mt-0.5"
               aria-label="Back"
             >
               <ChevronLeft size={20} strokeWidth={2.5} />
             </button>
           )}
           <div className="min-w-0 flex-1">
-            <h1 className="text-[28px] font-bold leading-none tracking-tight">Subscriptions<span className="text-primary">.</span></h1>
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mt-0.5">
-              {stats.active} active · {upcomingItem ? `next due in ${upcomingItem.days} days` : 'No upcoming renewals'}
-            </p>
+            <h1 className="text-[32px] font-heading font-black leading-none">Subscriptions<span className="text-primary">.</span></h1>
+            <p className="text-sm font-medium text-muted-foreground mt-2">Keep every recurring bill in view</p>
           </div>
         </div>
 
-        <div className="ios-card-modern overflow-hidden border border-border/20 flex divide-x divide-border/60 bg-secondary/5 rounded-[2rem]">
-          <div className="flex-1 p-5 text-center flex flex-col justify-center gap-1 hover:bg-secondary/10 transition-colors">
-            <p className="text-xl font-bold tracking-tight text-destructive flex items-center justify-center">
-              <MoneyDisplay amount={-stats.monthly} size="sm" />
-            </p>
-            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-none">Monthly</p>
+        <div className="rounded-[var(--radius-lg)] bg-primary text-primary-foreground p-5 border border-primary">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-black uppercase text-primary-foreground/70">Monthly spend</p>
+              <div className="text-[30px] font-heading font-black tabular-nums mt-1">
+                <MoneyDisplay amount={stats.monthly} size="lg" />
+              </div>
+            </div>
+            <div className="w-10 h-10 rounded-[var(--radius-sm)] bg-primary-foreground/15 flex items-center justify-center" aria-hidden="true">
+              <LayoutGrid size={19} />
+            </div>
           </div>
-          <div className="flex-1 p-5 text-center flex flex-col justify-center gap-1 hover:bg-secondary/10 transition-colors">
-            <p className="text-xl font-bold tracking-tight text-destructive flex items-center justify-center">
-              <MoneyDisplay amount={-stats.yearly} size="sm" />
-            </p>
-            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-none">Yearly</p>
-          </div>
-          <div className="flex-1 p-5 text-center flex flex-col justify-center gap-1 hover:bg-secondary/10 transition-colors">
-            <p className="text-2xl font-bold tracking-tight text-primary leading-tight">{stats.active}</p>
-            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-none">Active</p>
+          <div className="mt-5 pt-4 border-t border-primary-foreground/25 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-black uppercase text-primary-foreground/70">Yearly estimate</p>
+              <div className="text-lg font-bold tabular-nums mt-0.5">
+                <MoneyDisplay amount={stats.yearly} size="sm" />
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="flex justify-end -space-x-2 mb-1.5">
+                {items.filter(item => !item.paused).slice(0, 3).map((item) => (
+                  <div key={item.id} className="w-8 h-8 rounded-full overflow-hidden bg-card border-2 border-primary flex items-center justify-center">
+                    {item.logoUrl && !logoLoadErrorMap[item.id] ? (
+                      <img src={item.logoUrl} alt="" className="w-full h-full object-cover" onError={() => setLogoLoadErrorMap(prev => ({ ...prev, [item.id]: true }))} />
+                    ) : (
+                      <span className="text-[10px] font-black text-primary">{item.appName.charAt(0)}</span>
+                    )}
+                  </div>
+                ))}
+                {stats.active > 3 && (
+                  <div className="w-8 h-8 rounded-full bg-card border-2 border-primary text-card-foreground flex items-center justify-center text-[9px] font-black">+{stats.active - 3}</div>
+                )}
+              </div>
+              <p className="text-[10px] font-bold text-primary-foreground/75">{stats.active} active</p>
+            </div>
           </div>
         </div>
 
         {upcomingItem && (
-          <div className="bg-[#FFF4E5] dark:bg-[#2A1D0B] p-4 rounded-[1.5rem] flex items-center gap-3 border border-warning/20 transition-transform active:scale-[0.99]" style={{ color: 'hsl(35, 100%, 35%)' }}>
+          <div className="bg-warning/10 p-4 rounded-[var(--radius)] flex items-center gap-3 border border-warning/30">
              <Clock size={18} className="text-warning flex-shrink-0" />
-             <p className="text-xs font-semibold truncate">
-               {upcomingItem.appName} renews in {upcomingItem.days} days · <span className="text-destructive">-{currency.symbol}{upcomingItem.amount}</span>
-             </p>
+             <div className="min-w-0">
+               <p className="text-[10px] font-black uppercase text-warning">Next renewal</p>
+               <p className="text-xs font-semibold truncate mt-0.5">
+                 {upcomingItem.appName} · {upcomingItem.days} days · <span className="text-destructive">-{currency.symbol}{upcomingItem.amount}</span>
+               </p>
+             </div>
           </div>
         )}
 
-        <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-2 -mx-4 px-4">
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide -mx-5 px-5">
            {['All', 'Monthly', 'Quarterly', 'Yearly', 'Weekly', 'Paused'].map((item) => (
              <button
                 key={item}
                 onClick={() => setFilter(item as 'All' | 'Monthly' | 'Quarterly' | 'Yearly' | 'Weekly' | 'Paused')}
                 className={cn(
-                  "px-5 py-2.5 rounded-full text-[13px] font-bold transition-all duration-300 whitespace-nowrap",
+                  "px-4 py-2 rounded-full text-xs font-bold transition-colors whitespace-nowrap border",
                   filter === item 
-                    ? "bg-[#6366F1] text-white" 
-                    : "bg-secondary/40 text-muted-foreground border border-border/10 hover:bg-secondary/60"
+                    ? "bg-primary text-primary-foreground border-primary" 
+                    : "bg-card text-muted-foreground border-border"
                 )}
              >
                {item}
@@ -466,10 +487,13 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
 
      
 
-      <div className="px-4 space-y-6">
-        <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] pl-1">Active</h3>
+      <div className="px-5 space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-xs font-black uppercase">Subscriptions</h3>
+          <span className="text-[11px] font-bold text-primary">{filteredItems.length} shown</span>
+        </div>
 
-        <div className="flex flex-col gap-5">
+        <div className="overflow-hidden rounded-[var(--radius-lg)] border border-border bg-card divide-y divide-border">
           {filteredItems.map((item, index) => {
             const isLockedSubscription = !isPro && index >= FREE_LIMITS.MAX_SUBSCRIPTIONS;
             const failed = logoLoadErrorMap[item.id] || !item.logoUrl;
@@ -486,14 +510,14 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                      setSelectedItem(item);
                    }}
                    className={cn(
-                     "ios-card-modern p-4 flex items-center gap-4 bg-secondary/10 border-border/5 hover:bg-secondary/20 transition-all active:scale-[0.98] cursor-pointer relative",
+                      "min-h-[78px] p-4 flex items-center gap-3 bg-card transition-colors active:bg-secondary/40 cursor-pointer relative",
                      isLockedSubscription && "opacity-40"
                    )}
                  >
                    {isLockedSubscription && (
                      <>
-                       <div className="absolute top-2 right-2 z-30 w-7 h-7 rounded-lg bg-black/55 border border-white/20 flex items-center justify-center">
-                         <Lock size={12} className="text-white" />
+                        <div className="absolute top-2 right-2 z-30 w-7 h-7 rounded-lg bg-secondary border border-border flex items-center justify-center">
+                          <Lock size={12} className="text-foreground" />
                        </div>
                        <button
                          type="button"
@@ -507,7 +531,7 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                      </>
                    )}
                    <div 
-                    className="w-14 h-14 rounded-[22.5%] overflow-hidden flex items-center justify-center bg-black/40 border border-border/10 flex-shrink-0 shadow-inner"
+                    className="w-12 h-12 rounded-[var(--radius-sm)] overflow-hidden flex items-center justify-center bg-secondary border border-border flex-shrink-0"
                     style={{ clipPath: 'inset(0% round 22.5%)' }}
                    >
                       {failed ? (
@@ -523,8 +547,8 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                    </div>
                    
                     <div className={cn("flex-1 min-w-0 transition-opacity", item.paused && "opacity-50")}>
-                      <div className="flex items-center justify-between gap-3 mb-1">
-                        <h4 className="font-bold text-[15px] truncate flex items-center gap-2">
+                       <div className="flex items-center justify-between gap-3 mb-1.5">
+                         <h4 className="font-bold text-sm truncate flex items-center gap-2">
                           {item.appName}
                           {item.paused && (
                             <span className="px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-500 text-[8px] font-black uppercase tracking-tighter border border-blue-500/10">
@@ -532,7 +556,7 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                             </span>
                           )}
                         </h4>
-                        <p className="text-[15px] font-black text-destructive flex-shrink-0">
+                         <p className="text-sm font-black text-foreground flex-shrink-0 tabular-nums">
                           -{currency.symbol}{item.amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </p>
                       </div>
@@ -548,13 +572,13 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                         </div>
                         
                         <div className="flex items-center gap-2 flex-shrink-0">
-                          {!item.paused && daysUntil !== null && (
-                            <div className="px-2 py-0.5 rounded-full bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-500 text-[9px] font-black uppercase tracking-wider">
-                              due in {daysUntil}d
-                            </div>
+                           {!item.paused && daysUntil !== null && (
+                             <div className="text-[10px] font-bold text-primary">
+                               Due in {daysUntil}d
+                             </div>
                           )}
                           {!item.paused && daysUntil === null && item.cycle === 'lifetime' && (
-                            <div className="px-2 py-0.5 rounded-full bg-blue-500/10 dark:bg-blue-500/15 text-blue-600 dark:text-blue-500 text-[9px] font-black uppercase tracking-wider">
+                             <div className="text-[10px] font-bold text-primary">
                               Lifetime
                             </div>
                           )}
@@ -565,12 +589,24 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                       </div>
                    </div>
                  </div>
-                 {(filteredItems.indexOf(item) === 0) && <NativeAdCard />}
+                  {(filteredItems.indexOf(item) === 0) && <div className="py-3 bg-background"><NativeAdCard /></div>}
               </div>
             );
           })}
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={() => {
+          setAddStep('select');
+          setShowAdd(true);
+        }}
+        className="fixed right-5 bottom-24 z-40 w-14 h-14 rounded-[var(--radius)] bg-primary text-primary-foreground flex items-center justify-center border border-primary active:scale-95 transition-transform"
+        aria-label="Add subscription"
+      >
+        <Plus size={24} strokeWidth={2.5} />
+      </button>
 
       {showAdd && accounts.length === 0 ? (
         <AddFirstAccountModal
