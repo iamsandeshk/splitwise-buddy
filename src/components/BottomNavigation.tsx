@@ -314,6 +314,41 @@ const GLASS_STYLES = `
   :root:not(.light) .lg-ripple {
     background: rgba(255,255,255,0.18);
   }
+
+  .m3-nav.lg-bar {
+    padding: 8px 6px 6px;
+    border-radius: 2rem 2rem 0 0;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border) / 0.4);
+    border-bottom: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .m3-nav .lg-bubble {
+    top: 4px;
+    bottom: auto;
+    height: 34px;
+    border-radius: 999px;
+    background: hsl(var(--secondary));
+    border: 0;
+    box-shadow: none;
+  }
+  .m3-nav .lg-bubble::before,
+  .m3-nav .lg-bubble::after,
+  .m3-nav::before { display: none !important; }
+  .m3-nav .lg-tab-btn { height: 58px; padding: 5px 0 3px; gap: 4px; }
+  .m3-nav .lg-icon.active,
+  .light .m3-nav .lg-icon.active { color: hsl(var(--secondary-foreground)); }
+  .m3-nav .lg-icon.inactive,
+  .light .m3-nav .lg-icon.inactive { color: hsl(var(--muted-foreground)); }
+  .m3-nav .lg-label.active,
+  .light .m3-nav .lg-label.active { color: hsl(var(--foreground)); font-weight: 700; }
+  .m3-nav .lg-label.inactive,
+  .light .m3-nav .lg-label.inactive { color: hsl(var(--muted-foreground)); font-weight: 500; }
+  @media (prefers-reduced-motion: reduce) {
+    .lg-bubble, .lg-icon, .lg-tab-btn { animation: none !important; transition: none !important; }
+  }
 `;
 
 function useInjectStyles(id: string, css: string) {
@@ -409,31 +444,18 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
       className="fixed bottom-0 left-0 right-0 z-40 flex justify-center pointer-events-none"
       style={{ paddingBottom: 'max(10px, env(safe-area-inset-bottom))' }}
     >
-      <div className={`lg-bar pointer-events-auto mx-2 max-w-[440px] w-[calc(100%-1rem)] ${liquidGlassEnabled ? 'lg-glass-active' : ''}`}
-        style={{
-          background: liquidGlassEnabled ? undefined : 'hsl(var(--card))',
-          border: liquidGlassEnabled ? undefined : '1px solid hsl(var(--border) / 0.4)',
-          backdropFilter: liquidGlassEnabled ? undefined : 'none',
-          WebkitBackdropFilter: liquidGlassEnabled ? undefined : 'none',
-          boxShadow: liquidGlassEnabled ? undefined : '0 10px 30px -10px rgba(0,0,0,0.5)',
-        }}
-      >
+      <div className="lg-bar m3-nav pointer-events-auto max-w-[440px] w-full">
         <div
           ref={containerRef}
           className="flex items-center justify-around relative px-[2px]"
         >
           <div
             ref={bubbleRef}
-            className={`lg-bubble${morphing && liquidGlassEnabled ? ' morphing' : ''}`}
+            className={`lg-bubble${morphing ? ' morphing' : ''}`}
             style={{
               left:  pillStyle.left - 4,
               width: pillStyle.width + 8,
-              transition: liquidGlassEnabled ? undefined : 'left 0.3s ease, width 0.3s ease',
-              background: liquidGlassEnabled ? undefined : 'hsl(var(--foreground) / 0.12)',
-              border: liquidGlassEnabled ? undefined : '1px solid hsl(var(--foreground) / 0.1)',
-              boxShadow: liquidGlassEnabled ? undefined : 'none',
-              backdropFilter: liquidGlassEnabled ? undefined : 'none',
-              WebkitBackdropFilter: liquidGlassEnabled ? undefined : 'none',
+              transition: 'left 0.38s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.38s cubic-bezier(0.2, 0.8, 0.2, 1)',
             }}
           />
 

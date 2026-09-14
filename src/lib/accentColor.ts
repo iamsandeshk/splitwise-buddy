@@ -4,7 +4,7 @@ const KEY = 'splitmate_accent_color';
 
 export function getStoredAccentColor(): AccentColor {
   const v = typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) : null;
-  return (v as AccentColor) || 'orange';
+  return (v as AccentColor) || 'green';
 }
 
 export function applyAccentColor(color: AccentColor): void {
