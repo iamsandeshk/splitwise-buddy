@@ -129,14 +129,14 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
   return (
     <div onScroll={onScroll} className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col">
       {/* Header — sticky fixed position */}
-      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md px-5 pt-5 pb-3 flex items-center justify-between gap-3 border-b border-border/10">
+      <div className="sticky top-0 z-30 bg-background px-5 pt-5 pb-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-heading text-[13px] tracking-[0.28em] text-muted-foreground uppercase">
+          <p className="text-sm font-medium text-muted-foreground">
             {greeting}
           </p>
           <div className="flex items-baseline gap-2 mt-0.5">
-            <h1 className="font-heading text-[28px] font-extrabold tracking-[-0.035em] leading-none text-foreground truncate">
-              {displayName}<span className="text-primary">.</span>
+            <h1 className="font-heading text-[30px] font-bold leading-none text-foreground truncate">
+              {displayName}
             </h1>
             {isEffectivePro && (
               <img
@@ -153,38 +153,32 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
       {/* Main Content Area */}
       <div className="px-5 pt-4 space-y-6 flex-1">
 
-      {/* Balance — flat tactile slab with hairline rule */}
+      {/* Material 3 expressive balance container */}
       <div
-        className="relative px-5 py-6 overflow-hidden"
-        style={{
-          background: 'hsl(var(--card))',
-          border: '1px solid hsl(var(--border) / 0.15)',
-          borderRadius: '1.75rem',
-          boxShadow: '0 2px 16px -4px hsl(var(--glass-shadow) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.06)',
-        }}
+        className="relative px-6 py-8 overflow-hidden rounded-[2rem] bg-accent text-accent-foreground border border-primary/10 text-center"
       >
-        <div className="absolute right-[-15px] top-[20%] -translate-y-[15%] pointer-events-none opacity-[0.04]">
+        <div className="absolute right-[-15px] top-[20%] -translate-y-[15%] pointer-events-none opacity-[0.05]">
           <Wallet size={120} className="text-foreground" strokeWidth={1} />
         </div>
         {/* Corner code tag */}
-        <div className="absolute top-3 right-4 font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground/70">
+        <div className="absolute top-4 right-5 text-[10px] font-semibold text-accent-foreground/55">
           NET · {new Date().toLocaleDateString('en', { month: 'short', year: '2-digit' }).toUpperCase()}
         </div>
 
-        <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-muted-foreground mb-3">
+        <p className="text-sm font-semibold text-accent-foreground/70 mb-2">
           Total balance
         </p>
 
-        <div className="flex items-baseline gap-1">
+        <div className="flex items-baseline justify-center gap-1">
           <MoneyDisplay
             amount={stats.netTotalBalance}
             size="xl"
             showSign={true}
-            className="font-heading tracking-[-0.04em]"
+            className="font-heading text-[2.75rem] leading-none"
           />
         </div>
 
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3 flex items-center justify-center gap-2">
           <span
             className="inline-block w-1.5 h-1.5 rounded-full"
             style={{
@@ -201,12 +195,9 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
         </div>
 
         {(stats.owedToYou > 0 || stats.totalOutgoing > 0) && (
-          <div
-            className="mt-5 pt-4 grid grid-cols-2 gap-0 divide-x"
-            style={{ borderTop: '1px dashed hsl(var(--border) / 0.5)', borderColor: 'hsl(var(--border) / 0.4)' }}
-          >
-            <div className="pr-4">
-              <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground mb-1.5">In</p>
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <div className="rounded-2xl bg-background/55 p-3 text-left">
+              <p className="text-[11px] font-semibold text-muted-foreground mb-1.5">You are owed</p>
               <div className="flex items-center gap-1.5">
                 <ArrowDownRight size={14} className="text-success" />
                 <p className="font-heading text-lg font-bold text-success tabular-nums tracking-tight">
@@ -214,8 +205,8 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
                 </p>
               </div>
             </div>
-            <div className="pl-4">
-              <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground mb-1.5">Out</p>
+            <div className="rounded-2xl bg-background/55 p-3 text-left">
+              <p className="text-[11px] font-semibold text-muted-foreground mb-1.5">You owe</p>
               <div className="flex items-center gap-1.5">
                 <ArrowUpRight size={14} className="text-danger" />
                 <p className="font-heading text-lg font-bold text-danger tabular-nums tracking-tight">
@@ -227,20 +218,17 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
         )}
       </div>
 
-      {/* Action row — asymmetric primary / ghost */}
-      <div className="grid grid-cols-5 gap-3">
+      {/* Expressive quick actions */}
+      <div className="grid grid-cols-2 gap-3">
         <button
           onClick={onAddPersonal}
-          className="col-span-3 group h-[64px] flex items-center justify-between px-5 rounded-[1.25rem] font-heading font-bold tracking-tight relative overflow-hidden active:scale-[0.98] transition-transform"
+          className="group h-[68px] flex items-center justify-between px-5 rounded-[1.5rem] font-heading font-bold relative overflow-hidden active:scale-[0.96] transition-transform bg-primary text-primary-foreground"
           style={{
-            background: 'hsl(var(--primary))',
-            color: 'hsl(var(--primary-foreground))',
-            boxShadow: '0 2px 12px -4px hsl(var(--glass-shadow) / 0.3), inset 0 1px 0 hsl(0 0% 100% / 0.15)',
-            transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+            transition: 'transform 0.2s ease',
           }}
         >
           <span className="flex flex-col items-start leading-none">
-            <span className="font-mono text-[9px] uppercase tracking-[0.3em] opacity-70 mb-1">+ log</span>
+            <span className="text-[11px] opacity-75 mb-1">Quick add</span>
             <span className="text-base">Personal</span>
           </span>
           <div className="w-9 h-9 rounded-full flex items-center justify-center"
@@ -251,17 +239,15 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
 
         <button
           onClick={onAddShared}
-          className="col-span-2 group h-[64px] flex flex-col items-start justify-center px-4 rounded-[1.25rem] font-heading font-bold tracking-tight active:scale-[0.98] transition-transform"
+          className="group h-[68px] flex flex-col items-start justify-center px-5 rounded-[1.5rem] font-heading font-bold active:scale-[0.96] transition-transform bg-secondary text-secondary-foreground"
           style={{
-            background: 'transparent',
-            color: 'hsl(var(--foreground))',
-            border: '1px dashed hsl(var(--border))',
+            border: '1px solid hsl(var(--border) / 0.4)',
           }}
         >
-          <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.3em] text-muted-foreground mb-1">
-            <Users size={11} className="text-primary" /> split
+          <span className="flex items-center gap-1.5 text-[11px] text-secondary-foreground/70 mb-1">
+            <Users size={13} className="text-primary" /> Shared
           </span>
-          <span className="text-base">New tab</span>
+           <span className="text-base">New split</span>
         </button>
       </div>
 
@@ -281,15 +267,12 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
                   return (
                     <div
                       key={s.label}
-                      className="relative px-2.5 py-3.5 min-w-0 overflow-hidden"
+                      className="relative px-3 py-4 min-w-0 overflow-hidden bg-card border border-border/45 rounded-[1.5rem]"
                       style={{
-                        background: 'hsl(var(--card) / 0.6)',
-                        border: '1px solid hsl(var(--border) / 0.45)',
-                        borderRadius: '1.1rem',
                       }}
                     >
-                      <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground mb-2 truncate">
-                        0{i + 1} · {s.label}
+                      <p className="text-[10px] font-semibold text-muted-foreground mb-2 truncate">
+                        {s.label}
                       </p>
                       <p className={`font-heading ${fontSizeClass} font-medium tracking-tight tabular-nums leading-none truncate ${s.accent === 'primary' ? 'text-primary' : 'text-foreground'}`}>
                         {s.value}

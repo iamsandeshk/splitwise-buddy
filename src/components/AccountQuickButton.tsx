@@ -51,10 +51,9 @@ export function AccountQuickButton({ onClick, size = 44 }: AccountQuickButtonPro
             e.stopPropagation();
             navigate('/pro');
           }}
-          className="h-[34px] px-3.5 rounded-full flex items-center justify-center font-bold text-[11px] uppercase tracking-wider transition-all active:scale-95"
+          className="h-9 px-4 rounded-full flex items-center justify-center font-bold text-[11px] transition-all active:scale-95 bg-secondary text-secondary-foreground"
           style={{
-            background: 'linear-gradient(135deg, hsl(45 100% 50%), hsl(35 100% 50%))',
-            color: '#000',
+            border: '1px solid hsl(var(--border) / 0.45)',
           }}
         >
           <Sparkles size={13} className="mr-1.5" />
@@ -68,9 +67,8 @@ export function AccountQuickButton({ onClick, size = 44 }: AccountQuickButtonPro
         style={{
           width: `${size}px`,
           height: `${size}px`,
-          background: 'hsl(var(--card) / 0.9)',
+          background: 'hsl(var(--secondary))',
           border: '1px solid hsl(var(--border) / 0.45)',
-          backdropFilter: 'blur(18px)',
         }}
         aria-label="Open account"
       >
