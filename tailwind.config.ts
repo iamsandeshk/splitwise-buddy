@@ -84,9 +84,9 @@ export default {
 				'2xl': 'calc(var(--radius-lg) + 4px)'
 			},
 			fontFamily: {
-				sans: ['var(--font-body)', 'Manrope', 'Inter', 'system-ui', 'sans-serif'],
-				heading: ['var(--font-heading)', 'Sora', 'Inter', 'system-ui', 'sans-serif'],
-				display: ['var(--font-heading)', 'Sora', 'Inter', 'system-ui', 'sans-serif'],
+				sans: ['var(--font-body)', 'Figtree', 'system-ui', 'sans-serif'],
+				heading: ['var(--font-heading)', 'Outfit', 'system-ui', 'sans-serif'],
+				display: ['var(--font-heading)', 'Outfit', 'system-ui', 'sans-serif'],
 			},
 			fontSize: {
 				'money': ['1.25rem', { lineHeight: '1.2', fontWeight: '600' }],
