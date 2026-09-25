@@ -16,8 +16,9 @@ export function MoneyDisplay({
   size = 'md', 
   prefix,
   showSign = false,
-  hideSymbol = false
-}: MoneyDisplayProps) {
+  hideSymbol = false,
+  animate = true
+}: MoneyDisplayProps & { animate?: boolean }) {
   const currency = useCurrency();
   const symbol = hideSymbol ? '' : (prefix ?? currency.symbol);
   const isPositive = amount > 0;
@@ -45,7 +46,8 @@ export function MoneyDisplay({
     <span className={cn(
       sizeClasses[size],
       colorClass,
-      'font-semibold tabular-nums animate-money-count',
+      'font-semibold tabular-nums',
+      animate && 'animate-money-count',
       className
     )}>
       {sign}{symbol}{displayAmount.toLocaleString(currency.locale, { 

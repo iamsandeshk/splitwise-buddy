@@ -8,6 +8,7 @@ import { useCurrency } from '@/hooks/use-currency';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
 import { HomeCurrencyRates } from '@/components/widgets/HomeCurrencyRates';
 import { GoalsWidget, LoansWidget, SubscriptionsWidget, PinnedLinksWidget, CategoryInsightsWidget, BudgetsWidget, RecentPersonalWidget, RecentSharedWidget } from '@/components/widgets/HomeWidgets';
+import { useSessionAnimation } from '@/hooks/use-session-animation';
 import { useProGate } from '@/hooks/useProGate';
 import { EditHomeWidgetsModal } from '@/components/modals/EditHomeWidgetsModal';
 
@@ -20,6 +21,7 @@ interface HomeTabProps {
 }
 
 export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateToTab, onScroll }: HomeTabProps) {
+  const shouldAnimate = useSessionAnimation('home-tab');
   const navigate = useNavigate();
   const personalExpenses = getPersonalExpenses();
   const personBalances = getPersonBalances();
@@ -180,6 +182,7 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
 
         <div className="flex items-baseline gap-1">
           <MoneyDisplay
+            animate={shouldAnimate}
             amount={stats.netTotalBalance}
             size="xl"
             showSign={true}
@@ -227,7 +230,6 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
           }}
         >
           <span className="flex flex-col items-start leading-none">
-            <span className="font-mono text-[9px] uppercase tracking-[0.3em] opacity-70 mb-1">+ log</span>
             <span className="text-base">Personal</span>
           </span>
           <div className="w-9 h-9 rounded-full flex items-center justify-center"
@@ -245,9 +247,6 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
             border: '1px dashed hsl(var(--border))',
           }}
         >
-          <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.3em] text-muted-foreground mb-1">
-            <Users size={11} className="text-primary" /> split
-          </span>
           <span className="text-base">Add income</span>
         </button>
       </div>
@@ -292,7 +291,7 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
               <div key="spending">
                 <p className="text-xs text-muted-foreground px-2 mb-2 uppercase font-medium">Spending breakdown</p>
                 <div className="ios-card-modern p-5 space-y-3">
-                  <ExpenseChart data={stats.categoryData} type="pie" height={150} pieCenterLabel="Total Spent" pieCenterSubLabel={`${stats.categoryData.length} categories`} />
+                  <ExpenseChart animate={shouldAnimate} data={stats.categoryData} type="pie" height={150} pieCenterLabel="Total Spent" pieCenterSubLabel={`${stats.categoryData.length} categories`} />
                 </div>
               </div>
             );

@@ -7,9 +7,10 @@ interface ExpenseChartProps {
   height?: number;
   pieCenterLabel?: string;
   pieCenterSubLabel?: string;
+  animate?: boolean;
 }
 const COLORS = ['hsl(255, 85%, 65%)', 'hsl(210, 90%, 55%)', 'hsl(145, 65%, 55%)', 'hsl(28, 90%, 60%)', 'hsl(340, 85%, 65%)'];
-export function ExpenseChart({ data, type = 'pie', height = 200, pieCenterLabel = 'Total', pieCenterSubLabel }: ExpenseChartProps) {
+export function ExpenseChart({ data, type = 'pie', height = 200, pieCenterLabel = 'Total', pieCenterSubLabel, animate = true }: ExpenseChartProps) {
   const chartConfig = data.reduce((config: Record<string, { label: string; color: string }>, item, index) => {
     config[item.name] = {
       label: item.name,
@@ -37,6 +38,7 @@ export function ExpenseChart({ data, type = 'pie', height = 200, pieCenterLabel 
                 dataKey="value"
                 stroke="none"
                 cornerRadius={6}
+                isAnimationActive={animate}
               >
                 {sortedData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={chartConfig[entry.name]?.color || COLORS[index % COLORS.length]} />
@@ -99,6 +101,7 @@ export function ExpenseChart({ data, type = 'pie', height = 200, pieCenterLabel 
               fill="hsl(var(--primary))" 
               radius={[6, 6, 0, 0]} 
               barSize={32}
+              isAnimationActive={animate}
             />
             <ChartTooltip content={<ChartTooltipContent />} />
           </BarChart>
@@ -127,6 +130,7 @@ export function ExpenseChart({ data, type = 'pie', height = 200, pieCenterLabel 
             strokeWidth={4}
             dot={{ fill: 'hsl(211, 100%, 50%)', stroke: 'hsl(var(--card))', strokeWidth: 3, r: 5 }}
             activeDot={{ r: 8, strokeWidth: 3, stroke: 'hsl(var(--card))' }}
+            isAnimationActive={animate}
           />
           <ChartTooltip content={<ChartTooltipContent />} />
         </LineChart>

@@ -8,6 +8,7 @@ import { AddFirstAccountModal } from '@/components/modals/AddFirstAccountModal';
 import { NativeAdCard } from '@/components/NativeAdCard';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { useSessionAnimation } from '@/hooks/use-session-animation';
 import { useCurrency } from '@/hooks/use-currency';
 import { useBackHandler } from '@/hooks/useBackHandler';
 import { useBannerAd } from '@/hooks/useBannerAd';
@@ -23,6 +24,7 @@ interface GoalsTabProps {
 
 export function GoalsTab({ onOpenAccount, onBack, bannerAdActive = true }: GoalsTabProps) {
   useBannerAd(bannerAdActive);
+  const shouldAnimate = useSessionAnimation('goals-tab');
   const { isPro } = useProGate();
   const currency = useCurrency();
   const { toast } = useToast();
@@ -289,7 +291,7 @@ export function GoalsTab({ onOpenAccount, onBack, bannerAdActive = true }: Goals
             </div>
             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Total Target</p>
           </div>
-          <MoneyDisplay amount={summary.target} size="sm" className="font-black text-foreground" />
+          <MoneyDisplay animate={shouldAnimate} amount={summary.target} size="sm" className="font-black text-foreground" />
         </div>
         <div className="rounded-[1.75rem] p-4 space-y-1 w-full" style={{ background: 'hsl(var(--success) / 0.08)', border: '1px solid hsl(var(--success) / 0.1)' }}>
           <div className="flex items-center gap-2 mb-1">
@@ -298,7 +300,7 @@ export function GoalsTab({ onOpenAccount, onBack, bannerAdActive = true }: Goals
             </div>
             <p className="text-[10px] font-black uppercase tracking-widest text-success/60">Saved</p>
           </div>
-          <MoneyDisplay amount={summary.saved} size="sm" className="font-black text-success" />
+          <MoneyDisplay animate={shouldAnimate} amount={summary.saved} size="sm" className="font-black text-success" />
         </div>
       </div>
 
@@ -366,11 +368,11 @@ export function GoalsTab({ onOpenAccount, onBack, bannerAdActive = true }: Goals
                     <div className="flex items-end justify-between gap-4 mb-3 w-full">
                       <div className="flex flex-col">
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/30 leading-none mb-1.5">Saved</p>
-                        <MoneyDisplay amount={saved} size="md" className="font-black text-foreground" />
+                        <MoneyDisplay animate={shouldAnimate} amount={saved} size="md" className="font-black text-foreground" />
                       </div>
                       <div className="text-right flex flex-col items-end">
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/30 leading-none mb-1.5">Target</p>
-                        <MoneyDisplay amount={goal.targetAmount} size="sm" className="font-bold opacity-60" />
+                        <MoneyDisplay animate={shouldAnimate} amount={goal.targetAmount} size="sm" className="font-bold opacity-60" />
                       </div>
                     </div>
 
@@ -583,7 +585,7 @@ export function GoalsTab({ onOpenAccount, onBack, bannerAdActive = true }: Goals
                               <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 leading-none mt-0.5">{tx.amount < 0 ? 'Withdrawal' : 'Deposit'}</p>
                             </div>
                           </div>
-                          <MoneyDisplay amount={tx.amount} size="sm" className={cn("font-black", tx.amount < 0 ? "text-destructive" : "text-success")} />
+                          <MoneyDisplay animate={shouldAnimate} amount={tx.amount} size="sm" className={cn("font-black", tx.amount < 0 ? "text-destructive" : "text-success")} />
                         </div>
                       ))
                     )}

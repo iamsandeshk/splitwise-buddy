@@ -7,6 +7,7 @@ import { EXPENSE_CATEGORIES, getPersonalExpenses, type PersonalExpense } from '@
 import { cn } from '@/lib/utils';
 import { NativeAdCard } from '@/components/NativeAdCard';
 import { useBannerAd } from '@/hooks/useBannerAd';
+import { useSessionAnimation } from '@/hooks/use-session-animation';
 
 interface CategoryInsightsTabProps {
   onOpenAccount: () => void;
@@ -36,6 +37,7 @@ function getMonthOptions(): Array<{ key: string; label: string }> {
 
 export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = true }: CategoryInsightsTabProps) {
   useBannerAd(bannerAdActive);
+  const shouldAnimate = useSessionAnimation('category-tab');
   const [expenses, setExpenses] = useState<PersonalExpense[]>(getPersonalExpenses());
   const monthOptions = useMemo(() => getMonthOptions(), []);
   const currentMonthKey = new Date().toISOString().slice(0, 7);
@@ -60,8 +62,8 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
     const target = container.querySelector<HTMLButtonElement>(`button[data-month-key="${selectedMonthKey}"]`);
     if (!target) return;
 
-    target.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-  }, [selectedMonthKey]);
+    target.scrollIntoView({ behavior: shouldAnimate ? 'smooth' : 'auto', inline: 'center', block: 'nearest' });
+  }, [selectedMonthKey, shouldAnimate]);
 
   useEffect(() => {
     const container = monthTabsRef.current;
@@ -274,7 +276,7 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
             <TrendingUp size={120} strokeWidth={3} className="text-foreground" />
          </div>
          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground/50 mb-3">Total Spend for {monthOptions.find((m) => m.key === selectedMonthKey)?.label}</p>
-         <MoneyDisplay amount={-total} size="xl" className="font-black tracking-tighter text-destructive" />
+         <MoneyDisplay animate={shouldAnimate} amount={-total} size="xl" className="font-black tracking-tighter text-destructive" />
          
          <div className="mt-6 flex items-center justify-center gap-2">
             <div className="h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />
@@ -296,7 +298,7 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
                <p className="text-[10px] font-black text-muted-foreground/40 uppercase tracking-widest">Line Analysis</p>
             </div>
             <div className="p-2 rounded-[2rem] bg-secondary/5 border border-border/5">
-               <ExpenseChart data={[{ name: '', value: 0 }, ...chartData]} type="line" height={240} />
+               <ExpenseChart animate={shouldAnimate} data={[{ name: '', value: 0 }, ...chartData]} type="line" height={240} />
             </div>
           </div>
 
@@ -330,7 +332,7 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
                              </div>
                           </div>
                           <div className="text-right">
-                             <MoneyDisplay amount={-item.value} size="md" className="font-black leading-none" />
+                             <MoneyDisplay animate={shouldAnimate} amount={-item.value} size="md" className="font-black leading-none" />
                           </div>
                         </div>
                         

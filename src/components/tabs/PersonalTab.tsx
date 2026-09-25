@@ -9,6 +9,7 @@ import { AccountQuickButton } from '@/components/AccountQuickButton';
 import { ExpenseChart } from '@/components/ExpenseChart';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { useSessionAnimation } from '@/hooks/use-session-animation';
 import { useCurrency } from '@/hooks/use-currency';
 import { useBackHandler } from '@/hooks/useBackHandler';
 import { NativeAdCard } from '@/components/NativeAdCard';
@@ -30,6 +31,7 @@ interface PersonalTabProps {
 
 export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true, onScroll }: PersonalTabProps) {
   useBannerAd(bannerAdActive);
+  const shouldAnimate = useSessionAnimation('personal-tab');
   const { toast } = useToast();
   const currency = useCurrency();
   const navigate = useNavigate();
@@ -130,8 +132,8 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true, onSc
     const target = container.querySelector<HTMLButtonElement>(`button[data-month-key="${selectedMonthKey}"]`);
     if (!target) return;
 
-    target.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-  }, [selectedMonthKey]);
+    target.scrollIntoView({ behavior: shouldAnimate ? 'smooth' : 'auto', inline: 'center', block: 'nearest' });
+  }, [selectedMonthKey, shouldAnimate]);
 
   useEffect(() => {
     const container = monthTabsRef.current;
@@ -425,30 +427,30 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true, onSc
       <div className="p-4 space-y-4" style={{ paddingBottom: showAddModal ? '0' : '160px' }}>
 
       {/* Unified Spend Dashboard */}
-      <div className="relative z-0 overflow-hidden p-8 rounded-[1.75rem] bg-card border border-border/10 shadow-sm space-y-8">
+      <div className="relative z-0 overflow-hidden px-8 pt-8 pb-6 rounded-[1.75rem] bg-card border border-border/10">
         {/* Total Burn Header */}
         <div className="flex items-center justify-between gap-4">
            {/* Total Burn Header */}
-           <div className="flex-1 text-center space-y-1">
+           <div className="flex-1 text-center space-y-0.5">
              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">
                Total Spent
              </p>
              <div className="relative inline-flex items-center gap-1">
-               <MoneyDisplay amount={-totalAmount} size="xl" className="font-black tracking-tighter text-red-500 text-[28px]" />
+               <MoneyDisplay animate={shouldAnimate} amount={-totalAmount} size="xl" className="font-black tracking-tighter text-red-500 text-[28px]" />
              </div>
            </div>
 
            {/* Income Header */}
-           <div className="flex-1 text-center space-y-1">
+           <div className="flex-1 text-center space-y-0.5">
              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">
                Total Income
              </p>
              <div className="relative inline-flex items-center gap-1">
-               <MoneyDisplay amount={totalIncome} size="xl" className="font-black tracking-tighter text-emerald-500 text-[28px]" />
+               <MoneyDisplay animate={shouldAnimate} amount={totalIncome} size="xl" className="font-black tracking-tighter text-emerald-500 text-[28px]" />
              </div>
            </div>
         </div>
-        <div className="text-center">
+        <div className="text-center mt-2">
            <p className="text-[10px] font-bold text-muted-foreground/30 uppercase tracking-widest">{visibleExpenses.length} records in {selectedMonthLabel || 'period'}</p>
         </div>
       </div>

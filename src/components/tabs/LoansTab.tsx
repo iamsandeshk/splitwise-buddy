@@ -24,6 +24,7 @@ import { AddFirstAccountModal } from '@/components/modals/AddFirstAccountModal';
 import { useCurrency } from '@/hooks/use-currency';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { useSessionAnimation } from '@/hooks/use-session-animation';
 import { useBackHandler } from '@/hooks/useBackHandler';
 import { NativeAdCard } from '@/components/NativeAdCard';
 import { useBannerAd } from '@/hooks/useBannerAd';
@@ -39,6 +40,7 @@ interface LoansTabProps {
 
 export function LoansTab({ onOpenAccount, onBack, bannerAdActive = true, onScroll }: LoansTabProps) {
   useBannerAd(bannerAdActive);
+  const shouldAnimate = useSessionAnimation('loans-tab');
   const { isPro } = useProGate();
   const currency = useCurrency();
   const { toast } = useToast();
@@ -437,6 +439,7 @@ export function LoansTab({ onOpenAccount, onBack, bannerAdActive = true, onScrol
 
         <div className="flex items-baseline gap-1">
           <MoneyDisplay
+            animate={shouldAnimate}
             amount={totals.netOutstanding}
             size="xl"
             showSign={true}
