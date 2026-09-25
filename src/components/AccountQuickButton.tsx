@@ -51,11 +51,7 @@ export function AccountQuickButton({ onClick, size = 44 }: AccountQuickButtonPro
             e.stopPropagation();
             navigate('/pro');
           }}
-          className="h-[34px] px-3.5 rounded-full flex items-center justify-center font-bold text-[11px] uppercase tracking-wider transition-all active:scale-95"
-          style={{
-            background: 'linear-gradient(135deg, hsl(45 100% 50%), hsl(35 100% 50%))',
-            color: '#000',
-          }}
+          className="h-[34px] px-3.5 rounded-full flex items-center justify-center font-bold text-[11px] uppercase tracking-wider transition-all active:scale-95 bg-secondary text-primary"
         >
           <Sparkles size={13} className="mr-1.5" />
           Pro

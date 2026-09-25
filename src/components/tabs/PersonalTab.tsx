@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, Fragment } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search, Trash2, Calendar, X, Target, Save, AlertCircle, PieChart, CheckCircle2, Pencil, Check, Edit3, SlidersHorizontal, MessageSquare, Image as ImageIcon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search, Trash2, Calendar, X, Target, Save, AlertCircle, PieChart, CheckCircle2, Pencil, Check, Edit3, SlidersHorizontal, MessageSquare, Image as ImageIcon, User, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
-import { getPersonalExpenses, deletePersonalExpense, updatePersonalExpense, saveSharedExpense, generateId, getUniquePersonNames, type PersonalExpense, type SharedExpense, EXPENSE_CATEGORIES, getTransactionAttachment, saveTransactionAttachment, resizeImageToDataUrl, deleteTransactionAttachment } from '@/lib/storage';
+import { getPersonalExpenses, deletePersonalExpense, updatePersonalExpense, saveSharedExpense, generateId, getUniquePersonNames, getPersonBalances, type PersonalExpense, type SharedExpense, type PersonBalance, EXPENSE_CATEGORIES, getTransactionAttachment, saveTransactionAttachment, resizeImageToDataUrl, deleteTransactionAttachment } from '@/lib/storage';
 import { AddPersonalExpenseModal } from '@/components/modals/AddPersonalExpenseModal';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
 import { ExpenseChart } from '@/components/ExpenseChart';
@@ -31,8 +32,10 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true, onSc
   useBannerAd(bannerAdActive);
   const { toast } = useToast();
   const currency = useCurrency();
+  const navigate = useNavigate();
   const currentMonthKey = new Date().toISOString().slice(0, 7);
   const [expenses, setExpenses] = useState<PersonalExpense[]>(getPersonalExpenses());
+  const [personBalances, setPersonBalances] = useState<PersonBalance[]>(getPersonBalances());
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>(currentMonthKey);
@@ -201,7 +204,10 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true, onSc
     };
 
 
-    const sync = () => setExpenses(getPersonalExpenses());
+    const sync = () => {
+      setExpenses(getPersonalExpenses());
+      setPersonBalances(getPersonBalances());
+    };
     window.addEventListener('splitmate_trigger_add', handleTriggerAdd);
     window.addEventListener('splitmate_data_changed', sync);
     window.addEventListener('splitmate_open_transaction', handleOpenTransaction);
@@ -246,6 +252,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true, onSc
 
   const handleAddExpense = () => {
     setExpenses(getPersonalExpenses());
+    setPersonBalances(getPersonBalances());
     setShowAddModal(false);
   };
 
@@ -446,23 +453,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true, onSc
         </div>
       </div>
 
-      {/* Category Breakdown Chart */}
-      {chartData.length > 0 && (
-        <div className="ios-card-modern p-5 space-y-4 rounded-[1.75rem] bg-card border border-border/10">
-          <div className="flex items-center justify-between px-1">
-            <h3 className="font-black text-[12px] uppercase tracking-widest flex items-center gap-2.5">
-              <div className="w-9 h-9 bg-purple-500/10 rounded-xl flex items-center justify-center text-purple-600 shadow-inner">
-                <PieChart size={17} strokeWidth={2.5} />
-              </div>
-              Category Breakdown
-            </h3>
-            <div className="w-1.5 h-1.5 rounded-full bg-border/20" />
-          </div>
-          <div className="p-2 rounded-[2.25rem] bg-secondary/5 border border-border/5">
-            <ExpenseChart data={chartData} type="bar" height={210} />
-          </div>
-        </div>
-      )}
+
 
       {/* Search & Filter */}
       <div className="relative group">
@@ -599,65 +590,113 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true, onSc
       </div>
 
       {/* Expenses List */}
-      {visibleExpenses.length === 0 ? (
+      {visibleExpenses.length === 0 && personBalances.length === 0 ? (
         <div className="p-16 text-center rounded-[3.5rem] bg-secondary/15 border border-dashed border-border/15">
           <Calendar size={42} className="mx-auto mb-4 text-muted-foreground/15" strokeWidth={1} />
           <p className="text-[13px] font-bold text-muted-foreground/40 italic px-6 leading-relaxed">No data detected for this cycle. Start tracking to generate insights.</p>
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="flex flex-col gap-3.5">
-            {visibleExpenses.map((expense, idx) => (
-              <div key={expense.id} className="contents">
-                <div
-                  onClick={() => setViewingExpense(expense)}
-                  className="ios-card-modern px-5 py-4 group active:scale-[0.98] transition-all overflow-hidden border border-border/10 transform-gpu cursor-pointer"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={cn(
-                      'w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 border',
-                      expense.source === 'sms'
-                        ? 'bg-primary/10 border-primary/20 text-primary'
-                        : 'text-xl bg-secondary/20 border-border/5',
-                    )}>
-                      {expense.source === 'sms' ? <MessageSquare size={16} strokeWidth={2.3} /> : (CATEGORY_EMOJIS[expense.category] || '📦')}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-sm text-foreground truncate tracking-tight uppercase leading-none mb-1.5">{expense.reason}</p>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/50">{expense.category}</span>
-                        <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-                          {new Date(expense.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }).toUpperCase()}
-                        </span>
-                        {expense.isMirror && (
-                          <>
-                            <div className="w-1 h-1 rounded-full bg-border/20" />
-                            <span className="text-[8px] font-black uppercase tracking-tighter text-primary/40 px-1.5 py-0.5 rounded bg-primary/5 border border-primary/5">Mirror</span>
-                          </>
-                        )}
+        <div className="space-y-5">
+          {/* Person Balance Cards */}
+          {personBalances.filter(p => p.netBalance !== 0).length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/35 px-1">People</p>
+              <div className="flex flex-col gap-2.5">
+                {personBalances.filter(p => p.netBalance !== 0).map((person) => (
+                  <div
+                    key={person.name}
+                    onClick={() => navigate(`/person/${encodeURIComponent(person.name)}`)}
+                    className="ios-card-modern px-5 py-4 group active:scale-[0.98] transition-all overflow-hidden border border-border/10 transform-gpu cursor-pointer"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-11 h-11 rounded-2xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0">
+                        <User size={18} className="text-violet-500" />
                       </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-sm text-foreground truncate tracking-tight uppercase leading-none mb-1">{person.name}</p>
+                        <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+                          {person.transactions.length} transaction{person.transactions.length !== 1 ? 's' : ''}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className={cn(
+                          'font-bold text-sm tracking-tight',
+                          person.netBalance > 0 ? 'text-emerald-500' : person.netBalance < 0 ? 'text-red-500' : 'text-muted-foreground'
+                        )}>
+                          {person.netBalance > 0 ? '+' : ''}{currency.symbol}{Math.abs(person.netBalance).toLocaleString(currency.locale, { maximumFractionDigits: 2 })}
+                        </span>
+                        <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/40">
+                          {person.netBalance > 0 ? 'owes you' : person.netBalance < 0 ? 'you owe' : 'settled'}
+                        </span>
+                      </div>
+                      <ArrowUpRight size={14} className="text-muted-foreground/30 flex-shrink-0" />
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className={cn('font-bold tracking-tight', expense.isIncome ? 'text-emerald-500' : 'text-red-500')}>
-                        {formatSignedAmountLabel(expense.amount, expense.isIncome)}
-                      </span>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteTrigger(expense.id);
-                          }}
-                          className="w-10 h-10 flex items-center justify-center text-destructive/60 bg-danger/5 rounded-2xl active:scale-90 transition-all border border-destructive/5 shadow-sm"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Expense Transaction List */}
+          {visibleExpenses.length > 0 && (
+            <div className="space-y-2">
+              {personBalances.length > 0 && (
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/35 px-1">Transactions</p>
+              )}
+              <div className="flex flex-col gap-3.5">
+                {visibleExpenses.map((expense, idx) => (
+                  <div key={expense.id} className="contents">
+                    <div
+                      onClick={() => setViewingExpense(expense)}
+                      className="ios-card-modern px-5 py-4 group active:scale-[0.98] transition-all overflow-hidden border border-border/10 transform-gpu cursor-pointer"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={cn(
+                          'w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 border',
+                          expense.source === 'sms'
+                            ? 'bg-primary/10 border-primary/20 text-primary'
+                            : 'text-xl bg-secondary/20 border-border/5',
+                        )}>
+                          {expense.source === 'sms' ? <MessageSquare size={16} strokeWidth={2.3} /> : (CATEGORY_EMOJIS[expense.category] || '📦')}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm text-foreground truncate tracking-tight uppercase leading-none mb-1.5">{expense.reason}</p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/50">{expense.category}</span>
+                            <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+                              {new Date(expense.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }).toUpperCase()}
+                            </span>
+                            {expense.isMirror && (
+                              <>
+                                <div className="w-1 h-1 rounded-full bg-border/20" />
+                                <span className="text-[8px] font-black uppercase tracking-tighter text-primary/40 px-1.5 py-0.5 rounded bg-primary/5 border border-primary/5">Mirror</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={cn('font-bold tracking-tight', expense.isIncome ? 'text-emerald-500' : 'text-red-500')}>
+                            {formatSignedAmountLabel(expense.amount, expense.isIncome)}
+                          </span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteTrigger(expense.id);
+                              }}
+                              className="w-10 h-10 flex items-center justify-center text-destructive/60 bg-danger/5 rounded-2xl active:scale-90 transition-all border border-destructive/5 shadow-sm"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
 

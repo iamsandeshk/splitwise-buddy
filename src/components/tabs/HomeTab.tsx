@@ -129,8 +129,9 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
   return (
     <div onScroll={onScroll} className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col">
       {/* Header — sticky fixed position */}
-      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md px-5 pt-5 pb-3 flex items-center justify-between gap-3 border-b border-border/10">
-        <div className="min-w-0">
+      <div className="sticky top-0 z-30 relative px-5 pt-5 pb-3 flex items-center justify-between gap-3">
+        <div className="absolute inset-x-0 top-0 h-24 z-0 bg-gradient-to-b from-background/95 via-background/70 to-transparent backdrop-blur-xl [mask-image:linear-gradient(to_bottom,black_0%,black_52%,transparent_100%)] pointer-events-none" />
+        <div className="relative z-10 min-w-0 drop-shadow-[0_1px_3px_hsl(var(--background)/0.9)]">
           <p className="font-heading text-[13px] tracking-[0.28em] text-muted-foreground uppercase">
             {greeting}
           </p>
@@ -147,7 +148,9 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
             )}
           </div>
         </div>
-        <AccountQuickButton onClick={onOpenAccount} />
+        <div className="relative z-10">
+          <AccountQuickButton onClick={onOpenAccount} />
+        </div>
       </div>
 
       {/* Main Content Area */}
@@ -182,22 +185,6 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
             showSign={true}
             className="font-heading tracking-[-0.04em]"
           />
-        </div>
-
-        <div className="mt-3 flex items-center gap-2">
-          <span
-            className="inline-block w-1.5 h-1.5 rounded-full"
-            style={{
-              background: stats.netTotalBalance > 0 ? 'hsl(var(--success))'
-                : stats.netTotalBalance < 0 ? 'hsl(var(--danger))'
-                  : 'hsl(var(--muted-foreground))'
-            }}
-          />
-          <p className="text-xs text-muted-foreground">
-            {stats.netTotalBalance > 0 ? 'In the green'
-              : stats.netTotalBalance < 0 ? 'Net outgoing this cycle'
-                : 'Squared up.'}
-          </p>
         </div>
 
         {(stats.owedToYou > 0 || stats.totalOutgoing > 0) && (
@@ -261,7 +248,7 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
           <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.3em] text-muted-foreground mb-1">
             <Users size={11} className="text-primary" /> split
           </span>
-          <span className="text-base">New tab</span>
+          <span className="text-base">Add income</span>
         </button>
       </div>
 
@@ -305,7 +292,7 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
               <div key="spending">
                 <p className="text-xs text-muted-foreground px-2 mb-2 uppercase font-medium">Spending breakdown</p>
                 <div className="ios-card-modern p-5 space-y-3">
-                  <ExpenseChart data={stats.categoryData} type="pie" height={200} />
+                  <ExpenseChart data={stats.categoryData} type="pie" height={150} pieCenterLabel="Total Spent" pieCenterSubLabel={`${stats.categoryData.length} categories`} />
                 </div>
               </div>
             );

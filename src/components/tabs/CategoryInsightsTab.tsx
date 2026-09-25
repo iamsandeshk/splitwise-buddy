@@ -191,12 +191,12 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
 
   return (
     <div
-      className="p-4 pb-40 space-y-6"
+      className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col font-sans relative"
       onTouchStart={handleMonthSwipeStart}
       onTouchEnd={handleMonthSwipeEnd}
     >
-      {/* Header Section */}
-      <div className="pt-4 pb-1 flex items-start justify-between gap-3">
+      {/* Sticky Header Section */}
+      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md px-4 pt-4 pb-3 flex items-start justify-between gap-3 border-b border-border/10">
         <div className="flex items-start gap-4">
           {onBack && (
             <button
@@ -214,6 +214,8 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
         </div>
         {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
       </div>
+      
+      <div className="flex-1 p-4 space-y-6">
 
       {/* Modern Month Strip */}
       <div className="relative -mx-4 px-4 py-1">
@@ -364,6 +366,7 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
            <p className="text-sm font-bold text-muted-foreground/50 italic italic px-6 leading-relaxed"> No spending patterns detected for this cycle. Start tracking to see insights.</p>
         </div>
       )}
+      </div>
     </div>
   );
 }

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, Fragment } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { ArrowDownRight, ArrowLeft, ArrowLeftRight, ArrowUpRight, CircleArrowOutUpRight, MessageSquare, User, Users, X, Trash2, ChevronLeft } from 'lucide-react';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
@@ -8,7 +9,7 @@ import { useBannerAd } from '@/hooks/useBannerAd';
 import { cn } from '@/lib/utils';
 import { type AppTransactionItem, getAllAppTransactions } from '@/lib/transactions';
 import { NativeAdCard } from '@/components/NativeAdCard';
-import { deletePersonalExpense, deleteSharedExpense, getTransactionAttachment } from '@/lib/storage';
+import { deletePersonalExpense, deleteSharedExpense, getTransactionAttachment, getPersonBalances, type PersonBalance } from '@/lib/storage';
 
 interface TransactionsTabProps {
   onOpenAccount: () => void;
@@ -25,9 +26,12 @@ const typeMeta: Record<AppTransactionItem['type'], { label: string; Icon: typeof
 
 export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, bannerAdActive = true }: TransactionsTabProps) {
   useBannerAd(bannerAdActive);
+  const navigate = useNavigate();
   const [items, setItems] = useState<AppTransactionItem[]>(() => getAllAppTransactions());
+  const [personBalances, setPersonBalances] = useState<PersonBalance[]>(() => getPersonBalances());
   const [viewing, setViewing] = useState<AppTransactionItem | null>(null);
   const [viewingAttachment, setViewingAttachment] = useState<string | null>(null);
+  const [filterCategory, setFilterCategory] = useState<string>('all');
   const [deletingItem, setDeletingItem] = useState<AppTransactionItem | null>(null);
 
   useBackHandler(!!viewing, () => setViewing(null));
@@ -44,7 +48,10 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
   }, [viewing]);
 
   useEffect(() => {
-    const sync = () => setItems(getAllAppTransactions());
+    const sync = () => {
+      setItems(getAllAppTransactions());
+      setPersonBalances(getPersonBalances());
+    };
     window.addEventListener('splitmate_data_changed', sync);
     return () => {
       window.removeEventListener('splitmate_data_changed', sync);
@@ -78,6 +85,16 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
     setDeletingItem(null);
   };
 
+  const filteredItems = useMemo(() => {
+    if (filterCategory === 'all') return items;
+    return items.filter(item => item.category === filterCategory);
+  }, [items, filterCategory]);
+
+  const availableCategories = useMemo(() => {
+    const cats = new Set(items.map(i => i.category));
+    return Array.from(cats).sort();
+  }, [items]);
+
   return (
     <div className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col">
       {/* Header — sticky */}
@@ -103,35 +120,114 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
 
       <div className="p-4 space-y-5">
 
-      <div className="grid grid-cols-2 gap-3">
-        <div
-          className="p-5 flex flex-col justify-between"
-          style={{
-            background: 'hsl(var(--card))',
-            border: '1px solid hsl(var(--border) / 0.15)',
-            borderRadius: '1.75rem',
-            boxShadow: '0 2px 16px -4px hsl(var(--glass-shadow) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.06)',
-          }}
-        >
-          <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-500/70 font-bold">Incoming</p>
-          <MoneyDisplay amount={summary.incoming} size="sm" className="text-emerald-500 font-black mt-1" />
+      <div
+        className="flex items-center w-full"
+        style={{
+          background: 'hsl(var(--card))',
+          border: '1px solid hsl(var(--border) / 0.15)',
+          borderRadius: '1.75rem',
+          boxShadow: '0 2px 16px -4px hsl(var(--glass-shadow) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.06)',
+        }}
+      >
+        <div className="flex-1 p-5 pl-6 flex flex-col justify-center">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 font-bold mb-2">In</p>
+          <div className="flex items-center gap-1.5">
+            <ArrowDownRight className="w-4 h-4 text-emerald-500 shrink-0" strokeWidth={3} />
+            <MoneyDisplay amount={summary.incoming} size="sm" className="text-emerald-500 font-black text-lg truncate" />
+          </div>
         </div>
-        <div
-          className="p-5 flex flex-col justify-between"
-          style={{
-            background: 'hsl(var(--card))',
-            border: '1px solid hsl(var(--border) / 0.15)',
-            borderRadius: '1.75rem',
-            boxShadow: '0 2px 16px -4px hsl(var(--glass-shadow) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.06)',
-          }}
-        >
-          <p className="text-[10px] uppercase tracking-[0.2em] text-rose-500/70 font-bold">Outgoing</p>
-          <MoneyDisplay amount={summary.outgoing} size="sm" className="text-rose-500 font-black mt-1" />
+        <div className="w-px h-14 bg-border/20 shrink-0" />
+        <div className="flex-1 p-5 pl-6 flex flex-col justify-center">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 font-bold mb-2">Out</p>
+          <div className="flex items-center gap-1.5">
+            <ArrowUpRight className="w-4 h-4 text-rose-500 shrink-0" strokeWidth={3} />
+            <MoneyDisplay amount={summary.outgoing} size="sm" className="text-rose-500 font-black text-lg truncate" />
+          </div>
         </div>
       </div>
 
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1 pt-1">
+        <button
+          onClick={() => setFilterCategory('all')}
+          className={cn(
+            "shrink-0 px-4 py-2 rounded-full text-xs font-bold transition-all",
+            filterCategory === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+          )}
+        >
+          All
+        </button>
+        {availableCategories.map((category) => {
+          const isSelected = filterCategory === category;
+          return (
+            <button
+              key={category}
+              onClick={() => setFilterCategory(category)}
+              className={cn(
+                "shrink-0 px-4 py-2 flex items-center gap-2 rounded-full text-xs font-bold transition-all",
+                isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+              )}
+            >
+              {category}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Person Balance Cards */}
+      {personBalances.filter(p => p.netBalance !== 0).length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/35 px-1">People</p>
+          <div className="space-y-2.5">
+            {personBalances.filter(p => p.netBalance !== 0).map((person) => (
+              <button
+                key={person.name}
+                type="button"
+                onClick={() => navigate(`/person/${encodeURIComponent(person.name)}`)}
+                className="w-full text-left px-5 py-4 active:scale-[0.99] transition-all"
+                style={{
+                  background: 'hsl(var(--card))',
+                  border: '1px solid hsl(var(--border) / 0.15)',
+                  borderRadius: '1.75rem',
+                  boxShadow: '0 2px 16px -4px hsl(var(--glass-shadow) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.06)',
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full border border-violet-500/20 bg-violet-500/10 flex items-center justify-center shrink-0">
+                    <User size={15} className="text-violet-500" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-sm truncate">{person.name}</p>
+                    <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                      <User size={12} />
+                      <span>Person</span>
+                      <span className="opacity-30">•</span>
+                      <span className="truncate">{person.transactions.length} transaction{person.transactions.length !== 1 ? 's' : ''}</span>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className={cn(
+                      'font-bold tracking-tight',
+                      person.netBalance > 0 ? 'text-emerald-500' : person.netBalance < 0 ? 'text-rose-500' : 'text-muted-foreground'
+                    )}>
+                      {person.netBalance > 0 ? '+' : ''}{Math.abs(person.netBalance).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {person.netBalance > 0 ? 'owes you' : person.netBalance < 0 ? 'you owe' : 'settled'}
+                    </p>
+                  </div>
+                  <ArrowUpRight size={14} className="text-muted-foreground/30 shrink-0" />
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-3">
-        {items.length === 0 ? (
+        {filteredItems.length > 0 && personBalances.filter(p => p.netBalance !== 0).length > 0 && (
+          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/35 px-1">All Transactions</p>
+        )}
+        {filteredItems.length === 0 ? (
           <div
             className="p-6 text-center text-sm text-muted-foreground"
             style={{
@@ -141,17 +237,17 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
               boxShadow: '0 2px 16px -4px hsl(var(--glass-shadow) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.06)',
             }}
           >
-            No transactions yet.
+            No transactions found.
           </div>
         ) : (
-          items.map((item, idx) => {
+          filteredItems.map((item, idx) => {
             const meta = typeMeta[item.type];
             const amountClass = item.direction === 'incoming' ? 'text-emerald-500' : 'text-rose-500';
             const DirIcon = item.direction === 'incoming' ? ArrowDownRight : ArrowUpRight;
 
             return (
-              <Fragment key={item.id}>
               <button
+                key={item.id}
                 type="button"
                 onClick={() => setViewing(item)}
                 className="w-full text-left px-5 py-4 active:scale-[0.99] transition-all"
@@ -202,7 +298,6 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
                   </div>
                 </div>
               </button>
-              </Fragment>
             );
           })
         )}

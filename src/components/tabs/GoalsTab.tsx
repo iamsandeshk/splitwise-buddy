@@ -256,9 +256,9 @@ export function GoalsTab({ onOpenAccount, onBack, bannerAdActive = true }: Goals
   };
 
   return (
-    <div className="p-4 pb-40 space-y-6 font-sans">
-      {/* Header Section */}
-      <div className="pt-4 pb-1 flex items-start justify-between gap-3">
+    <div className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col font-sans relative">
+      {/* Sticky Header Section */}
+      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md px-4 pt-4 pb-3 flex items-start justify-between gap-3 border-b border-border/10">
         <div className="flex items-start gap-4">
           {onBack && (
             <button
@@ -277,6 +277,8 @@ export function GoalsTab({ onOpenAccount, onBack, bannerAdActive = true }: Goals
           {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
         </div>
       </div>
+      
+      <div className="flex-1 p-4 space-y-6">
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 gap-3 w-full">
@@ -625,6 +627,7 @@ export function GoalsTab({ onOpenAccount, onBack, bannerAdActive = true }: Goals
           onAccountCreated={() => {}}
         />
       )}
+      </div>
     </div>
   );
 }

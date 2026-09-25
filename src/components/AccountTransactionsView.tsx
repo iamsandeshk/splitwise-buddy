@@ -196,48 +196,62 @@ export function AccountTransactionsView({ accountId, onBack }: AccountTransactio
       <div className="px-4 pt-3 space-y-4 flex-1">
         {/* Account Balance Overview Card */}
         <div
-          className="relative p-5 overflow-hidden rounded-2xl border border-border/15 bg-card"
+          className="relative p-6 overflow-hidden rounded-[1.75rem] border border-border/15 bg-card/60"
           style={{
             boxShadow: '0 2px 14px -3px hsl(var(--glass-shadow) / 0.4), inset 0 1px 0 hsl(0 0% 100% / 0.06)',
           }}
         >
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70">
-              Available Balance
-            </span>
-            <span className="text-[10px] font-semibold text-muted-foreground/60">
-              {transactions.length} transaction{transactions.length === 1 ? '' : 's'}
-            </span>
-          </div>
+          {/* Watermark Icon */}
+          <Icon
+            size={160}
+            className="absolute -right-8 -bottom-8 text-white/[0.02] z-0"
+            strokeWidth={1.5}
+          />
 
-          <p
-            className={cn(
-              'text-3xl font-black tracking-tight mb-4',
-              account.available >= 0 ? 'text-emerald-500' : 'text-red-500'
-            )}
-          >
-            <MoneyDisplay amount={account.available} />
-          </p>
-
-          <div className="grid grid-cols-2 gap-2.5 pt-3 border-t border-border/10">
-            <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/15 p-2.5">
-              <div className="flex items-center gap-1 text-emerald-500 text-[10px] font-black uppercase tracking-wider mb-0.5">
-                <ArrowDownRight size={13} strokeWidth={2.5} />
-                <span>Inflow / Income</span>
-              </div>
-              <p className="text-sm font-black text-emerald-500">
-                +<MoneyDisplay amount={account.income} />
-              </p>
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80">
+                Available Balance
+              </span>
             </div>
 
-            <div className="rounded-lg bg-rose-500/10 border border-rose-500/15 p-2.5">
-              <div className="flex items-center gap-1 text-rose-500 text-[10px] font-black uppercase tracking-wider mb-0.5">
-                <ArrowUpRight size={13} strokeWidth={2.5} />
-                <span>Outflow / Spent</span>
+            <p
+              className={cn(
+                'font-black tracking-tight mb-3',
+                account.available > 0 ? 'text-emerald-500' : account.available < 0 ? 'text-rose-500' : 'text-muted-foreground'
+              )}
+            >
+              <MoneyDisplay amount={account.available} showSign={true} className="text-5xl" />
+            </p>
+
+            <div className="border-t border-dashed border-border/20 mb-4" />
+
+            <div className="flex items-center">
+              <div className="flex-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 mb-2">
+                  In
+                </p>
+                <div className="flex items-center gap-1.5 text-emerald-500">
+                  <ArrowDownRight size={14} strokeWidth={3} />
+                  <span className="text-base font-black">
+                    <MoneyDisplay amount={account.income} />
+                  </span>
+                </div>
               </div>
-              <p className="text-sm font-black text-rose-500">
-                -<MoneyDisplay amount={account.personalSpent + account.sharedSpent} />
-              </p>
+
+              <div className="w-[1px] self-stretch bg-border/20 mx-4" />
+
+              <div className="flex-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 mb-2">
+                  Out
+                </p>
+                <div className="flex items-center gap-1.5 text-rose-500">
+                  <ArrowUpRight size={14} strokeWidth={3} />
+                  <span className="text-base font-black">
+                    <MoneyDisplay amount={-(account.personalSpent + account.sharedSpent)} />
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -246,7 +260,7 @@ export function AccountTransactionsView({ accountId, onBack }: AccountTransactio
         <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-secondary/30 border border-border/10 text-muted-foreground text-[11px] font-medium leading-tight">
           <Info size={14} className="text-primary shrink-0" />
           <span>
-            Showing transactions linked to this account. Transactions removed from Transactions or Personal tabs update automatically here.
+            Showing transactions linked to this account.
           </span>
         </div>
 

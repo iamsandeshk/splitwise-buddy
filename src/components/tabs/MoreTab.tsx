@@ -21,7 +21,6 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useCurrency } from '@/hooks/use-currency';
 import { cn } from '@/lib/utils';
-import { CurrencyConverterModal } from '@/components/modals/CurrencyConverterModal';
 import { useBackHandler } from '@/hooks/useBackHandler';
 import { useAdFree } from '@/hooks/useAdFree';
 import { getAllAppTransactions } from '@/lib/transactions';
@@ -98,11 +97,9 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
   const [swapTabId, setSwapTabId] = useState<string | null>(null);
   const [isSwapMode, setIsSwapMode] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [showConverter, setShowConverter] = useState(false);
   const { toast } = useToast();
   const currency = useCurrency();
 
-  useBackHandler(showConverter, () => setShowConverter(false));
   useBackHandler(!!swapTabId, () => setSwapTabId(null));
 
   const personalCount = getPersonalExpenses().length;
@@ -318,7 +315,10 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
       isTool: true,
     },
   ]), [accountsCount, allTransactionsCount, budgetDailyAllowanceText, calendarDayCount, currency.locale, currency.symbol, goalsCount, linkCount, loansCount, personalCount, recurringActiveCount, sharedCount, subscriptionsCount, totalAccountsAvailable]);
-  const cardsInMore = useMemo(() => featureCards.filter((card) => !visibility.get(card.id)), [featureCards, visibility]);
+  const cardsInMore = useMemo(
+    () => featureCards.filter((card) => !visibility.get(card.id) && !['links', 'budgets'].includes(card.id)),
+    [featureCards, visibility]
+  );
   const currentBottomTabs = useMemo(() => tabConfig.filter((tab) => tab.visible), [tabConfig]);
   const swappableBottomTabs = useMemo(
     () => currentBottomTabs.filter((tab) => !fixedTabs.has(tab.id)),
@@ -415,7 +415,6 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
         <div className={viewMode === 'grid' ? "grid grid-cols-2 gap-4" : "flex flex-col gap-3"}>
           {cardsInMore.map((card, idx) => {
             const Icon = card.icon;
-            const isConverter = card.id === 'converter';
             const isTransactions = card.id === 'transactions';
             const isCalendar = card.id === 'calendar';
             const isRecurring = card.id === 'recurring';
@@ -425,10 +424,6 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
                   onClick={() => {
                     if (isSwapMode) {
                       handleSwap(card.id);
-                      return;
-                    }
-                    if (isConverter) {
-                      setShowConverter(true);
                       return;
                     }
                     if (isTransactions) {
@@ -494,10 +489,6 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
           </div>
         )}
 
-        <CurrencyConverterModal
-          isOpen={showConverter}
-          onClose={() => setShowConverter(false)}
-        />
       </div> {/* end scrollable body */}
 
       {/* SWAP DIALOG */}

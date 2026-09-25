@@ -67,7 +67,7 @@ const COMMON_SUBSCRIPTIONS: CatalogService[] = [
   { name: 'Cursor', category: 'AI', logoUrl: 'https://www.google.com/s2/favicons?domain=cursor.com&sz=128', fallbackLogo: 'https://www.google.com/s2/favicons?domain=cursor.sh&sz=128' },
   { name: 'Midjourney', category: 'AI', logoUrl: 'https://cdn.simpleicons.org/midjourney/FFFFFF', fallbackLogo: 'https://www.google.com/s2/favicons?domain=midjourney.com&sz=128' },
   { name: 'ElevenLabs', category: 'AI', logoUrl: 'https://cdn.simpleicons.org/elevenlabs/FFFFFF', fallbackLogo: 'https://www.google.com/s2/favicons?domain=elevenlabs.io&sz=128' },
-  { name: 'Microsoft Copilot', category: 'AI', logoUrl: 'https://cdn.simpleicons.org/microsoftcopilot/0078D4', fallbackLogo: 'https://www.google.com/s2/favicons?domain=copilot.microsoft.com&sz=128' },
+  { name: 'Microsoft Copilot', category: 'AI', logoUrl: 'https://www.google.com/s2/favicons?domain=microsoft.com&sz=128', fallbackLogo: 'https://www.google.com/s2/favicons?domain=microsoft.com&sz=128' },
   { name: 'ChatGPT', category: 'AI', logoUrl: 'https://cdn.simpleicons.org/openai/10A37F', fallbackLogo: 'https://www.google.com/s2/favicons?domain=openai.com&sz=128' },
 
   // --- India & Lifestyle ---
@@ -106,7 +106,7 @@ const COMMON_SUBSCRIPTIONS: CatalogService[] = [
   // --- Cloud & Storage ---
   { name: 'Google One', category: 'Cloud & Storage', logoUrl: 'https://cdn.simpleicons.org/google/4285F4', fallbackLogo: 'https://www.google.com/s2/favicons?domain=one.google.com&sz=128' },
   { name: 'Dropbox', category: 'Cloud & Storage', logoUrl: 'https://cdn.simpleicons.org/dropbox/0061FF', fallbackLogo: 'https://www.google.com/s2/favicons?domain=dropbox.com&sz=128' },
-  { name: 'Microsoft 365', category: 'Cloud & Storage', logoUrl: 'https://cdn.simpleicons.org/microsoft365/EA3E23', fallbackLogo: 'https://www.google.com/s2/favicons?domain=microsoft365.com&sz=128' },
+  { name: 'Microsoft 365', category: 'Cloud & Storage', logoUrl: 'https://www.google.com/s2/favicons?domain=office.com&sz=128', fallbackLogo: 'https://www.google.com/s2/favicons?domain=microsoft.com&sz=128' },
   { name: 'Proton', category: 'Cloud & Storage', logoUrl: 'https://cdn.simpleicons.org/proton/6D4AFF', fallbackLogo: 'https://www.google.com/s2/favicons?domain=proton.me&sz=128' },
   { name: 'Google Photos', category: 'Cloud & Storage', logoUrl: 'https://cdn.simpleicons.org/googlephotos/4285F4', fallbackLogo: 'https://www.google.com/s2/favicons?domain=photos.google.com&sz=128' },
   { name: 'iCloud', category: 'Cloud & Storage', logoUrl: 'https://cdn.simpleicons.org/icloud/3693F3', fallbackLogo: 'https://www.google.com/s2/favicons?domain=icloud.com&sz=128' },
@@ -338,8 +338,26 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
   }, [items]);
 
   const filteredItems = useMemo(() => {
-    if (filter === 'All') return items;
-    return items.filter(item => item.cycle.toLowerCase() === filter.toLowerCase());
+    const matchingItems = filter === 'All'
+      ? items
+      : items.filter(item => item.cycle.toLowerCase() === filter.toLowerCase());
+
+    return matchingItems
+      .map((item, index) => ({
+        item,
+        index,
+        daysUntilDue: getDaysUntilDue(item.startDate || item.createdAt, item.cycle, item.createdAt),
+      }))
+      .sort((a, b) => {
+        if (a.item.paused !== b.item.paused) return a.item.paused ? 1 : -1;
+        if (a.daysUntilDue === null && b.daysUntilDue !== null) return 1;
+        if (a.daysUntilDue !== null && b.daysUntilDue === null) return -1;
+        if (a.daysUntilDue !== null && b.daysUntilDue !== null && a.daysUntilDue !== b.daysUntilDue) {
+          return a.daysUntilDue - b.daysUntilDue;
+        }
+        return a.index - b.index;
+      })
+      .map(({ item }) => item);
   }, [items, filter]);
 
   const handleCreate = () => {
@@ -398,9 +416,9 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
   };
 
   return (
-    <div className="min-h-screen bg-transparent text-foreground pb-24 relative">
-      <div className="px-4 pt-14 pb-6 space-y-6">
-        <div className="flex items-center gap-3">
+    <div className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col font-sans relative">
+      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md px-4 pt-4 pb-3 flex items-start justify-between gap-3 border-b border-border/10">
+        <div className="flex items-center gap-3 min-w-0">
           {onBack && (
             <button
               onClick={onBack}
@@ -411,51 +429,56 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
             </button>
           )}
           <div className="min-w-0 flex-1">
-            <h1 className="text-[28px] font-bold leading-none tracking-tight">Subscriptions<span className="text-primary">.</span></h1>
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mt-0.5">
+            <h1 className="text-[30px] font-black leading-none tracking-[-0.04em]">Subscriptions<span className="text-primary">.</span></h1>
+            <p className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-[0.18em] mt-1">
               {stats.active} active · {upcomingItem ? `next due in ${upcomingItem.days} days` : 'No upcoming renewals'}
             </p>
           </div>
         </div>
+        {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
+      </div>
+      <div className="flex-1 p-4 space-y-5">
 
-        <div className="ios-card-modern overflow-hidden border border-border/20 flex divide-x divide-border/60 bg-secondary/5 rounded-[2rem]">
-          <div className="flex-1 p-5 text-center flex flex-col justify-center gap-1 hover:bg-secondary/10 transition-colors">
-            <p className="text-xl font-bold tracking-tight text-destructive flex items-center justify-center">
+        <div className="ios-card-modern overflow-hidden border border-border/15 flex divide-x divide-border/50 bg-card/45 rounded-[1.75rem] shadow-sm">
+          <div className="flex-1 px-3 py-4 text-center flex flex-col justify-center gap-1 hover:bg-secondary/10 transition-colors">
+            <p className="text-lg font-black tracking-tight text-destructive flex items-center justify-center">
               <MoneyDisplay amount={-stats.monthly} size="sm" />
             </p>
             <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-none">Monthly</p>
           </div>
-          <div className="flex-1 p-5 text-center flex flex-col justify-center gap-1 hover:bg-secondary/10 transition-colors">
-            <p className="text-xl font-bold tracking-tight text-destructive flex items-center justify-center">
+          <div className="flex-1 px-3 py-4 text-center flex flex-col justify-center gap-1 hover:bg-secondary/10 transition-colors">
+            <p className="text-lg font-black tracking-tight text-destructive flex items-center justify-center">
               <MoneyDisplay amount={-stats.yearly} size="sm" />
             </p>
             <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-none">Yearly</p>
           </div>
-          <div className="flex-1 p-5 text-center flex flex-col justify-center gap-1 hover:bg-secondary/10 transition-colors">
-            <p className="text-2xl font-bold tracking-tight text-primary leading-tight">{stats.active}</p>
+          <div className="flex-1 px-3 py-4 text-center flex flex-col justify-center gap-1 hover:bg-secondary/10 transition-colors">
+            <p className="text-2xl font-black tracking-tight text-primary leading-tight">{stats.active}</p>
             <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-none">Active</p>
           </div>
         </div>
 
         {upcomingItem && (
-          <div className="bg-[#FFF4E5] dark:bg-[#2A1D0B] p-4 rounded-[1.5rem] flex items-center gap-3 border border-warning/20 transition-transform active:scale-[0.99]" style={{ color: 'hsl(35, 100%, 35%)' }}>
-             <Clock size={18} className="text-warning flex-shrink-0" />
-             <p className="text-xs font-semibold truncate">
+           <div className="bg-warning/10 text-warning px-4 py-3.5 rounded-2xl flex items-center gap-3 border border-warning/25 shadow-sm transition-transform active:scale-[0.99]">
+             <div className="w-8 h-8 rounded-xl bg-warning/10 flex items-center justify-center flex-shrink-0">
+              <Clock size={16} className="text-warning" />
+             </div>
+             <p className="text-xs font-bold truncate">
                {upcomingItem.appName} renews in {upcomingItem.days} days · <span className="text-destructive">-{currency.symbol}{upcomingItem.amount}</span>
              </p>
           </div>
         )}
 
-        <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-2 -mx-4 px-4">
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-1 -mx-4 px-4">
            {['All', 'Monthly', 'Quarterly', 'Yearly', 'Weekly', 'Paused'].map((item) => (
              <button
                 key={item}
                 onClick={() => setFilter(item as 'All' | 'Monthly' | 'Quarterly' | 'Yearly' | 'Weekly' | 'Paused')}
                 className={cn(
-                  "px-5 py-2.5 rounded-full text-[13px] font-bold transition-all duration-300 whitespace-nowrap",
+                  "px-4 py-2 rounded-full text-[11px] font-black transition-all duration-300 whitespace-nowrap border",
                   filter === item 
-                    ? "bg-[#6366F1] text-white" 
-                    : "bg-secondary/40 text-muted-foreground border border-border/10 hover:bg-secondary/60"
+                    ? "bg-primary text-primary-foreground border-primary shadow-sm" 
+                    : "bg-secondary/35 text-muted-foreground border-border/10 hover:bg-secondary/60"
                 )}
              >
                {item}
@@ -466,10 +489,13 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
 
      
 
-      <div className="px-4 space-y-6">
-        <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] pl-1">Active</h3>
+      <div className="px-4 space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">Active subscriptions</h3>
+          <span className="text-[10px] font-bold text-muted-foreground/50">{filteredItems.length} total</span>
+        </div>
 
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-3">
           {filteredItems.map((item, index) => {
             const isLockedSubscription = !isPro && index >= FREE_LIMITS.MAX_SUBSCRIPTIONS;
             const failed = logoLoadErrorMap[item.id] || !item.logoUrl;
@@ -486,7 +512,7 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                      setSelectedItem(item);
                    }}
                    className={cn(
-                     "ios-card-modern p-4 flex items-center gap-4 bg-secondary/10 border-border/5 hover:bg-secondary/20 transition-all active:scale-[0.98] cursor-pointer relative",
+                     "ios-card-modern p-4 flex items-center gap-4 bg-card/45 border-border/15 hover:bg-secondary/20 transition-all active:scale-[0.98] cursor-pointer relative shadow-sm",
                      isLockedSubscription && "opacity-40"
                    )}
                  >

@@ -1009,15 +1009,15 @@ export function deletePersonalExpense(id: string): void {
   const pExpenses = getPersonalExpenses();
   const expenseToDelete = pExpenses.find(e => e.id === id);
 
-  const updatedPExpenses = pExpenses.filter(e => e.id !== id);
-  localStorage.setItem(STORAGE_KEYS.PERSONAL_EXPENSES, JSON.stringify(updatedPExpenses));
-
-  // SYNC Shared Expense if it's a mirror
   if (expenseToDelete?.isMirror && expenseToDelete.mirrorFromId) {
-    const sExpenses = getSharedExpenses().filter(e => e.id !== expenseToDelete.mirrorFromId);
-    localStorage.setItem(STORAGE_KEYS.SHARED_EXPENSES, JSON.stringify(sExpenses));
+    // If it's a mirror, delegating to deleteSharedExpense will clean up the shared expense,
+    // trigger peer updates, AND clean up this mirror from personal expenses automatically.
+    deleteSharedExpense(expenseToDelete.mirrorFromId);
+    return;
   }
 
+  const updatedPExpenses = pExpenses.filter(e => e.id !== id);
+  localStorage.setItem(STORAGE_KEYS.PERSONAL_EXPENSES, JSON.stringify(updatedPExpenses));
   window.dispatchEvent(new Event('splitmate_data_changed'));
 }
 
@@ -1301,43 +1301,88 @@ export function saveSharedExpense(expense: SharedExpense, skipSync = false): boo
 
   window.dispatchEvent(new Event('splitmate_data_changed'));
 
-  // If someone paid for me, add it as personal expense too
+  // If someone paid for me → mirror as personal income
   if (normalizedExpense.paidBy !== 'me' && normalizedExpense.forPerson === 'me') {
-    // Smart category inference if still 'Other'
-    let finalCategory = normalizedExpense.category || 'Other';
+    // Guard: skip if a mirror already exists for this shared expense
+    const existingMirror = getPersonalExpenses().find(pe => pe.mirrorFromId === normalizedExpense.id);
+    if (!existingMirror) {
+      // Smart category inference if still 'Other'
+      let finalCategory = normalizedExpense.category || 'Other';
 
-    if (finalCategory === 'Other') {
-      const lowerReason = (normalizedExpense.reason || '').toLowerCase();
-      if (lowerReason.includes('food') || lowerReason.includes('din') || lowerReason.includes('lunch') || lowerReason.includes('dinner') || lowerReason.includes('breakfast') || lowerReason.includes('nasta') || lowerReason.includes('drink') || lowerReason.includes('restaurant')) {
-        finalCategory = 'Food & Dining';
-      } else if (lowerReason.includes('bus') || lowerReason.includes('uber') || lowerReason.includes('taxi') || lowerReason.includes('train') || lowerReason.includes('petrol') || lowerReason.includes('fuel')) {
-        finalCategory = 'Transportation';
-      } else if (lowerReason.includes('shop') || lowerReason.includes('buying') || lowerReason.includes('amazon') || lowerReason.includes('clothes')) {
-        finalCategory = 'Shopping';
-      } else if (lowerReason.includes('movie') || lowerReason.includes('game') || lowerReason.includes('show') || lowerReason.includes('netflix')) {
-        finalCategory = 'Entertainment';
-      } else if (lowerReason.includes('bill') || lowerReason.includes('rent') || lowerReason.includes('electricity') || lowerReason.includes('water')) {
-        finalCategory = 'Bills & Utilities';
-      } else if (lowerReason.includes('doc') || lowerReason.includes('med') || lowerReason.includes('hosp')) {
-        finalCategory = 'Healthcare';
-      } else if (lowerReason.includes('travel') || lowerReason.includes('trip') || lowerReason.includes('flight') || lowerReason.includes('hotel')) {
-        finalCategory = 'Travel';
-      } else if (lowerReason.includes('milk') || lowerReason.includes('grocery') || lowerReason.includes('vege') || lowerReason.includes('fruit')) {
-        finalCategory = 'Groceries';
+      if (finalCategory === 'Other') {
+        const lowerReason = (normalizedExpense.reason || '').toLowerCase();
+        if (lowerReason.includes('food') || lowerReason.includes('din') || lowerReason.includes('lunch') || lowerReason.includes('dinner') || lowerReason.includes('breakfast') || lowerReason.includes('nasta') || lowerReason.includes('drink') || lowerReason.includes('restaurant')) {
+          finalCategory = 'Food & Dining';
+        } else if (lowerReason.includes('bus') || lowerReason.includes('uber') || lowerReason.includes('taxi') || lowerReason.includes('train') || lowerReason.includes('petrol') || lowerReason.includes('fuel')) {
+          finalCategory = 'Transportation';
+        } else if (lowerReason.includes('shop') || lowerReason.includes('buying') || lowerReason.includes('amazon') || lowerReason.includes('clothes')) {
+          finalCategory = 'Shopping';
+        } else if (lowerReason.includes('movie') || lowerReason.includes('game') || lowerReason.includes('show') || lowerReason.includes('netflix')) {
+          finalCategory = 'Entertainment';
+        } else if (lowerReason.includes('bill') || lowerReason.includes('rent') || lowerReason.includes('electricity') || lowerReason.includes('water')) {
+          finalCategory = 'Bills & Utilities';
+        } else if (lowerReason.includes('doc') || lowerReason.includes('med') || lowerReason.includes('hosp')) {
+          finalCategory = 'Healthcare';
+        } else if (lowerReason.includes('travel') || lowerReason.includes('trip') || lowerReason.includes('flight') || lowerReason.includes('hotel')) {
+          finalCategory = 'Travel';
+        } else if (lowerReason.includes('milk') || lowerReason.includes('grocery') || lowerReason.includes('vege') || lowerReason.includes('fruit')) {
+          finalCategory = 'Groceries';
+        }
       }
-    }
 
-    const personalExpense: PersonalExpense = {
-      id: generateId(),
-      amount: normalizedExpense.amount,
-      reason: normalizedExpense.reason + ` (paid by ${normalizedExpense.personName})`,
-      category: finalCategory,
-      date: normalizedExpense.date,
-      createdAt: normalizedExpense.createdAt,
-      isMirror: true,
-      mirrorFromId: normalizedExpense.id
-    };
-    savePersonalExpense(personalExpense);
+      const personalExpense: PersonalExpense = {
+        id: generateId(),
+        amount: normalizedExpense.amount,
+        reason: normalizedExpense.reason + ` (paid by ${normalizedExpense.personName})`,
+        category: finalCategory,
+        date: normalizedExpense.date,
+        createdAt: normalizedExpense.createdAt,
+        isMirror: true,
+        mirrorFromId: normalizedExpense.id,
+        isIncome: true,
+        accountId: normalizedExpense.accountId,
+      };
+      savePersonalExpense(personalExpense);
+    }
+  }
+
+  // If I paid someone (paidBy === 'me') → mirror as personal expense (outgoing, red)
+  if (normalizedExpense.paidBy === 'me' && normalizedExpense.forPerson !== 'me') {
+    // Guard: skip if a mirror already exists for this shared expense
+    const existingMirror = getPersonalExpenses().find(pe => pe.mirrorFromId === normalizedExpense.id);
+    if (!existingMirror) {
+      let finalCategory = normalizedExpense.category || 'Other';
+      if (finalCategory === 'Other') {
+        const lowerReason = (normalizedExpense.reason || '').toLowerCase();
+        if (lowerReason.includes('food') || lowerReason.includes('din') || lowerReason.includes('lunch') || lowerReason.includes('dinner') || lowerReason.includes('breakfast')) {
+          finalCategory = 'Food & Dining';
+        } else if (lowerReason.includes('bus') || lowerReason.includes('uber') || lowerReason.includes('taxi') || lowerReason.includes('train') || lowerReason.includes('petrol') || lowerReason.includes('fuel')) {
+          finalCategory = 'Transportation';
+        } else if (lowerReason.includes('shop') || lowerReason.includes('buying') || lowerReason.includes('amazon') || lowerReason.includes('clothes')) {
+          finalCategory = 'Shopping';
+        } else if (lowerReason.includes('bill') || lowerReason.includes('rent') || lowerReason.includes('electricity') || lowerReason.includes('water')) {
+          finalCategory = 'Bills & Utilities';
+        } else if (lowerReason.includes('travel') || lowerReason.includes('trip') || lowerReason.includes('flight') || lowerReason.includes('hotel')) {
+          finalCategory = 'Travel';
+        } else if (lowerReason.includes('milk') || lowerReason.includes('grocery') || lowerReason.includes('vege') || lowerReason.includes('fruit')) {
+          finalCategory = 'Groceries';
+        }
+      }
+
+      const personalExpense: PersonalExpense = {
+        id: generateId(),
+        amount: normalizedExpense.amount,
+        reason: normalizedExpense.reason + ` (→ ${normalizedExpense.personName})`,
+        category: finalCategory,
+        date: normalizedExpense.date,
+        createdAt: normalizedExpense.createdAt,
+        isMirror: true,
+        mirrorFromId: normalizedExpense.id,
+        isIncome: false, // expense — money went out
+        accountId: normalizedExpense.accountId,
+      };
+      savePersonalExpense(personalExpense);
+    }
   }
 
   // Collaboration Sync Logic

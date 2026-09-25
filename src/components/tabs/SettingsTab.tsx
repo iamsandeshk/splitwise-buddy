@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { NativeAdCard } from '@/components/NativeAdCard';
 import { Switch } from '@/components/ui/switch';
 import { Capacitor } from '@capacitor/core';
+import { Share } from '@capacitor/share';
 import {
   exportAllData,
   getPersonalExpenses,
@@ -415,6 +416,19 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
     setSelectedCurrency(code);
     setCurrency(code);
     toast({ title: 'Currency Updated', description: `Now using ${CURRENCIES.find(c => c.code === code)?.name}` });
+  };
+
+  const handleShareApp = async () => {
+    try {
+      await Share.share({
+        title: 'Expense Tracker',
+        text: 'Track expenses, split bills, and manage your money with Expense Tracker.',
+        url: window.location.origin,
+        dialogTitle: 'Share Expense Tracker',
+      });
+    } catch {
+      toast({ title: 'Share unavailable', description: 'Please try again from a supported device or browser.' });
+    }
   };
 
   const personalCount = getPersonalExpenses().length;
@@ -1334,7 +1348,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
       {/* Backup & Restore */}
       <div>
         <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">DATA</p>
-        <div className="ios-card-modern overflow-hidden">
+        <div className="ios-card-modern overflow-hidden flex flex-col divide-y divide-border/30">
           <button
             onClick={() => navigate('/backup')}
             className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
@@ -1366,43 +1380,35 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
               <ChevronRight size={16} className="text-muted-foreground shrink-0" />
             </div>
           </button>
+          <button
+            onClick={() => {
+              localStorage.removeItem('splitmate_onboarding_done');
+              window.location.reload();
+            }}
+            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
+          >
+            <Presentation size={20} className="text-white shrink-0" />
+            <div className="flex-1 text-left min-w-0">
+              <h2 className="font-bold text-sm text-foreground">Restart Onboarding</h2>
+              <p className="text-[11px] text-muted-foreground">View the intro screens again</p>
+            </div>
+            <ChevronRight size={16} className="text-muted-foreground" />
+          </button>
+          <button
+            onClick={() => {
+              setDeleteStep('select');
+              setDeleteSelections({ personal: false, shared: false, links: false, more: false });
+            }}
+            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group hover:bg-danger/5"
+          >
+            <Trash2 size={20} className="text-white shrink-0" />
+            <div className="flex-1 text-left">
+              <h2 className="font-bold text-sm" style={{ color: 'hsl(var(--danger))' }}>Delete All Data</h2>
+              <p className="text-[11px] text-muted-foreground">Permanently delete app data</p>
+            </div>
+            <ChevronRight size={16} style={{ color: 'hsl(var(--danger))' }} />
+          </button>
         </div>
-      </div>
-
-      {/* Onboarding Restart */}
-      <div className="ios-card-modern overflow-hidden mb-4">
-        <button
-          onClick={() => {
-            localStorage.removeItem('splitmate_onboarding_done');
-            window.location.reload();
-          }}
-          className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
-        >
-          <Presentation size={20} className="text-white shrink-0" />
-          <div className="flex-1 text-left min-w-0">
-            <h2 className="font-bold text-sm text-foreground">Restart Onboarding</h2>
-            <p className="text-[11px] text-muted-foreground">View the intro screens again</p>
-          </div>
-          <ChevronRight size={16} className="text-muted-foreground" />
-        </button>
-      </div>
-
-      {/* Danger Zone */}
-      <div className="ios-card-modern overflow-hidden" style={{ border: '1px solid hsl(var(--danger) / 0.25)' }}>
-        <button
-          onClick={() => {
-            setDeleteStep('select');
-            setDeleteSelections({ personal: false, shared: false, links: false, more: false });
-          }}
-          className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
-        >
-          <Trash2 size={20} className="text-white shrink-0" />
-          <div className="flex-1 text-left">
-            <h2 className="font-bold text-sm" style={{ color: 'hsl(var(--danger))' }}>Delete All Data</h2>
-            <p className="text-[11px] text-muted-foreground">Permanently delete app data</p>
-          </div>
-          <ChevronRight size={16} style={{ color: 'hsl(var(--danger))' }} />
-        </button>
       </div>
 
       <div>
@@ -1427,6 +1433,20 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
               Follow
             </div>
           </a>
+
+          {/* Share the App */}
+          <button
+            type="button"
+            onClick={handleShareApp}
+            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all hover:bg-secondary/20 active:bg-secondary/30 active:scale-[0.985] group text-left"
+          >
+            <Share2 size={20} className="text-muted-foreground shrink-0" />
+            <div className="flex-1 text-left min-w-0">
+              <h2 className="font-bold text-sm text-foreground">Share the App</h2>
+              <p className="text-[11px] text-muted-foreground">Invite friends to track expenses together</p>
+            </div>
+            <ChevronRight size={16} className="text-muted-foreground" />
+          </button>
 
           {/* Privacy Policy */}
           <a

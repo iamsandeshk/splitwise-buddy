@@ -356,6 +356,7 @@ const Index = () => {
   }, [activeTab]);
 
   const [showAddPersonalModal, setShowAddPersonalModal] = useState(false);
+  const [personalModalIncomeMode, setPersonalModalIncomeMode] = useState(false);
   const [showAddSharedModal, setShowAddSharedModal] = useState(false);
   const [showAddGroupExpenseModal, setShowAddGroupExpenseModal] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingDone());
@@ -451,6 +452,7 @@ const Index = () => {
 
   const handleFabClick = useCallback(() => {
     if (activeTab === 'personal') {
+      setPersonalModalIncomeMode(false);
       setShowAddPersonalModal(true);
     } else if (activeTab === 'shared') {
       setShowAddSharedModal(true);
@@ -657,15 +659,21 @@ const Index = () => {
     lastScrollTopRef.current = scrollTop;
   };
 
-  const isStickyTab = ['account', 'transactions', 'personal', 'more', 'loans', 'home'].includes(activeTab);
+  const isStickyTab = ['accounts', 'transactions', 'personal', 'more', 'loans', 'home', 'shared', 'calendar', 'categories', 'goals', 'subscriptions', 'converter', 'recurring'].includes(activeTab);
 
   const renderActiveTab = () => {
     switch (activeTab) {
       case 'home':
         return (
           <HomeTab
-            onAddPersonal={() => setShowAddPersonalModal(true)}
-            onAddShared={() => setShowAddSharedModal(true)}
+            onAddPersonal={() => {
+              setPersonalModalIncomeMode(false);
+              setShowAddPersonalModal(true);
+            }}
+            onAddShared={() => {
+              setPersonalModalIncomeMode(true);
+              setShowAddPersonalModal(true);
+            }}
             onOpenAccount={openAccountTab}
             onNavigateToTab={navigateToTab}
             onScroll={handleScroll}
@@ -887,7 +895,11 @@ const Index = () => {
       <AddPersonalExpenseModal
         isOpen={showAddPersonalModal}
         onClose={() => setShowAddPersonalModal(false)}
-        onAdd={() => setShowAddPersonalModal(false)}
+        onAdd={() => {
+          setShowAddPersonalModal(false);
+          setPersonalModalIncomeMode(false);
+        }}
+        initialIsIncome={personalModalIncomeMode}
       />
 
       <AddSharedExpenseModal

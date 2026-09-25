@@ -12,6 +12,7 @@ export interface AppTransactionItem {
   reason: string;
   date: string;
   createdAt: string;
+  category: string;
   sourceTab: AppTransactionSourceTab;
   sourceId: string;
   sourceLabel: string;
@@ -24,22 +25,25 @@ export interface AppTransactionItem {
 export function getAllAppTransactions(): AppTransactionItem[] {
   const groupsById = new Map(getFriendGroups().map((group) => [group.id, group.name]));
 
-  const personal = getPersonalExpenses().map<AppTransactionItem>((item) => {
-    return {
-      id: `personal:${item.id}`,
-      type: 'personal',
-      direction: item.isIncome ? 'incoming' : 'outgoing',
-      amount: Math.abs(Number(item.amount || 0)),
-      reason: item.reason || 'Personal Transaction',
-      date: item.date,
-      createdAt: item.createdAt || item.date,
-      sourceTab: 'personal',
-      sourceId: item.id,
-      sourceLabel: 'Personal',
-      subtitle: item.category || 'General',
-      status: item.isIncome ? 'Income' : 'Expense',
-    };
-  });
+  const personal = getPersonalExpenses()
+    .filter(item => !item.isMirror)
+    .map<AppTransactionItem>((item) => {
+      return {
+        id: `personal:${item.id}`,
+        type: 'personal',
+        direction: item.isIncome ? 'incoming' : 'outgoing',
+        amount: Math.abs(Number(item.amount || 0)),
+        reason: item.reason || item.category || 'General',
+        date: item.date,
+        createdAt: item.createdAt || item.date,
+        sourceTab: 'personal',
+        sourceId: item.id,
+        sourceLabel: 'Personal',
+        subtitle: item.category || 'General',
+        category: item.category || 'General',
+        status: item.isIncome ? 'Income' : 'Expense',
+      };
+    });
 
   const shared = getSharedExpenses().map<AppTransactionItem>((item) => {
     const isGroup = Boolean(item.groupId);
@@ -50,7 +54,7 @@ export function getAllAppTransactions(): AppTransactionItem[] {
       type: isGroup ? 'group' : 'split-person',
       direction,
       amount: Math.abs(Number(item.amount || 0)),
-      reason: item.reason || 'Shared Transaction',
+      reason: item.reason || item.category || 'Shared',
       date: item.date,
       createdAt: item.createdAt || item.date,
       sourceTab: 'shared',
@@ -59,6 +63,7 @@ export function getAllAppTransactions(): AppTransactionItem[] {
       subtitle: isGroup
         ? `${groupName} • ${item.personName || 'Member'}`
         : item.personName || 'Shared',
+      category: item.category || 'General',
       status: item.settled ? 'Settled' : 'Pending',
     };
   });

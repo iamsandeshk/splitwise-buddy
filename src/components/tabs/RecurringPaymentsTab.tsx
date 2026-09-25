@@ -245,9 +245,9 @@ export function RecurringPaymentsTab({ onOpenAccount, onBack, bannerAdActive = t
   const isIncome = form.type === 'income';
 
   return (
-    <div className="p-4 pb-48 space-y-5 font-sans min-h-screen">
-      {/* ── HEADER ── */}
-      <div className="pt-4 pb-1 flex items-start justify-between gap-3">
+    <div className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col font-sans relative">
+      {/* ── STICKY HEADER ── */}
+      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md px-4 pt-4 pb-3 flex items-start justify-between gap-3 border-b border-border/10">
         <div className="flex items-start gap-4">
           {onBack && (
             <button
@@ -266,6 +266,7 @@ export function RecurringPaymentsTab({ onOpenAccount, onBack, bannerAdActive = t
         </div>
         {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
       </div>
+      <div className="flex-1 p-4 space-y-5">
 
       {/* ── SUMMARY STATS CARDS ── */}
       <div className="grid grid-cols-2 gap-3">
@@ -840,6 +841,7 @@ export function RecurringPaymentsTab({ onOpenAccount, onBack, bannerAdActive = t
           setForm((prev) => ({ ...prev, accountId: acc.id }));
         }}
       />
+      </div>
     </div>
   );
 }

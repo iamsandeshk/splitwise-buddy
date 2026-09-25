@@ -208,8 +208,8 @@ export function CalendarTab({ onOpenAccount, onBack, bannerAdActive = true }: Ca
   });
 
   return (
-    <div className="p-4 pb-40 space-y-5 font-sans">
-      <div className="pt-4 pb-1 flex items-start justify-between gap-3">
+    <div className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col font-sans relative">
+      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md px-4 pt-4 pb-3 flex items-start justify-between gap-3 border-b border-border/10">
         <div className="flex items-start gap-4">
           {onBack && (
             <button
@@ -228,6 +228,8 @@ export function CalendarTab({ onOpenAccount, onBack, bannerAdActive = true }: Ca
         </div>
         {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
       </div>
+
+      <div className="flex-1 p-4 space-y-5">
 
       <div className="rounded-[1.5rem] border border-border/15 bg-gradient-to-b from-card/90 to-card/60 p-4 space-y-4">
         <div className="flex items-center justify-between">
@@ -368,5 +370,6 @@ export function CalendarTab({ onOpenAccount, onBack, bannerAdActive = true }: Ca
         )}
       </div>
     </div>
+   </div> 
   );
 }
