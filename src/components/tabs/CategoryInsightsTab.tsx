@@ -1,12 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Calendar, ChevronLeft, ChevronRight, PieChart, Target, Wallet, TrendingUp } from 'lucide-react';
-import { AccountQuickButton } from '@/components/AccountQuickButton';
+import { useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronDown } from 'lucide-react';
 import { ExpenseChart } from '@/components/ExpenseChart';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
 import { EXPENSE_CATEGORIES, getPersonalExpenses, type PersonalExpense } from '@/lib/storage';
 import { cn } from '@/lib/utils';
-import { NativeAdCard } from '@/components/NativeAdCard';
-import { useBannerAd } from '@/hooks/useBannerAd';
 import { useSessionAnimation } from '@/hooks/use-session-animation';
 
 interface CategoryInsightsTabProps {
@@ -15,39 +12,25 @@ interface CategoryInsightsTabProps {
   bannerAdActive?: boolean;
 }
 
-function getMonthOptions(): Array<{ key: string; label: string }> {
-  const startYear = 2025;
-  const endYear = new Date().getFullYear() + 1;
-  const options: Array<{ key: string; label: string }> = [];
+const CATEGORY_STYLES: Record<string, { emoji: string, color: string }> = {
+  'Food & Dining': { emoji: '🍔', color: '#f59e0b' },
+  'Groceries': { emoji: '🛒', color: '#f59e0b' },
+  'Healthcare': { emoji: '🩺', color: '#a855f7' },
+  'Bills & Utilities': { emoji: '🏠', color: '#3b82f6' },
+  'Transportation': { emoji: '🚗', color: '#ef4444' },
+  'Shopping': { emoji: '🛍️', color: '#ec4899' },
+  'Entertainment': { emoji: '🎬', color: '#10b981' },
+  'Education': { emoji: '📚', color: '#6366f1' },
+  'Travel': { emoji: '✈️', color: '#14b8a6' },
+  'Other': { emoji: '📦', color: '#b159c3ff' }
+};
 
-  for (let year = startYear; year <= endYear; year += 1) {
-    for (let month = 1; month <= 12; month += 1) {
-      const key = `${year}-${String(month).padStart(2, '0')}`;
-      const date = new Date(year, month - 1, 1);
-      const label = date.toLocaleDateString('en-US', {
-        month: 'short',
-        year: '2-digit',
-      }).replace(' ', '’');
-      options.push({ key, label });
-    }
-  }
+type TimeRange = '1m' | '3m' | '6m' | '1y';
 
-  return options;
-}
-
-export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = true }: CategoryInsightsTabProps) {
-  useBannerAd(bannerAdActive);
+export function CategoryInsightsTab({ onBack }: CategoryInsightsTabProps) {
   const shouldAnimate = useSessionAnimation('category-tab');
   const [expenses, setExpenses] = useState<PersonalExpense[]>(getPersonalExpenses());
-  const monthOptions = useMemo(() => getMonthOptions(), []);
-  const currentMonthKey = new Date().toISOString().slice(0, 7);
-  const [selectedMonthKey, setSelectedMonthKey] = useState<string>(currentMonthKey);
-  const monthTabsRef = useRef<HTMLDivElement | null>(null);
-  const currentMonthChipRef = useRef<HTMLButtonElement | null>(null);
-  const touchStartXRef = useRef<number | null>(null);
-  const touchStartYRef = useRef<number | null>(null);
-  const touchStartedOnMonthStripRef = useRef(false);
-  const [jumpDirection, setJumpDirection] = useState<'left' | 'right' | null>(null);
+  const [timeRange, setTimeRange] = useState<TimeRange>('3m');
 
   useEffect(() => {
     const sync = () => setExpenses(getPersonalExpenses());
@@ -55,319 +38,147 @@ export function CategoryInsightsTab({ onOpenAccount, onBack, bannerAdActive = tr
     return () => window.removeEventListener('focus', sync);
   }, []);
 
-  useEffect(() => {
-    const container = monthTabsRef.current;
-    if (!container) return;
+  const { startDate, endDate, dateRangeLabel } = useMemo(() => {
+    const now = new Date();
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59); // End of current month
+    const monthsToSubtract = timeRange === '1m' ? 0 : timeRange === '3m' ? 2 : timeRange === '6m' ? 5 : 11;
+    const start = new Date(now.getFullYear(), now.getMonth() - monthsToSubtract, 1, 0, 0, 0);
 
-    const target = container.querySelector<HTMLButtonElement>(`button[data-month-key="${selectedMonthKey}"]`);
-    if (!target) return;
+    const startStr = start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    const endStr = end.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    const label = timeRange === '1m' ? endStr : `${startStr} – ${endStr}`;
 
-    target.scrollIntoView({ behavior: shouldAnimate ? 'smooth' : 'auto', inline: 'center', block: 'nearest' });
-  }, [selectedMonthKey, shouldAnimate]);
+    return { startDate: start, endDate: end, dateRangeLabel: label };
+  }, [timeRange]);
 
-  useEffect(() => {
-    const container = monthTabsRef.current;
-    const currentChip = currentMonthChipRef.current;
-    if (!container || !currentChip) return;
-
-    const updateJumpDirection = () => {
-      const containerRect = container.getBoundingClientRect();
-      const currentRect = currentChip.getBoundingClientRect();
-
-      if (currentRect.left < containerRect.left) {
-        setJumpDirection('left');
-        return;
-      }
-
-      if (currentRect.right > containerRect.right) {
-        setJumpDirection('right');
-        return;
-      }
-
-      setJumpDirection(null);
-    };
-
-    updateJumpDirection();
-    container.addEventListener('scroll', updateJumpDirection, { passive: true });
-    window.addEventListener('resize', updateJumpDirection);
-
-    return () => {
-      container.removeEventListener('scroll', updateJumpDirection);
-      window.removeEventListener('resize', updateJumpDirection);
-    };
-  }, [monthOptions]);
-
-  const selectedMonthIndex = useMemo(
-    () => monthOptions.findIndex((month) => month.key === selectedMonthKey),
-    [monthOptions, selectedMonthKey],
-  );
-
-  const shiftMonth = (direction: 'left' | 'right') => {
-    if (selectedMonthIndex < 0) return;
-    const delta = direction === 'left' ? 1 : -1;
-    const nextIndex = selectedMonthIndex + delta;
-    if (nextIndex < 0 || nextIndex >= monthOptions.length) return;
-    setSelectedMonthKey(monthOptions[nextIndex].key);
-  };
-
-  const handleJumpToCurrentMonth = () => {
-    setSelectedMonthKey(currentMonthKey);
-    requestAnimationFrame(() => {
-      currentMonthChipRef.current?.scrollIntoView({
-        behavior: 'smooth',
-        inline: 'center',
-        block: 'nearest',
-      });
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter(expense => {
+      const d = new Date(expense.date);
+      return d >= startDate && d <= endDate;
     });
-  };
-
-  const handleMonthSwipeStart = (event: React.TouchEvent<HTMLDivElement>) => {
-    const target = event.target as HTMLElement | null;
-    const startedOnSwipeDisabled = !!target?.closest('[data-disable-swipe="true"]');
-    if (startedOnSwipeDisabled) {
-      touchStartedOnMonthStripRef.current = false;
-      return;
-    }
-
-    const monthStrip = monthTabsRef.current;
-    touchStartedOnMonthStripRef.current = !!(target && monthStrip && monthStrip.contains(target));
-
-    if (touchStartedOnMonthStripRef.current) return;
-
-    touchStartXRef.current = event.touches[0]?.clientX ?? null;
-    touchStartYRef.current = event.touches[0]?.clientY ?? null;
-  };
-
-  const handleMonthSwipeEnd = (event: React.TouchEvent<HTMLDivElement>) => {
-    if (touchStartedOnMonthStripRef.current) {
-      touchStartedOnMonthStripRef.current = false;
-      return;
-    }
-
-    const startX = touchStartXRef.current;
-    const startY = touchStartYRef.current;
-    touchStartXRef.current = null;
-    touchStartYRef.current = null;
-
-    if (startX === null || startY === null) return;
-
-    const endX = event.changedTouches[0]?.clientX;
-    const endY = event.changedTouches[0]?.clientY;
-    if (typeof endX !== 'number' || typeof endY !== 'number') return;
-
-    const deltaX = endX - startX;
-    const deltaY = endY - startY;
-    if (Math.abs(deltaY) > Math.abs(deltaX)) return;
-    if (Math.abs(deltaX) < 45) return;
-
-    if (deltaX < 0) {
-      shiftMonth('left');
-      return;
-    }
-    shiftMonth('right');
-  };
-
-  const monthExpenses = useMemo(() => {
-    return expenses
-      .filter((expense) => expense.date.startsWith(selectedMonthKey))
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [expenses, selectedMonthKey]);
+  }, [expenses, startDate, endDate]);
 
   const chartData = useMemo(() => {
     return EXPENSE_CATEGORIES
       .map((category) => {
-        const totalAmount = monthExpenses
+        const totalAmount = filteredExpenses
           .filter((expense) => expense.category === category)
           .reduce((sum, expense) => sum + expense.amount, 0);
 
         return {
           name: category,
           value: Math.abs(totalAmount),
+          color: CATEGORY_STYLES[category]?.color || CATEGORY_STYLES['Other'].color
         };
       })
       .filter((item) => item.value > 0)
       .sort((a, b) => b.value - a.value);
-  }, [monthExpenses]);
+  }, [filteredExpenses]);
 
-  const total = useMemo(() => monthExpenses.reduce((sum, expense) => sum + expense.amount, 0), [monthExpenses]);
+  const total = useMemo(() => filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0), [filteredExpenses]);
+
+  const toggleTimeRange = () => {
+    const ranges: TimeRange[] = ['1m', '3m', '6m', '1y'];
+    const nextIdx = (ranges.indexOf(timeRange) + 1) % ranges.length;
+    setTimeRange(ranges[nextIdx]);
+  };
+
+  const getRangeLabel = (r: TimeRange) => {
+    switch (r) {
+      case '1m': return '1 month';
+      case '3m': return '3 months';
+      case '6m': return '6 months';
+      case '1y': return '1 year';
+    }
+  };
 
   return (
-    <div
-      className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col font-sans relative"
-      onTouchStart={handleMonthSwipeStart}
-      onTouchEnd={handleMonthSwipeEnd}
-    >
-      {/* Sticky Header Section */}
-      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md px-4 pt-4 pb-3 flex items-start justify-between gap-3 border-b border-border/10">
+    <div className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col font-sans bg-background text-foreground">
+      {/* Top Bar */}
+      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md px-5 pt-4 pb-3 flex items-start justify-between border-b border-border/10">
         <div className="flex items-start gap-4">
           {onBack && (
             <button
               type="button"
               onClick={onBack}
-              className="w-11 h-11 rounded-2xl slab flex items-center justify-center active:scale-90 transition-all mt-0.5"
+              className="w-10 h-10 rounded-full bg-secondary/50 flex items-center justify-center active:scale-90 transition-all text-foreground mt-0.5"
             >
               <ChevronLeft size={20} strokeWidth={2.5} />
             </button>
           )}
           <div className="space-y-1">
-            <h1 className="text-[28px] font-bold leading-none tracking-tight">Categories<span className="text-primary">.</span></h1>
-            <p className="text-xs text-muted-foreground mt-1.5 tracking-wide">Insight into your spending</p>
+            <h1 className="text-[28px] font-bold leading-none tracking-tight">Categories</h1>
+            <p className="text-[13px] text-muted-foreground">{dateRangeLabel}</p>
           </div>
         </div>
-        {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
-      </div>
-      
-      <div className="flex-1 p-4 space-y-6">
 
-      {/* Modern Month Strip */}
-      <div className="relative -mx-4 px-4 py-1">
-        {jumpDirection === 'left' && (
-          <div className="absolute left-2 top-1/2 -translate-y-1/2 z-20">
-             <button
-               onClick={handleJumpToCurrentMonth}
-               className="w-7 h-7 rounded-full bg-primary/20 backdrop-blur-md border border-primary/40 flex items-center justify-center text-primary shadow-md animate-pulse"
-             >
-               <ChevronLeft size={14} strokeWidth={2.5} />
-             </button>
-          </div>
-        )}
-
-        <div
-          ref={monthTabsRef}
-          className="flex items-center gap-2 overflow-x-auto pt-1 pb-2 scrollbar-hide no-scrollbar"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        <button
+          onClick={toggleTimeRange}
+          className="px-4 py-2 rounded-full bg-secondary/50 text-[13px] font-medium text-foreground flex items-center gap-1.5 active:scale-95 transition-all mt-1"
         >
-          {monthOptions.map((month) => {
-            const isActive = month.key === selectedMonthKey;
-            return (
-              <button
-                key={month.key}
-                data-month-key={month.key}
-                ref={month.key === currentMonthKey ? currentMonthChipRef : null}
-                onClick={() => setSelectedMonthKey(month.key)}
-                className={cn(
-                   "px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap transition-all duration-200 flex-shrink-0 border",
-                   isActive 
-                   ? "bg-primary text-primary-foreground border-primary shadow-sm shadow-primary/25" 
-                   : "bg-card/80 text-muted-foreground/60 border-border/15 hover:border-border/30 hover:bg-secondary/30"
-                )}
-              >
-                {month.label}
-              </button>
-            );
-          })}
+          {getRangeLabel(timeRange)}
+        </button>
+      </div>
+
+      <div className="px-4 pt-1 pb-6 space-y-4">
+        {/* Donut Chart Area */}
+        <div>
+          {chartData.length > 0 ? (
+            <div className="bg-card border border-border/10 rounded-[1.75rem] py-2 px-4 shadow-sm relative w-full mx-auto">
+              <ExpenseChart
+                animate={shouldAnimate}
+                data={chartData}
+                type="pie"
+                height={160}
+                pieCenterLabel="TOTAL"
+                pieCenterSubLabel="Expenses"
+              />
+            </div>
+          ) : (
+            <div className="w-full h-[280px] flex flex-col items-center justify-center bg-card rounded-[2rem] border border-border/10">
+              <p className="text-muted-foreground italic mb-2">No expenses</p>
+              <MoneyDisplay amount={0} hideSymbol size="lg" className="font-bold text-muted-foreground/60 text-2xl" />
+            </div>
+          )}
         </div>
 
-        {jumpDirection === 'right' && (
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 z-20">
-             <button
-               onClick={handleJumpToCurrentMonth}
-               className="w-7 h-7 rounded-full bg-primary/20 backdrop-blur-md border border-primary/40 flex items-center justify-center text-primary shadow-md animate-pulse"
-             >
-               <ChevronRight size={14} strokeWidth={2.5} />
-             </button>
+        {/* Expenses List */}
+        <div className="space-y-4">
+          <div className="flex items-end justify-between px-1">
+            <div>
+              <h3 className="text-lg font-bold">Expenses by Category</h3>
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* Main Spend Card */}
-      <div className="relative group overflow-hidden rounded-[1.5rem] p-8 text-center bg-card border border-border/40 shadow-sm transition-all hover:shadow-xl hover:-translate-y-1">
-         <div className="absolute top-0 right-0 p-8 opacity-[0.03] group-hover:opacity-[0.05] transition-opacity">
-            <TrendingUp size={120} strokeWidth={3} className="text-foreground" />
-         </div>
-         <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground/50 mb-3">Total Spend for {monthOptions.find((m) => m.key === selectedMonthKey)?.label}</p>
-         <MoneyDisplay animate={shouldAnimate} amount={-total} size="xl" className="font-black tracking-tighter text-destructive" />
-         
-         <div className="mt-6 flex items-center justify-center gap-2">
-            <div className="h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />
-            <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground/40 italic">Analysis complete</p>
-         </div>
-      </div>
-
-      {chartData.length > 0 ? (
-        <div className="space-y-6">
-          {/* Chart Section */}
-          <div className="ios-card-modern p-6 space-y-4 rounded-[1.5rem] bg-card border border-border/40">
-            <div className="flex items-center justify-between">
-               <h3 className="font-black text-[13px] uppercase tracking-widest flex items-center gap-2.5">
-                  <div className="w-9 h-9 bg-purple-500/10 rounded-xl flex items-center justify-center text-purple-600">
-                    <PieChart size={18} strokeWidth={2.5} />
+          <div className="flex flex-col gap-1">
+            {chartData.length > 0 ? chartData.map((item, idx) => {
+              const style = CATEGORY_STYLES[item.name] || CATEGORY_STYLES['Other'];
+              return (
+                <div 
+                  key={item.name} 
+                  className={cn(
+                    "bg-card border border-border/10 flex items-center justify-between p-4 shadow-sm",
+                    chartData.length === 1 ? "rounded-[1.25rem]" :
+                    idx === 0 ? "rounded-t-[1.25rem] rounded-b-[0.5rem]" :
+                    idx === chartData.length - 1 ? "rounded-t-[0.5rem] rounded-b-[1.25rem]" :
+                    "rounded-[0.5rem]"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: style.color }} />
+                    <span className="text-xl leading-none">{style.emoji}</span>
+                    <span className="font-medium text-[15px]">{item.name}</span>
                   </div>
-                  Spending Trends
-               </h3>
-               <p className="text-[10px] font-black text-muted-foreground/40 uppercase tracking-widest">Line Analysis</p>
-            </div>
-            <div className="p-2 rounded-[2rem] bg-secondary/5 border border-border/5">
-               <ExpenseChart animate={shouldAnimate} data={[{ name: '', value: 0 }, ...chartData]} type="line" height={240} />
-            </div>
-          </div>
-
-          {/* Categories List */}
-          <div className="space-y-4">
-             <div className="px-2 flex items-center justify-between">
-                <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">Category breakdown</h4>
-                <div className="w-1.5 h-1.5 rounded-full bg-primary/20" />
-             </div>
-             
-             <div className="flex flex-col gap-4">
-                {chartData.map((item, idx) => {
-                  const absoluteTotal = Math.abs(total);
-                  const ratio = absoluteTotal > 0 ? (item.value / absoluteTotal) * 100 : 0;
-                  return (
-                    <div key={item.name} className="contents">
-                      <div 
-                        className="group relative flex flex-col p-5 rounded-[1.5rem] bg-card border border-border/30 shadow-sm transition-all hover:shadow-md active:scale-[0.98]"
-                      >
-                        <div className="flex items-center justify-between gap-4 mb-4">
-                          <div className="flex items-center gap-3">
-                             <div className={cn(
-                                "w-11 h-11 rounded-2xl flex items-center justify-center shadow-inner font-black text-xs",
-                                idx === 0 ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"
-                             )}>
-                                {item.name.substring(0, 1).toUpperCase()}
-                             </div>
-                             <div>
-                                <p className="font-extrabold text-[15px] tracking-tight leading-none mb-1">{item.name}</p>
-                                <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground/40">{ratio.toFixed(0)}% of monthly budget</p>
-                             </div>
-                          </div>
-                          <div className="text-right">
-                             <MoneyDisplay animate={shouldAnimate} amount={-item.value} size="md" className="font-black leading-none" />
-                          </div>
-                        </div>
-                        
-                        <div className="relative h-2.5 w-full rounded-full bg-secondary/40 overflow-hidden">
-                          <div
-                            className={cn(
-                              "h-full rounded-full transition-all duration-1000 ease-out",
-                              idx === 0 ? "bg-destructive" : "bg-primary"
-                            )}
-                            style={{
-                              width: `${Math.max(4, Math.min(100, ratio))}%`,
-                            }}
-                          />
-                          <div className="absolute inset-x-0 h-full w-20 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full animate-shimmer" />
-                        </div>
-                        
-                        {/* Ambient corner decoration */}
-                        <div className={cn(
-                           "absolute bottom-0 right-0 w-12 h-12 opacity-[0.03] pointer-events-none rounded-br-[2.25rem] transition-all group-hover:scale-150",
-                           idx === 0 ? "bg-destructive" : "bg-primary"
-                        )} />
-                      </div>
-                      {idx === 0 && <NativeAdCard className="mb-3" />}
-                    </div>
-                  );
-                })}
-             </div>
+                  <MoneyDisplay amount={-item.value} className="font-semibold text-[15px]" />
+                </div>
+              )
+            }) : (
+              <div className="p-8 text-center text-muted-foreground italic bg-card rounded-[1.25rem] border border-border/10">
+                No categories found for this period.
+              </div>
+            )}
           </div>
         </div>
-      ) : (
-        <div className="p-16 text-center rounded-[1.5rem] bg-secondary/15 border border-dashed border-border/40">
-           <PieChart className="mx-auto mb-4 text-muted-foreground/20" size={56} strokeWidth={1.5} />
-           <p className="text-sm font-bold text-muted-foreground/50 italic italic px-6 leading-relaxed"> No spending patterns detected for this cycle. Start tracking to see insights.</p>
-        </div>
-      )}
       </div>
     </div>
   );

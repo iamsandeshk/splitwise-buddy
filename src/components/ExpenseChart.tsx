@@ -3,9 +3,9 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/
 import { MoneyDisplay } from '@/components/MoneyDisplay';
 interface ExpenseChartProps {
   data: Array<{ name: string; value: number; color?: string }>;
-  type?: 'pie' | 'bar' | 'line';
+  type?: 'pie' | 'bar' | 'line' | 'donut';
   height?: number;
-  pieCenterLabel?: string;
+  pieCenterLabel?: React.ReactNode;
   pieCenterSubLabel?: string;
   animate?: boolean;
 }
@@ -19,9 +19,44 @@ export function ExpenseChart({ data, type = 'pie', height = 200, pieCenterLabel 
     return config;
   }, {});
 
-  if (type === 'pie') {
+  if (type === 'pie' || type === 'donut') {
     const total = data.reduce((sum, item) => sum + item.value, 0);
     const sortedData = [...data].sort((a, b) => b.value - a.value);
+
+    if (type === 'donut') {
+      return (
+        <div className="w-full relative flex items-center justify-center" style={{ height: `${height}px` }}>
+          <ChartContainer config={chartConfig} className="w-full h-full">
+            <PieChart>
+              <Pie
+                data={sortedData}
+                cx="50%"
+                cy="50%"
+                innerRadius="65%"
+                outerRadius="95%"
+                paddingAngle={4}
+                dataKey="value"
+                stroke="none"
+                cornerRadius={12}
+                isAnimationActive={animate}
+              >
+                {sortedData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={chartConfig[entry.name]?.color || COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+            </PieChart>
+          </ChartContainer>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
+            {pieCenterLabel ? (
+              <span className="font-bold">{pieCenterLabel}</span>
+            ) : (
+              <MoneyDisplay amount={-Math.abs(total)} size="xl" className="font-black leading-tight text-white tracking-[-0.04em]" />
+            )}
+            <span className="text-[11px] text-muted-foreground mt-1 tracking-wide">{pieCenterSubLabel || 'Total'}</span>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div className="w-full flex items-center justify-between gap-3" style={{ height: `${height}px` }}>

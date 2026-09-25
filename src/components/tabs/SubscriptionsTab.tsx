@@ -203,6 +203,31 @@ function getDaysUntilDue(startDate?: string, cycle: SubscriptionCycle = 'monthly
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
 }
 
+function getItemsDueOnDate(date: Date, items: SubscriptionItem[]): SubscriptionItem[] {
+  const target = new Date(date);
+  target.setHours(0,0,0,0);
+  
+  return items.filter(item => {
+    if (item.paused || item.cycle === 'lifetime' || !item.startDate) return false;
+    const start = new Date(item.startDate);
+    if (isNaN(start.getTime())) return false;
+    
+    const nextDue = new Date(start);
+    nextDue.setHours(0,0,0,0);
+    
+    while (nextDue < target) {
+      if (item.cycle === 'daily') nextDue.setDate(nextDue.getDate() + 1);
+      else if (item.cycle === 'weekly') nextDue.setDate(nextDue.getDate() + 7);
+      else if (item.cycle === 'monthly') nextDue.setMonth(nextDue.getMonth() + 1);
+      else if (item.cycle === 'quarterly') nextDue.setMonth(nextDue.getMonth() + 3);
+      else if (item.cycle === 'yearly') nextDue.setFullYear(nextDue.getFullYear() + 1);
+      else break;
+    }
+    
+    return nextDue.getTime() === target.getTime();
+  });
+}
+
 function formatSubscriptionDate(dateStr: string): string {
   if (!dateStr) return '';
   const parts = dateStr.split('T')[0].split('-');
@@ -239,6 +264,73 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [suggestionLogoStatus, setSuggestionLogoStatus] = useState<Record<string, 'none' | 'fallback' | 'failed'>>({});
+  
+  const [showCalendar, setShowCalendar] = useState(false);
+
+  const timelineDates = useMemo(() => {
+    const dates = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = -3; i <= 14; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() + i);
+      dates.push({
+        date: d,
+        isToday: i === 0,
+        dueItems: getItemsDueOnDate(d, items)
+      });
+    }
+    return dates;
+  }, [items]);
+
+  const monthStats = useMemo(() => {
+    const now = new Date();
+    now.setHours(0,0,0,0);
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    
+    let total = 0;
+    let remaining = 0;
+    
+    items.filter(i => !i.paused && i.cycle !== 'lifetime').forEach(item => {
+      if (!item.startDate) return;
+      const d = new Date(item.startDate);
+      if (isNaN(d.getTime())) return;
+      
+      const due = new Date(d);
+      due.setHours(0,0,0,0);
+      const startOfMonth = new Date(currentYear, currentMonth, 1);
+      
+      while (due < startOfMonth) {
+        if (item.cycle === 'daily') due.setDate(due.getDate() + 1);
+        else if (item.cycle === 'weekly') due.setDate(due.getDate() + 7);
+        else if (item.cycle === 'monthly') due.setMonth(due.getMonth() + 1);
+        else if (item.cycle === 'quarterly') due.setMonth(due.getMonth() + 3);
+        else if (item.cycle === 'yearly') due.setFullYear(due.getFullYear() + 1);
+        else break;
+      }
+      
+      const tempDue = new Date(due);
+      while (tempDue.getMonth() === currentMonth && tempDue.getFullYear() === currentYear) {
+        const mAmount = item.amount;
+        // Adjust amount for the visual to reflect standard monthly payment if they want exact?
+        // Let's use the actual payment amount for the month if it triggers!
+        total += mAmount;
+        if (tempDue >= now) {
+          remaining += mAmount;
+        }
+        
+        if (item.cycle === 'daily') tempDue.setDate(tempDue.getDate() + 1);
+        else if (item.cycle === 'weekly') tempDue.setDate(tempDue.getDate() + 7);
+        else if (item.cycle === 'monthly') tempDue.setMonth(tempDue.getMonth() + 1);
+        else if (item.cycle === 'quarterly') tempDue.setMonth(tempDue.getMonth() + 3);
+        else if (item.cycle === 'yearly') tempDue.setFullYear(tempDue.getFullYear() + 1);
+        else break;
+      }
+    });
+    
+    return { total, remaining };
+  }, [items]);
 
   const filteredServices = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -256,6 +348,7 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
       setShowAdd(false);
     }
   });
+  useBackHandler(showCalendar, () => setShowCalendar(false));
   useBackHandler(!!selectedItem, () => setSelectedItem(null));
   useBackHandler(!!deletingId, () => setDeletingId(null));
 
@@ -416,188 +509,209 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
   };
 
   return (
-    <div className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col font-sans relative">
-      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md px-4 pt-4 pb-3 flex items-start justify-between gap-3 border-b border-border/10">
-        <div className="flex items-center gap-3 min-w-0">
+    <div className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col font-sans relative bg-background text-foreground">
+      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md px-5 pt-5 pb-4 flex items-center justify-between border-b border-border/10">
+        <div className="flex items-center gap-4">
           {onBack && (
             <button
               onClick={onBack}
-              className="w-11 h-11 rounded-2xl slab flex items-center justify-center active:scale-90 transition-all mt-0.5"
-              aria-label="Back"
+              className="w-10 h-10 rounded-full bg-secondary/50 flex items-center justify-center hover:bg-secondary/70 transition-colors"
             >
-              <ChevronLeft size={20} strokeWidth={2.5} />
+              <ChevronLeft size={22} className="text-foreground" />
             </button>
           )}
-          <div className="min-w-0 flex-1">
-            <h1 className="text-[30px] font-black leading-none tracking-[-0.04em]">Subscriptions<span className="text-primary">.</span></h1>
-            <p className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-[0.18em] mt-1">
-              {stats.active} active · {upcomingItem ? `next due in ${upcomingItem.days} days` : 'No upcoming renewals'}
-            </p>
-          </div>
+          <h1 className="text-[34px] font-bold leading-none tracking-tight">Subscriptions</h1>
         </div>
-        {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
+        <div className="flex items-center gap-3">
+          {!onBack && <div className="[&>button]:w-11 [&>button]:h-11 [&>button]:rounded-full [&>button]:bg-secondary/50 [&>button]:hover:bg-secondary/70"><AccountQuickButton onClick={onOpenAccount} /></div>}
+        </div>
       </div>
-      <div className="flex-1 p-4 space-y-5">
 
-        <div className="ios-card-modern overflow-hidden border border-border/15 flex divide-x divide-border/50 bg-card/45 rounded-[1.75rem] shadow-sm">
-          <div className="flex-1 px-3 py-4 text-center flex flex-col justify-center gap-1 hover:bg-secondary/10 transition-colors">
-            <p className="text-lg font-black tracking-tight text-destructive flex items-center justify-center">
-              <MoneyDisplay amount={-stats.monthly} size="sm" />
-            </p>
-            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-none">Monthly</p>
-          </div>
-          <div className="flex-1 px-3 py-4 text-center flex flex-col justify-center gap-1 hover:bg-secondary/10 transition-colors">
-            <p className="text-lg font-black tracking-tight text-destructive flex items-center justify-center">
-              <MoneyDisplay amount={-stats.yearly} size="sm" />
-            </p>
-            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-none">Yearly</p>
-          </div>
-          <div className="flex-1 px-3 py-4 text-center flex flex-col justify-center gap-1 hover:bg-secondary/10 transition-colors">
-            <p className="text-2xl font-black tracking-tight text-primary leading-tight">{stats.active}</p>
-            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-none">Active</p>
-          </div>
+      <div className="flex-1 p-5 pt-2 space-y-8 relative z-10">
+        
+        {/* Top Cards */}
+        <div className="grid grid-cols-2 gap-4">
+           {/* Left Card */}
+           <div className="bg-card backdrop-blur-md rounded-[1.75rem] p-4 flex flex-col justify-start border border-border/10">
+             <div className="space-y-0.5 mb-3">
+                <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+                  <Calendar size={14} className="text-[#e86c44]" />
+                  <span className="text-[12px] font-medium">Monthly average</span>
+                </div>
+                <MoneyDisplay amount={stats.monthly} hideSymbol={false} className="text-[28px] font-bold text-foreground tracking-tight" />
+             </div>
+             
+             <div className="h-[1px] w-full bg-border/10 mb-3" />
+
+             <div className="space-y-0.5">
+                <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+                  <Calendar size={14} className="text-[#e86c44]" />
+                  <span className="text-[12px] font-medium">Yearly average</span>
+                </div>
+                <MoneyDisplay amount={stats.yearly} hideSymbol={false} className="text-[18px] font-bold text-foreground tracking-tight" />
+             </div>
+           </div>
+
+           {/* Right Card */}
+           <div className="bg-card backdrop-blur-md rounded-[1.75rem] p-4 flex flex-col justify-between border border-border/10">
+              <div className="relative h-[80px] pt-1 pl-1">
+                 {/* render top 4 active logos */}
+                 {items.filter(i => !i.paused).slice(0, 4).map((item, idx) => (
+                    <div 
+                      key={item.id} 
+                      className="absolute w-[46px] h-[46px] rounded-full border-[3px] border-card overflow-hidden bg-black flex items-center justify-center shadow-lg transition-transform hover:scale-110"
+                      style={{
+                        zIndex: 10 - idx,
+                        top: idx < 2 ? 0 : 30,
+                        left: idx % 2 === 0 ? 0 : 30,
+                      }}
+                    >
+                      {item.logoUrl ? (
+                         <img src={item.logoUrl} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                         <span className="text-lg font-bold">{item.appName.charAt(0)}</span>
+                      )}
+                    </div>
+                 ))}
+              </div>
+              
+              <div className="mt-3 flex items-baseline gap-1.5">
+                 <span className="text-[34px] font-bold text-foreground leading-none tracking-tight">{stats.active}</span>
+                 <span className="text-[15px] font-medium text-muted-foreground">Active</span>
+              </div>
+           </div>
         </div>
 
-        {upcomingItem && (
-           <div className="bg-warning/10 text-warning px-4 py-3.5 rounded-2xl flex items-center gap-3 border border-warning/25 shadow-sm transition-transform active:scale-[0.99]">
-             <div className="w-8 h-8 rounded-xl bg-warning/10 flex items-center justify-center flex-shrink-0">
-              <Clock size={16} className="text-warning" />
+        {/* Timeline Dates */}
+        <div className="mt-2 flex items-start gap-1 overflow-x-auto pb-2 px-1 hide-scrollbar -mx-5 pl-5">
+           {timelineDates.map((td, i) => (
+             <div key={i} className="flex flex-col items-center flex-shrink-0 w-[42px]">
+               <span className="text-[10px] text-muted-foreground font-bold tracking-widest mb-2 uppercase">
+                 {td.date.toLocaleDateString('en-US', { weekday: 'narrow' })}
+               </span>
+               <div className={cn(
+                 "w-[34px] h-[34px] rounded-full flex items-center justify-center text-[15px]",
+                 td.isToday ? "bg-[#e86c44] text-white font-bold" : "text-foreground font-medium"
+               )}>
+                 {td.date.getDate()}
+               </div>
+               {/* Subscriptions due */}
+               {td.dueItems.length > 0 && (
+                 <div className="flex -space-x-2 mt-2">
+                   {td.dueItems.slice(0, 2).map((di, idx) => (
+                     <div key={di.id} className="w-[18px] h-[18px] rounded-full border-[1.5px] border-background overflow-hidden bg-black z-[1]">
+                       {di.logoUrl ? (
+                         <img src={di.logoUrl} className="w-full h-full object-cover" />
+                       ) : (
+                         <span className="text-[8px] font-bold text-white flex items-center justify-center h-full w-full">{di.appName.charAt(0)}</span>
+                       )}
+                     </div>
+                   ))}
+                 </div>
+               )}
              </div>
-             <p className="text-xs font-bold truncate">
-               {upcomingItem.appName} renews in {upcomingItem.days} days · <span className="text-destructive">-{currency.symbol}{upcomingItem.amount}</span>
-             </p>
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-1 -mx-4 px-4">
-           {['All', 'Monthly', 'Quarterly', 'Yearly', 'Weekly', 'Paused'].map((item) => (
-             <button
-                key={item}
-                onClick={() => setFilter(item as 'All' | 'Monthly' | 'Quarterly' | 'Yearly' | 'Weekly' | 'Paused')}
-                className={cn(
-                  "px-4 py-2 rounded-full text-[11px] font-black transition-all duration-300 whitespace-nowrap border",
-                  filter === item 
-                    ? "bg-primary text-primary-foreground border-primary shadow-sm" 
-                    : "bg-secondary/35 text-muted-foreground border-border/10 hover:bg-secondary/60"
-                )}
-             >
-               {item}
-             </button>
            ))}
         </div>
-      </div>
 
-     
-
-      <div className="px-4 space-y-4">
-        <div className="flex items-center justify-between px-1">
-          <h3 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">Active subscriptions</h3>
-          <span className="text-[10px] font-bold text-muted-foreground/50">{filteredItems.length} total</span>
-        </div>
-
-        <div className="flex flex-col gap-3">
-          {filteredItems.map((item, index) => {
-            const isLockedSubscription = !isPro && index >= FREE_LIMITS.MAX_SUBSCRIPTIONS;
-            const failed = logoLoadErrorMap[item.id] || !item.logoUrl;
-            const daysUntil = getDaysUntilDue(item.startDate || item.createdAt, item.cycle, item.createdAt);
-            
-            return (
-              <div key={item.id} className="contents">
-                 <div 
-                   onClick={() => {
-                     if (isLockedSubscription) {
-                       requestProUpgrade('subscriptions', 'Free users can track up to 2 subscriptions. Upgrade to Pro for unlimited subscriptions.');
-                       return;
-                     }
-                     setSelectedItem(item);
-                   }}
-                   className={cn(
-                     "ios-card-modern p-4 flex items-center gap-4 bg-card/45 border-border/15 hover:bg-secondary/20 transition-all active:scale-[0.98] cursor-pointer relative shadow-sm",
-                     isLockedSubscription && "opacity-40"
-                   )}
-                 >
-                   {isLockedSubscription && (
-                     <>
-                       <div className="absolute top-2 right-2 z-30 w-7 h-7 rounded-lg bg-black/55 border border-white/20 flex items-center justify-center">
-                         <Lock size={12} className="text-white" />
-                       </div>
-                       <button
-                         type="button"
-                         onClick={(e) => {
-                           e.stopPropagation();
-                           requestProUpgrade('subscriptions', 'Free users can track up to 2 subscriptions. Upgrade to Pro for unlimited subscriptions.');
-                         }}
-                         className="absolute inset-0 z-40 pointer-events-auto"
-                         aria-label="Upgrade to unlock this subscription"
-                       />
-                     </>
-                   )}
-                   <div 
-                    className="w-14 h-14 rounded-[22.5%] overflow-hidden flex items-center justify-center bg-black/40 border border-border/10 flex-shrink-0 shadow-inner"
-                    style={{ clipPath: 'inset(0% round 22.5%)' }}
-                   >
-                      {failed ? (
-                        <span className="text-xl font-bold text-primary">{item.appName.charAt(0)}</span>
-                      ) : (
-                        <img 
-                          src={item.logoUrl} 
-                          alt="" 
-                          className="w-full h-full object-cover"
-                          onError={() => setLogoLoadErrorMap(prev => ({ ...prev, [item.id]: true }))}
-                        />
-                      )}
-                   </div>
-                   
-                    <div className={cn("flex-1 min-w-0 transition-opacity", item.paused && "opacity-50")}>
-                      <div className="flex items-center justify-between gap-3 mb-1">
-                        <h4 className="font-bold text-[15px] truncate flex items-center gap-2">
-                          {item.appName}
-                          {item.paused && (
-                            <span className="px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-500 text-[8px] font-black uppercase tracking-tighter border border-blue-500/10">
-                              PAUSED
-                            </span>
-                          )}
-                        </h4>
-                        <p className="text-[15px] font-black text-destructive flex-shrink-0">
-                          -{currency.symbol}{item.amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        </p>
-                      </div>
-                      
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 overflow-hidden">
-                           <span className="text-[10px] font-bold text-muted-foreground/80 uppercase tracking-tight capitalize flex-shrink-0">{item.cycle}</span>
-                           {item.startDate && (
-                             <span className="text-[10px] text-muted-foreground/40 font-medium truncate">
-                                · {formatSubscriptionDate(item.startDate)}
-                             </span>
-                           )}
-                        </div>
-                        
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          {!item.paused && daysUntil !== null && (
-                            <div className="px-2 py-0.5 rounded-full bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-500 text-[9px] font-black uppercase tracking-wider">
-                              due in {daysUntil}d
-                            </div>
-                          )}
-                          {!item.paused && daysUntil === null && item.cycle === 'lifetime' && (
-                            <div className="px-2 py-0.5 rounded-full bg-blue-500/10 dark:bg-blue-500/15 text-blue-600 dark:text-blue-500 text-[9px] font-black uppercase tracking-wider">
-                              Lifetime
-                            </div>
-                          )}
-                          <span className="text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest">
-                            /{item.cycle === 'quarterly' ? 'qtr' : item.cycle.slice(0, 3)}
-                          </span>
-                        </div>
-                      </div>
-                   </div>
-                 </div>
-                 {(filteredItems.indexOf(item) === 0) && <NativeAdCard />}
+        {/* Remaining Card */}
+        <div 
+          className="bg-card backdrop-blur-md rounded-[1.75rem] p-4 border border-border/10 cursor-pointer shadow-sm relative overflow-hidden group mt-1"
+          onClick={() => setShowCalendar(true)}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Calendar size={14} className="text-[#e86c44]" />
+                <span className="text-[13px] font-medium text-muted-foreground">
+                  Remaining in {new Date().toLocaleDateString('en-US', { month: 'long' })}
+                </span>
               </div>
-            );
-          })}
+              <MoneyDisplay amount={monthStats.remaining} hideSymbol={false} className="text-[28px] font-bold text-foreground tracking-tight leading-none" />
+              <div className="text-[13px] text-muted-foreground font-medium mt-1.5">
+                of {currency.symbol}{monthStats.total.toFixed(2)} total
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="grid grid-cols-7 gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+                {Array.from({ length: 28 }).map((_, i) => (
+                  <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i === 10 ? "bg-[#e86c44]" : "bg-white/10")} />
+                ))}
+              </div>
+              <ChevronRight className="text-white/20" size={16} />
+            </div>
+          </div>
+        </div>
+
+        {/* List Section */}
+        <div className="space-y-4">
+           <div className="flex items-center justify-between px-1">
+              <h3 className="text-[22px] font-bold flex items-center gap-1">All subscriptions <ChevronRight size={22} className="text-white/40" /></h3>
+           </div>
+
+           <div className="bg-[#161616]/90 backdrop-blur-md rounded-[1.75rem] overflow-hidden border border-white/5">
+             {filteredItems.map((item, index) => {
+               const isLockedSubscription = !isPro && index >= FREE_LIMITS.MAX_SUBSCRIPTIONS;
+               const daysUntil = getDaysUntilDue(item.startDate || item.createdAt, item.cycle, item.createdAt);
+               
+               let subtitle = '';
+               if (daysUntil !== null) {
+                  subtitle = `Renews on ${formatSubscriptionDate(item.startDate || item.createdAt)}`;
+               } else if (item.cycle === 'lifetime') {
+                  subtitle = 'Lifetime access';
+               } else {
+                  subtitle = 'Starts today';
+               }
+
+               return (
+                  <div 
+                    key={item.id} 
+                    className={cn(
+                       "p-4 flex items-center gap-4 hover:bg-white/5 transition-colors cursor-pointer relative", 
+                       index !== filteredItems.length - 1 && "border-b border-white/5",
+                       isLockedSubscription && "opacity-40 grayscale"
+                    )} 
+                    onClick={() => {
+                        if (isLockedSubscription) {
+                           requestProUpgrade('subscriptions', 'Free users can track up to 2 subscriptions. Upgrade to Pro for unlimited subscriptions.');
+                           return;
+                        }
+                        setSelectedItem(item);
+                    }}
+                  >
+                     {isLockedSubscription && (
+                        <div className="absolute inset-0 z-10 flex items-center justify-center">
+                           <div className="bg-black/50 p-2 rounded-full backdrop-blur-sm">
+                              <Lock size={16} className="text-white" />
+                           </div>
+                        </div>
+                     )}
+                     <div className="w-[52px] h-[52px] rounded-full overflow-hidden bg-black border border-white/10 flex-shrink-0 flex items-center justify-center">
+                        {item.logoUrl ? (
+                           <img src={item.logoUrl} className="w-full h-full object-cover" />
+                        ) : (
+                           <span className="font-bold text-xl">{item.appName.charAt(0)}</span>
+                        )}
+                     </div>
+                     <div className="flex-1 min-w-0 flex items-center justify-between">
+                        <div className="space-y-1">
+                           <h4 className="font-bold text-[17px] text-white tracking-tight truncate">{item.appName}</h4>
+                           <p className="text-[13px] font-medium text-white/50 truncate">
+                              {subtitle}
+                           </p>
+                        </div>
+                        <div className="text-right space-y-1">
+                           <MoneyDisplay amount={item.amount} hideSymbol={false} className="font-medium text-[16px] text-white" />
+                           <div className="flex items-center justify-end gap-1 text-[13px] text-white/50 font-medium capitalize">
+                              {item.cycle} <Repeat size={12} className="text-white/50" />
+                           </div>
+                        </div>
+                     </div>
+                  </div>
+               )
+             })}
+           </div>
         </div>
       </div>
-
       {showAdd && accounts.length === 0 ? (
         <AddFirstAccountModal
           isOpen={showAdd}
@@ -982,6 +1096,122 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
         </div>,
         document.body
       )}
+
+      {showCalendar && createPortal(
+        <div 
+          className="fixed inset-0 z-[10001] flex items-end justify-center bg-black/85 backdrop-blur-xl animate-in fade-in duration-300 pointer-events-auto"
+          onClick={() => setShowCalendar(false)}
+        >
+           <div 
+             className="w-full h-[95dvh] max-w-xl bg-card sm:rounded-t-[2.5rem] flex flex-col overflow-hidden animate-in slide-in-from-bottom-full duration-300 border-t border-border/10 shadow-2xl"
+             onClick={e => e.stopPropagation()}
+           >
+              {/* Header */}
+              <div className="relative flex items-center justify-center p-4 border-b border-border/5 shrink-0">
+                <h2 className="text-lg font-bold">
+                  {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                </h2>
+                <button 
+                  onClick={() => setShowCalendar(false)}
+                  className="absolute right-4 w-8 h-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors"
+                >
+                  <CloseIcon size={18} />
+                </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto hide-scrollbar pb-20">
+                <div className="p-5">
+                  <div className="text-[13px] text-muted-foreground font-medium mb-1">Remaining this month</div>
+                  <MoneyDisplay amount={monthStats.remaining} className="text-[32px] font-bold tracking-tight leading-none mb-1" />
+                  <div className="text-[13px] text-muted-foreground">of {currency.symbol}{monthStats.total.toFixed(2)} total</div>
+                  
+                  <div className="h-[1px] bg-border/10 w-full my-6" />
+
+                  {/* Calendar Grid */}
+                  <div className="grid grid-cols-7 gap-y-5 text-center">
+                    {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(d => (
+                      <div key={d} className="text-[10px] text-muted-foreground font-bold tracking-widest">{d}</div>
+                    ))}
+                    
+                    {Array.from({ length: new Date(new Date().getFullYear(), new Date().getMonth(), 1).getDay() }).map((_, i) => (
+                      <div key={`empty-${i}`} className="h-10" />
+                    ))}
+                    
+                    {Array.from({ length: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() }).map((_, i) => {
+                      const day = i + 1;
+                      const dateObj = new Date(new Date().getFullYear(), new Date().getMonth(), day);
+                      const isToday = day === new Date().getDate();
+                      const dueItems = getItemsDueOnDate(dateObj, items);
+
+                      return (
+                        <div key={day} className="flex flex-col items-center gap-1.5">
+                          <div className={cn(
+                            "w-7 h-7 rounded-full flex items-center justify-center text-[14px]",
+                            isToday ? "bg-[#e86c44] text-white font-bold" : "text-foreground font-medium"
+                          )}>
+                            {day}
+                          </div>
+                          {dueItems.length > 0 && (
+                            <div className="flex -space-x-1.5">
+                              {dueItems.slice(0, 2).map(di => (
+                                <div key={di.id} className="w-4 h-4 rounded-full border-[1.5px] border-card overflow-hidden bg-black z-[1]">
+                                  {di.logoUrl ? (
+                                    <img src={di.logoUrl} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <span className="text-[8px] font-bold text-white flex items-center justify-center w-full h-full">{di.appName.charAt(0)}</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="px-5 pt-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-bold">Upcoming</h3>
+                    <span className="text-[13px] text-muted-foreground font-medium">
+                      {items.filter(i => !i.paused && i.cycle !== 'lifetime').length} payments · {currency.symbol}{monthStats.remaining.toFixed(2)}
+                    </span>
+                  </div>
+                  
+                  <div className="bg-card/50 rounded-[1.5rem] border border-border/5 overflow-hidden">
+                    {items
+                      .filter(i => !i.paused && i.cycle !== 'lifetime')
+                      .map(item => ({ item, days: getDaysUntilDue(item.startDate || item.createdAt, item.cycle, item.createdAt) }))
+                      .filter(obj => obj.days !== null && obj.days >= 0 && obj.days <= 31)
+                      .sort((a,b) => (a.days as number) - (b.days as number))
+                      .map(({item, days}, idx, arr) => (
+                         <div key={item.id} className={cn("p-4 flex items-center gap-4", idx !== arr.length -1 && "border-b border-white/5")}>
+                            <div className="w-12 h-12 rounded-full overflow-hidden bg-black flex-shrink-0 flex items-center justify-center border border-white/10">
+                              {item.logoUrl ? (
+                                 <img src={item.logoUrl} className="w-full h-full object-cover" />
+                              ) : (
+                                 <span className="font-bold">{item.appName.charAt(0)}</span>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-bold text-[16px] truncate text-foreground">{item.appName}</h4>
+                              <p className="text-[13px] text-muted-foreground font-medium">
+                                {days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `In ${days} days`}
+                              </p>
+                            </div>
+                            <MoneyDisplay amount={item.amount} className="font-bold text-[16px] text-foreground" />
+                         </div>
+                      ))
+                    }
+                  </div>
+                </div>
+              </div>
+           </div>
+        </div>,
+        document.body
+      )}
+
       {selectedItem && createPortal(
         <div className="fixed inset-0 z-[10002] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-300 pointer-events-auto" onClick={() => {
           setSelectedItem(null);
