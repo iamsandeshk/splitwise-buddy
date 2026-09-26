@@ -66,7 +66,7 @@ import { getStoredAccentColor, setStoredAccentColor, type AccentColor } from '@/
 import { getStoredAppFont, setStoredAppFont, type AppFont } from '@/lib/appFont';
 import { getGooglePhotoUrl, signInWithGoogle, signOutGoogle, subscribeGoogleAuth } from '@/integrations/firebase/auth';
 import { getCurrentGoogleUser } from '@/integrations/firebase/auth';
-import { loadBackupForCurrentUser, saveBackupForCurrentUser } from '@/integrations/firebase/backup';
+import { loadBackupForCurrentUser, saveBackupForCurrentUser, deleteCloudBackupForCurrentUser } from '@/integrations/firebase/backup';
 import { useToast } from '@/hooks/use-toast';
 import { useBackHandler } from '@/hooks/useBackHandler';
 import { useAdFree } from '@/hooks/useAdFree';
@@ -113,6 +113,8 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   const [accentColor, setAccentColorState] = useState<AccentColor>(getStoredAccentColor());
   const [appFontState, setAppFontState] = useState<AppFont>(getStoredAppFont());
   const [deleteStep, setDeleteStep] = useState<DeleteStep>('closed');
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
   const [deleteSelections, setDeleteSelections] = useState({ personal: false, shared: false, links: false, more: false });
   const [selectedCurrency, setSelectedCurrency] = useState(getCurrency().code);
   const [tabs, setTabs] = useState<TabConfig[]>(getTabConfig());
@@ -132,6 +134,8 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   const [proOverrideMode, setProOverrideMode] = useState<'force-free' | 'off'>(() => (getProOverride() === 'force-free' ? 'force-free' : 'off'));
 
   const [showCustomize, setShowCustomize] = useState(false);
+  const [showCreatorProgram, setShowCreatorProgram] = useState(false);
+  const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [showAnimationMenu, setShowAnimationMenu] = useState(false);
   const [showNotificationMenu, setShowNotificationMenu] = useState(false);
   const [dailyReminder, setDailyReminder] = useState(() => {
@@ -174,6 +178,8 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   }, [showNotificationMenu]);
 
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
   const [showCurrencyPage, setShowCurrencyPage] = useState(false);
   const [currencyScrolled, setCurrencyScrolled] = useState(false);
   const [currencySearch, setCurrencySearch] = useState('');
@@ -214,6 +220,8 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   // Handle system back gestures for various overlays
   const handleCloseCustomize = useCallback(() => setShowCustomize(false), []);
   useBackHandler(showCustomize, handleCloseCustomize);
+  useBackHandler(showCreatorProgram, () => setShowCreatorProgram(false));
+  useBackHandler(showAccountSettings, () => setShowAccountSettings(false));
   useBackHandler(showCurrencyPage, () => setShowCurrencyPage(false));
   useBackHandler(showPrivacy, () => setShowPrivacy(false));
   useBackHandler(showFullScreenAvatar, () => setShowFullScreenAvatar(false));
@@ -770,27 +778,40 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
     return count;
   };
 
-  const handleConfirmDelete = () => {
-    const allSelected = deleteSelections.personal && deleteSelections.shared && deleteSelections.links && deleteSelections.more;
-    if (deleteSelections.personal) clearPersonalExpenses();
-    if (deleteSelections.shared) clearSharedExpenses();
-    if (deleteSelections.links) clearLinksData();
-    if (deleteSelections.more) clearMoreTabData();
-    // Reset onboarding when all data is cleared so user sees welcome screen again
-    if (allSelected) {
-      localStorage.removeItem('splitmate_onboarding_done');
+  const handleConfirmDelete = async () => {
+    setIsDeleting(true);
+
+    // 1. Wipe all local data
+    clearAllData();
+    localStorage.removeItem('splitmate_onboarding_done');
+
+    // 2. Cloud cleanup — only for PRO users who have cloud data
+    //    Free users never had cloud backups, so no Firestore cleanup needed.
+    //    NOTE: This cloud delete is intentionally ONLY done on account deletion,
+    //    NOT on regular sign out.
+    if (isGoogleConnected) {
+      if (isEffectivePro) {
+        try {
+          await deleteCloudBackupForCurrentUser();
+        } catch (e) {
+          console.error('Cloud backup deletion failed', e);
+          // Proceed anyway — local data is already wiped
+        }
+      }
+      // Sign out regardless of plan
+      try {
+        await signOutGoogle();
+      } catch (e) {
+        console.error('Sign out failed', e);
+      }
     }
 
-    const parts = [];
-    if (deleteSelections.personal) parts.push('personal expenses');
-    if (deleteSelections.shared) parts.push('shared expenses');
-    if (deleteSelections.links) parts.push('links & groups');
-    if (deleteSelections.more) parts.push('extra tools');
+    toast({ title: "Account Deleted", description: "All data has been permanently erased." });
 
-    toast({ title: "Data Deleted", description: `Cleared ${parts.join(', ')}.` });
-    setDeleteStep('closed');
-    setDeleteSelections({ personal: false, shared: false, links: false, more: false });
-    setTimeout(() => window.location.reload(), 800);
+    // 3. Redirect to onboarding
+    setTimeout(() => {
+      window.location.href = '/';
+    }, 400);
   };
 
   const hasAnySelection = deleteSelections.personal || deleteSelections.shared || deleteSelections.links || deleteSelections.more;
@@ -818,1756 +839,2164 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
       </div>
       <div className="p-4 space-y-6 pb-20">
 
-      {/* Account Profile */}
-      <div>
-        <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">Profile</p>
-        <div className="ios-card-modern p-4">
-          {!isEditingProfile ? (
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                {/* Avatar */}
-                <button
-                  onClick={() => {
-                    if (profile.avatar && !avatarLoadFailed) setShowFullScreenAvatar(true);
-                  }}
-                  className="relative w-16 h-16 rounded-full overflow-hidden flex items-center justify-center bg-secondary border border-border/10 shrink-0"
-                  style={{
-                    boxShadow: '0 4px 12px -2px hsl(var(--primary) / 0.15)',
-                  }}
-                >
-                  {profile.avatar && !avatarLoadFailed ? (
-                    <img
-                      src={profile.avatar}
-                      alt="Profile"
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                      onError={() => {
-                        setAvatarLoadFailed(true);
-                      }}
-                    />
-                  ) : (
-                    <UserCircle2 size={36} className="text-muted-foreground" />
-                  )}
-                </button>
-                <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-
-                {/* Name & Email Info */}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-base font-bold truncate text-foreground">{profile.name || 'Guest'}</p>
-                    {isEffectivePro && (
-                      <img
-                        src="/assets/pro-verified-gold.png"
-                        alt="Pro verified"
-                        className="w-4 h-4 object-contain"
-                      />
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground truncate">{profile.email || 'No email added yet'}</p>
-                  {profile.bio && (
-                    <p className="text-xs text-muted-foreground/80 mt-1 line-clamp-1">{profile.bio}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Action Buttons on the right */}
-              <div className="flex items-center gap-2 shrink-0">
-                {isGoogleConnected ? (
-                  // Google Connected: Only Sign Out, no edit details button
-                  <button
-                    onClick={triggerSignOutFlow}
-                    disabled={isGoogleAuthBusy}
-                    className="w-10 h-10 rounded-2xl flex items-center justify-center text-destructive hover:bg-destructive/10 transition-colors"
-                    style={{ background: 'transparent', border: '1px solid hsl(var(--destructive) / 0.3)' }}
-                    title="Sign Out"
-                  >
-                    <LogOut size={16} />
-                  </button>
-                ) : (
-                  // Guest: Edit details and Google Sign-in
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handleEditDetails}
-                      className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95 bg-secondary border border-border/10"
-                      title="Edit Profile"
-                    >
-                      <Pencil size={16} className="text-primary" />
-                    </button>
-                    <button
-                      onClick={handleGoogleSignIn}
-                      disabled={isGoogleAuthBusy}
-                      className="h-10 px-4 rounded-2xl font-semibold flex items-center justify-center gap-2 disabled:opacity-60 text-xs text-primary-foreground"
-                      style={{
-                        background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
-                        boxShadow: '0 4px 12px -4px hsl(var(--primary) / 0.5)',
-                      }}
-                    >
-                      <LogIn size={14} />
-                      {isGoogleAuthBusy ? '...' : 'Sign In'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            // Editing details (only available to Guest accounts since edit button is hidden/removed for Google accounts)
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => avatarInputRef.current?.click()}
-                  className="relative w-16 h-16 rounded-full overflow-hidden flex items-center justify-center bg-secondary border border-border/10 cursor-pointer group shrink-0"
-                >
-                  {profile.avatar && !avatarLoadFailed ? (
-                    <img
-                      src={profile.avatar}
-                      alt="Profile"
-                      className="w-full h-full object-cover group-hover:opacity-75 transition-opacity"
-                      referrerPolicy="no-referrer"
-                      onError={() => {
-                        setAvatarLoadFailed(true);
-                      }}
-                    />
-                  ) : (
-                    <UserCircle2 size={36} className="text-muted-foreground group-hover:opacity-75 transition-opacity" />
-                  )}
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Pencil size={14} className="text-white" />
-                  </div>
-                </button>
-                <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-foreground">Edit Account Details</p>
-                  <p className="text-xs text-muted-foreground">Change name, email or custom bio</p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  ref={nameInputRef}
-                  value={profile.name}
-                  onChange={(e) => {
-                    if (!isGoogleConnected) handleProfileChange('name', e.target.value);
-                  }}
-                  placeholder="Your name"
-                  className="w-full h-11 px-3 rounded-xl text-sm"
-                  style={{
-                    background: 'hsl(var(--secondary) / 0.45)',
-                    border: '1px solid hsl(var(--border) / 0.3)',
-                  }}
-                />
-                <input
-                  type="email"
-                  value={profile.email}
-                  onChange={(e) => {
-                    if (!isGoogleConnected) handleProfileChange('email', e.target.value);
-                  }}
-                  placeholder="Email (optional)"
-                  className="w-full h-11 px-3 rounded-xl text-sm"
-                  style={{
-                    background: 'hsl(var(--secondary) / 0.45)',
-                    border: '1px solid hsl(var(--border) / 0.3)',
-                  }}
-                />
-                <textarea
-                  value={profile.bio}
-                  onChange={(e) => handleProfileChange('bio', e.target.value)}
-                  placeholder="Short bio (optional)"
-                  rows={2}
-                  className="w-full px-3 py-2 rounded-xl text-sm resize-none"
-                  style={{ background: 'hsl(var(--secondary) / 0.45)', border: '1px solid hsl(var(--border) / 0.3)' }}
-                />
-              </div>
-
-              {isProfileDirty ? (
-                <div className="flex gap-2.5">
-                  <button
-                    onClick={handleCancelProfileEdit}
-                    className="flex-1 px-4 py-3 rounded-2xl font-semibold text-sm border border-border bg-secondary/50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSaveProfile}
-                    className="flex-[2] flex items-center justify-center gap-2 px-4 py-3 rounded-2xl font-semibold text-sm"
-                    style={{
-                      background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
-                      color: 'hsl(var(--primary-foreground))',
-                    }}
-                  >
-                    <Save size={14} />
-                    Save Changes
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={handleCancelProfileEdit}
-                  className="w-full px-4 py-3 rounded-2xl font-semibold text-sm border border-border bg-secondary/50"
-                >
-                  Close Editor
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Google explanation link for guests */}
-        {!isEditingProfile && !isGoogleConnected && (
-          <div className="flex justify-center pt-2">
-            <button
-              onClick={() => setShowPrivacy(true)}
-              className="text-[11px] font-medium text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5"
-            >
-              <Shield size={12} />
-              Why do I need to sign in?
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div>
-        <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">PRO</p>
-        <div className="ios-card-modern overflow-hidden">
-
-          {/* Pro Features row */}
+        {/* Account Profile */}
+        <div>
+          <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">Profile</p>
           <button
-            onClick={() => navigate('/pro')}
-            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all relative overflow-hidden group active:scale-[0.98]"
+            onClick={() => setShowAccountSettings(true)}
+            className="ios-card-modern w-full p-4 flex items-center justify-between gap-4 active:scale-[0.985] transition-all text-left group"
           >
-            <img
-              src="/assets/pro-verified-gold.png"
-              alt="Pro verified"
-              className="w-7 h-7 object-contain shrink-0"
-            />
-            <div className="flex-1 text-left">
-              <h2 className="font-semibold text-sm text-foreground mb-0.5">
-                Pro Features
-              </h2>
-              <p className={cn('text-[11px] text-muted-foreground', isEffectivePro && 'text-success/80')}>
-                {isEffectivePro ? `Current plan: ${plan ?? 'Pro'}` : 'Upgrade to unlock premium tools'}
-              </p>
-            </div>
-            <div className="flex items-center justify-center w-6 h-6 shrink-0 transition-transform duration-300 group-hover:translate-x-0.5">
-              <ChevronRight size={18} className="text-muted-foreground/60 group-hover:text-primary transition-colors" />
-            </div>
-          </button>
-
-          {/* Divider + Ads row — only when not Pro */}
-          {!isEffectivePro && (
-            <>
-              <div className="h-px bg-border/20 mx-4" />
-              <button
-                className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all relative active:scale-[0.985] group"
-                onClick={async () => {
-                  if (isAdFree) return;
-                  const success = await showRewardAd();
-                  if (success) {
-                    toast({ title: "Reward Earned! 💎", description: "Ads have been successfully disabled for 24 hours. Enjoy your premium experience!" });
-                  }
-                }}
-              >
-                <div className={cn(
-                  "shrink-0 transition-all duration-700",
-                  isAdFree ? "text-emerald-500" : "text-primary"
-                )}>
-                  {isAdFree ? <Crown size={20} className="animate-pulse" /> : <EyeOff size={20} />}
-                </div>
-                <div className="flex-1 text-left min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h2 className={cn("font-black text-[13px] uppercase tracking-tighter italic", isAdFree ? "text-emerald-500" : "text-foreground")}>
-                      {isAdFree ? 'Premium Ad-Free Active' : 'Remove Advertisements'}
-                    </h2>
-                    {isAdFree && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground font-bold leading-none mt-1.5 uppercase tracking-widest opacity-60">
-                    {isAdFree ? `Clean UI for the next ${remainingTime}` : 'Go Ad-Free for 24 Hours'}
-                  </p>
-                </div>
-                {isAdFree ? (
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <div className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 shadow-inner">
-                      <span className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">{remainingTime}</span>
-                    </div>
-                    <span className="text-[8px] font-bold text-muted-foreground/40 uppercase tracking-[0.2em] pr-0.5">Expires</span>
-                  </div>
-                ) : (
-                  <ChevronRight size={16} className="text-muted-foreground/60 group-hover:text-primary transition-colors shrink-0" />
-                )}
-              </button>
-            </>
-          )}
-
-          {/* Test Free Mode — dev only */}
-          {(import.meta.env.DEV || isDevOverrideEmail(profile?.email)) && (
-            <>
-              <div className="h-px bg-border/20 mx-4" />
-              <div
-                onClick={() => {
-                  const next = proOverrideMode === 'force-free' ? 'off' : 'force-free';
-                  setProOverride(next === 'force-free' ? 'force-free' : null);
-                  setProOverrideMode(next);
-                  if (next === 'force-free') {
-                    localStorage.removeItem('ad_free_until');
-                    setAdsEnabledState(true);
-                    setAdsEnabled(true);
-                    window.dispatchEvent(new Event('splitmate_ads_changed'));
-                  }
-                  toast({
-                    title: next === 'force-free' ? 'Test Free Enabled' : 'Test Free Disabled',
-                    description: next === 'force-free' ? 'Pro access is forced off locally, including lifetime plans.' : 'Real subscription access is restored.',
-                  });
-                }}
-                className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all cursor-pointer active:scale-[0.985] group"
-              >
-                <div className={cn(
-                  "shrink-0 transition-colors duration-300",
-                  proOverrideMode === 'force-free' ? "text-emerald-500" : "text-muted-foreground"
-                )}>
-                  {proOverrideMode === 'force-free' ? <Lock size={20} /> : <Crown size={20} />}
-                </div>
-                <div className="flex-1 text-left">
-                  <h2 className="font-bold text-sm">Test Free Mode</h2>
-                  <p className="text-[11px] text-muted-foreground">Force local free-tier behavior</p>
-                </div>
-                <div className={cn(
-                  "w-12 h-6 rounded-full relative transition-all duration-300 border shrink-0",
-                  proOverrideMode === 'force-free' ? "bg-emerald-500/20" : "bg-secondary"
-                )}>
-                  <div className={cn(
-                    "absolute top-1 w-4 h-4 rounded-full transition-all duration-300",
-                    proOverrideMode === 'force-free' ? "left-7 bg-emerald-500" : "left-1 bg-muted-foreground"
-                  )} />
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Admin Panel — only shown to admin accounts */}
-          {showAdminPanel && (
-            <>
-              <div className="h-px bg-border/20 mx-4" />
-              <button
-                onClick={() => navigate('/admin/pro-users')}
-                className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
-              >
-                <div className="shrink-0 text-amber-500">
-                  <Shield size={20} />
-                </div>
-                <div className="flex-1 text-left">
-                  <h2 className="font-bold text-sm text-foreground">Admin Panel</h2>
-                  <p className="text-[11px] text-muted-foreground">Manage Pro users & subscriptions</p>
-                </div>
-                <ChevronRight size={16} className="text-muted-foreground/60 group-hover:text-amber-500 transition-colors shrink-0" />
-              </button>
-            </>
-          )}
-
-        </div>
-      </div>
-
-      <div>
-        <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">PREFERENCES</p>
-        <div className="ios-card-modern overflow-hidden">
-
-          {/* Customization */}
-          <button
-            onClick={() => setShowCustomize(true)}
-            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
-          >
-            <Palette size={20} className="text-white shrink-0" />
-            <div className="flex-1 text-left">
-              <h2 className="font-bold text-sm">Customization</h2>
-              <p className="text-[11px] text-muted-foreground">Theme &amp; Bottom Tabs</p>
-            </div>
-            <ChevronRight size={16} className="text-muted-foreground" />
-          </button>
-
-          {/* Divider */}
-          <div className="h-px bg-border/20 mx-4" />
-
-          {/* Currency */}
-          <button
-            onClick={() => {
-              setCurrencySearch('');
-              setShowCurrencyPage(true);
-            }}
-            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
-          >
-            <Coins size={20} className="text-white shrink-0" />
-            <div className="flex-1 text-left">
-              <h2 className="font-bold text-sm">Currency</h2>
-              <p className="text-[11px] text-muted-foreground">
-                {selectedCurrency} · {CURRENCIES.find(c => c.code === selectedCurrency)?.symbol}
-              </p>
-            </div>
-            <ChevronRight size={16} className="text-muted-foreground" />
-          </button>
-
-          {/* Divider */}
-          <div className="h-px bg-border/20 mx-4" />
-
-          {/* Animation */}
-          <button
-            onClick={() => setShowAnimationMenu(true)}
-            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
-          >
-            <Sparkles size={20} className="text-white shrink-0" />
-            <div className="flex-1 text-left">
-              <h2 className="font-bold text-sm">Animation</h2>
-              <p className="text-[11px] text-muted-foreground">Motion &amp; transition effects</p>
-            </div>
-            <ChevronRight size={16} className="text-muted-foreground" />
-          </button>
-
-          {/* Divider */}
-          <div className="h-px bg-border/20 mx-4" />
-
-          {/* Notify Me */}
-          <button
-            onClick={() => setShowNotificationMenu(true)}
-            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
-          >
-            <Bell size={20} className="text-white shrink-0" />
-            <div className="flex-1 text-left">
-              <h2 className="font-bold text-sm">Notify Me</h2>
-              <p className="text-[11px] text-muted-foreground">Schedule daily reminder alerts</p>
-            </div>
-            <ChevronRight size={16} className="text-muted-foreground" />
-          </button>
-
-        </div>
-      </div>
-
-
-      {/* Animation Settings Modal */}
-      {createPortal(
-        <AnimatePresence>
-          {showAnimationMenu && (
-            <div className="fixed inset-0 z-[100000] flex items-end justify-center p-4 sm:p-0 pointer-events-none">
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setShowAnimationMenu(false)}
-                className="absolute inset-0 bg-black/60 backdrop-blur-md pointer-events-auto"
-              />
-              <motion.div
-                initial={{ y: "100%", opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: "100%", opacity: 0 }}
-                transition={{ type: "spring", damping: 28, stiffness: 220 }}
-                className="relative w-full max-w-md bg-card border border-border/10 rounded-[1.5rem] shadow-2xl z-[120] overflow-hidden flex flex-col max-h-[75vh] mb-4 pointer-events-auto"
-              >
-                {/* Drag Indicator */}
-                <div className="flex justify-center pt-3 pb-0">
-                  <div className="w-10 h-1 rounded-full bg-muted/20" />
-                </div>
-
-                <div className="p-6 pb-4 border-b border-border/10 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-xl font-bold text-foreground">Advanced Animation</h3>
-                    <p className="text-xs text-muted-foreground mt-1">Experimental UX Props</p>
-                  </div>
-                  <button
-                    onClick={() => setShowAnimationMenu(false)}
-                    className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-muted-foreground active:scale-90 transition-all border border-border/10 shadow-sm"
-                  >
-                    <Check size={18} />
-                  </button>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-5 pb-10">
-                  <div className="ios-card-modern overflow-hidden flex flex-col divide-y divide-border/30">
-                    {/* Liquid Navigation */}
-                    <div className="p-4 flex items-center gap-3.5">
-                      <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center shrink-0">
-                        <Sparkles size={20} className="text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-sm text-foreground">Liquid Navigation</h4>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">Physics-based tab transitions</p>
-                      </div>
-                      <Switch
-                        checked={liquidGlassEnabled}
-                        onCheckedChange={(next) => {
-                          setLiquidGlassEnabledState(next);
-                          setLiquidGlassEnabled(next);
-                          window.dispatchEvent(new CustomEvent('splitmate_liquid_glass_changed', { detail: next }));
-                        }}
-                      />
-                    </div>
-
-                    {/* Page Sliding */}
-                    <div className="p-4 flex items-center gap-3.5">
-                      <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center shrink-0">
-                        <ChevronRight size={20} className="text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-sm text-foreground">Page Sliding</h4>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">Cross-page sliding motion</p>
-                      </div>
-                      <Switch
-                        checked={pageSlideEnabled}
-                        onCheckedChange={(next) => {
-                          setPageSlideEnabledState(next);
-                          setPageSlideEnabled(next);
-                          window.dispatchEvent(new Event('splitmate_page_slide_changed'));
-                        }}
-                      />
-                    </div>
-
-                    {/* Swipe Navigation */}
-                    <div className="p-4 flex items-center gap-3.5">
-                      <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center shrink-0">
-                        <ArrowLeftRight size={20} className="text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-sm text-foreground">Swipe Control</h4>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">Edge-swipe gestures</p>
-                      </div>
-                      <Switch
-                        checked={swipeNavEnabled}
-                        onCheckedChange={(next) => {
-                          setSwipeNavEnabledState(next);
-                          setSwipeNavEnabled(next);
-                          window.dispatchEvent(new Event('splitmate_swipe_nav_changed'));
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>,
-        document.body
-      )}
-
-
-
-      {/* Backup & Restore */}
-      <div>
-        <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">DATA</p>
-        <div className="ios-card-modern overflow-hidden flex flex-col divide-y divide-border/30">
-          <button
-            onClick={() => navigate('/backup')}
-            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
-          >
-            <Database size={20} className="text-white shrink-0" />
-            <div className="flex-1 text-left min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="font-bold text-sm text-foreground">Backup &amp; Restore</h2>
-                {isGoogleConnected && profile.nightlyBackupEnabled && (
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-success/15 text-success">
-                    Auto
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-muted-foreground truncate">
-                {isGoogleConnected
-                  ? cloudBackupUpdatedAt
-                    ? `Synced ${cloudBackupUpdatedAt.toLocaleDateString()}`
-                    : 'Cloud sync & local data backup'
-                  : 'Cloud sync, daily backup & file export'}
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5 text-muted-foreground">
-              {cloudBackupUpdatedAt && (
-                <span className="text-[11px] font-medium text-muted-foreground/70 hidden xs:inline">
-                  {cloudBackupUpdatedAt.toLocaleDateString()}
-                </span>
-              )}
-              <ChevronRight size={16} className="text-muted-foreground shrink-0" />
-            </div>
-          </button>
-          <button
-            onClick={() => {
-              localStorage.removeItem('splitmate_onboarding_done');
-              window.location.reload();
-            }}
-            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
-          >
-            <Presentation size={20} className="text-white shrink-0" />
-            <div className="flex-1 text-left min-w-0">
-              <h2 className="font-bold text-sm text-foreground">Restart Onboarding</h2>
-              <p className="text-[11px] text-muted-foreground">View the intro screens again</p>
-            </div>
-            <ChevronRight size={16} className="text-muted-foreground" />
-          </button>
-          <button
-            onClick={() => {
-              setDeleteStep('select');
-              setDeleteSelections({ personal: false, shared: false, links: false, more: false });
-            }}
-            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group hover:bg-danger/5"
-          >
-            <Trash2 size={20} className="text-white shrink-0" />
-            <div className="flex-1 text-left">
-              <h2 className="font-bold text-sm" style={{ color: 'hsl(var(--danger))' }}>Delete All Data</h2>
-              <p className="text-[11px] text-muted-foreground">Permanently delete app data</p>
-            </div>
-            <ChevronRight size={16} style={{ color: 'hsl(var(--danger))' }} />
-          </button>
-        </div>
-      </div>
-
-      <div>
-        <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">ABOUT</p>
-        <div className="ios-card-modern overflow-hidden flex flex-col divide-y divide-border/30">
-          {/* About Developer */}
-          <a
-            href="https://x.com/The1UX"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all hover:bg-secondary/20 active:bg-secondary/30 active:scale-[0.985] group no-underline"
-          >
-            <UserCircle2 size={20} className="text-white shrink-0" />
-            <div className="flex-1 text-left min-w-0">
-              <h2 className="font-bold text-sm text-foreground">About Developer</h2>
-              <p className="text-[11px] text-muted-foreground">Hi, I'm The1UX! Privacy-first apps.</p>
-            </div>
-            <div className="h-8 px-3 rounded-xl bg-foreground text-background text-[10px] font-black uppercase tracking-tighter flex items-center gap-1.5 shrink-0 shadow-sm">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.25h-6.657l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-              </svg>
-              Follow
-            </div>
-          </a>
-
-          {/* Share the App */}
-          <button
-            type="button"
-            onClick={handleShareApp}
-            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all hover:bg-secondary/20 active:bg-secondary/30 active:scale-[0.985] group text-left"
-          >
-            <Share2 size={20} className="text-muted-foreground shrink-0" />
-            <div className="flex-1 text-left min-w-0">
-              <h2 className="font-bold text-sm text-foreground">Share the App</h2>
-              <p className="text-[11px] text-muted-foreground">Invite friends to track expenses together</p>
-            </div>
-            <ChevronRight size={16} className="text-muted-foreground" />
-          </button>
-
-          {/* Privacy Policy */}
-          <a
-            href="/privacy-policy.html"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all hover:bg-secondary/20 active:bg-secondary/30 active:scale-[0.985] group no-underline"
-          >
-            <Shield size={20} className="text-muted-foreground shrink-0" />
-            <div className="flex-1 text-left min-w-0">
-              <h2 className="font-bold text-sm text-foreground">Privacy Policy</h2>
-              <p className="text-[11px] text-muted-foreground">How we handle your data</p>
-            </div>
-            <ExternalLink size={16} className="text-muted-foreground" />
-          </a>
-
-          {/* Terms & Conditions */}
-          <a
-            href="/terms-and-conditions.html"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all hover:bg-secondary/20 active:bg-secondary/30 active:scale-[0.985] group no-underline"
-          >
-            <Info size={20} className="text-muted-foreground shrink-0" />
-            <div className="flex-1 text-left min-w-0">
-              <h2 className="font-bold text-sm text-foreground">Terms & Conditions</h2>
-              <p className="text-[11px] text-muted-foreground">App usage rules and guidelines</p>
-            </div>
-            <ExternalLink size={16} className="text-muted-foreground" />
-          </a>
-        </div>
-      </div>
-
-      {/* ── Portals ── */}
-
-
-
-      {/* ── Customization Full-Page ── */}
-      {showCustomize && createPortal(
-        <div
-          className="fixed inset-x-0 bottom-0 z-[10000] flex flex-col bg-background overscroll-none"
-          style={{
-            top: '-200px', // Reach way above parent safe-area shift
-            paddingTop: '200px', // Move content back down
-            height: 'calc(100dvh + 200px)',
-            width: '100vw',
-            background: 'hsl(var(--background))',
-          }}
-          onTouchMove={(e) => { if (dragIndex !== null) { e.preventDefault(); handleDragMove(e.touches[0].clientY); } }}
-          onTouchEnd={() => { handleLongPressCancel(); handleDragEnd(); }}
-          onMouseMove={(e) => { if (dragIndex !== null) handleDragMove(e.clientY); }}
-          onMouseUp={() => { handleLongPressCancel(); handleDragEnd(); }}
-        >
-          {/* Header — editorial */}
-          <div className="px-5 pt-12 pb-4">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowCustomize(false)}
-                className="w-10 h-10 rounded-2xl bg-secondary/60 border border-border/55 flex items-center justify-center active:scale-95 transition-all"
-                aria-label="Back"
-              >
-                <ChevronLeft size={18} strokeWidth={2.5} />
-              </button>
-              <h1 className="text-xl font-bold tracking-tight text-foreground">Customization</h1>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-5 pb-8 space-y-6">
-            {/* Theme — Appearance */}
-            <section>
-              <div className="section-head mb-3">
-                <h2>Appearance</h2>
-                <span className="mono-label">01 / Theme</span>
-              </div>
-              <div className="slab-flat p-5 space-y-4">
-                <p className="text-[13px] text-muted-foreground leading-snug">
-                  Choose how the app looks. <span className="text-foreground font-semibold">Auto</span> follows your phone.
-                </p>
-                <div className="grid grid-cols-3 gap-2">
-                  {([
-                    { mode: 'light' as ThemeMode, icon: Sun, label: 'Light' },
-                    { mode: 'dark' as ThemeMode, icon: Moon, label: 'Dark' },
-                    { mode: 'system' as ThemeMode, icon: Monitor, label: 'Auto' },
-                  ]).map(({ mode, icon: Icon, label }) => {
-                    const active = theme === mode;
-                    return (
-                      <button
-                        key={mode}
-                        onClick={() => handleThemeChange(mode)}
-                        className={cn(
-                          "h-16 flex flex-col items-center justify-center gap-1.5 rounded-2xl border transition-all active:scale-[0.97]",
-                          active
-                            ? "bg-primary/10 border-primary/50 text-primary"
-                            : "bg-secondary/40 border-border/55 text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        <Icon size={18} strokeWidth={2.2} />
-                        <span className="text-[11px] font-bold uppercase tracking-wider">{label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </section>
-
-            {/* Accent Color Section */}
-            <section>
-              <div className="section-head mb-3">
-                <h2>Accent Color</h2>
-                <span className="mono-label">02 / Color</span>
-              </div>
-              <div className="slab-flat p-5">
-                <div className="flex items-center justify-between px-2 py-1">
-                  {([
-                    { id: 'orange' as AccentColor, label: 'Orange', bgClass: 'bg-[#ff6b35]' },
-                    { id: 'purple' as AccentColor, label: 'Purple', bgClass: 'bg-[#8b5cf6]' },
-                    { id: 'green' as AccentColor, label: 'Green', bgClass: 'bg-[#10b981]' },
-                    { id: 'blue' as AccentColor, label: 'Blue', bgClass: 'bg-[#3b82f6]' },
-                    { id: 'red' as AccentColor, label: 'Red', bgClass: 'bg-[#f43f5e]' },
-                  ]).map(({ id, label, bgClass }, index) => {
-                    const active = accentColor === id;
-                    const isProColor = index > 0;
-                    const locked = isProColor && !isEffectivePro;
-                    
-                    return (
-                      <button
-                        key={id}
-                        onClick={() => {
-                          if (locked) {
-                            requestProUpgrade('customization', 'Upgrade to unlock premium accent colors.');
-                            return;
-                          }
-                          if (accentColor === id) return;
-                          setAccentColorState(id);
-                          setStoredAccentColor(id);
-                          toast({ title: 'Accent Color Updated', description: `${label} theme is now active.` });
-                        }}
-                        className={cn(
-                          "w-12 h-12 rounded-full flex items-center justify-center relative active:scale-90 transition-all border-2",
-                          active ? "border-primary bg-primary/10" : "border-transparent hover:border-border/40",
-                          locked && "opacity-60 grayscale-[0.5]"
-                        )}
-                        title={label}
-                      >
-                        <div className={cn("w-8 h-8 rounded-full shrink-0 shadow-sm flex items-center justify-center", bgClass)}>
-                          {locked && <Lock size={12} className="text-white/90" strokeWidth={3} />}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </section>
-
-            {/* App Font Section */}
-            <section>
-              <div className="section-head mb-3">
-                <h2>App Font</h2>
-                <span className="mono-label">FONT STYLE</span>
-              </div>
-              <div className="slab-flat p-5">
-                <div className="flex flex-col gap-2">
-                  {([
-                    { id: 'nothing' as AppFont, label: 'Nothing (Dotted)', class: 'font-preview-nothing' },
-                    { id: 'samsung' as AppFont, label: 'Samsung Sans', class: 'font-preview-samsung' },
-                    { id: 'google' as AppFont, label: 'Google Sans', class: 'font-preview-google' },
-                    { id: 'system' as AppFont, label: 'System Default', class: 'font-preview-system' },
-                  ]).map(({ id, label, class: fontClass }, index) => {
-                    const active = appFontState === id;
-                    const isProFont = index < 3; // First 3 are custom fonts
-                    const locked = isProFont && !isEffectivePro;
-                    
-                    return (
-                      <button
-                        key={id}
-                        onClick={() => {
-                          if (locked) {
-                            requestProUpgrade('customization', 'Upgrade to unlock premium fonts.');
-                            return;
-                          }
-                          if (appFontState === id) return;
-                          setAppFontState(id);
-                          setStoredAppFont(id);
-                          toast({ title: 'Font Updated', description: `${label} font is now active.` });
-                        }}
-                        className={cn(
-                          "w-full h-14 rounded-[1rem] flex items-center justify-between px-4 active:scale-95 transition-all border-2",
-                          active ? "border-primary bg-primary/10 text-primary" : "border-border/30 bg-secondary/30 hover:border-border/60 text-foreground",
-                          locked && "opacity-60 grayscale-[0.5]"
-                        )}
-                      >
-                        <span className={cn("text-[15px]", fontClass, active ? "font-bold" : "font-medium")}>
-                          {label}
-                        </span>
-                        {locked ? (
-                          <Lock size={16} className="text-muted-foreground" />
-                        ) : active ? (
-                          <Check size={18} strokeWidth={3} className="text-primary" />
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </section>
-
-            {/* Bottom Tabs section */}
-            <section>
-              <div className="section-head mb-3">
-                <h2>Bottom Navigation</h2>
-                <span className="mono-label">03 / Tabs</span>
-              </div>
-              <div className="slab-flat p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-bold text-foreground">Show Tab Names</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">Display labels under icons</p>
-                  </div>
-                  <Switch
-                    checked={showTabNames}
-                    onCheckedChange={(checked) => {
-                      setShowTabNamesState(checked);
-                      setShowTabNamesEnabled(checked);
-                    }}
+            <div className="flex items-center gap-3.5 min-w-0 flex-1">
+              <div className="relative w-16 h-16 rounded-full overflow-hidden flex items-center justify-center bg-secondary border border-border/10 shrink-0 shadow-[0_4px_12px_-2px_hsl(var(--primary)_/_0.15)]">
+                {profile.avatar && !avatarLoadFailed ? (
+                  <img
+                    src={profile.avatar}
+                    alt="Profile"
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                    onError={() => setAvatarLoadFailed(true)}
                   />
-                </div>
-
-                <div className="h-px bg-border/40" />
-
-                <p className="text-[13px] text-muted-foreground leading-snug">
-                  Reorder the tabs at the bottom of the app. Use the arrows or <span className="text-foreground font-semibold">long-press &amp; drag</span>.
-                </p>
-
-                <div className="space-y-2">
-                  {bottomTabs.map((tab, index) => {
-                    const isFixed = fixedTabSet.has(tab.id);
-                    const Icon = TAB_ICONS[tab.id] || Sparkles;
-                    const iconColor = TAB_COLORS[tab.id] || 'text-primary';
-                    return (
-                      <div
-                        key={tab.id}
-                        className={cn(
-                          "h-14 flex items-center gap-3 p-2 rounded-2xl transition-all bg-secondary/40 border border-border/55 active:scale-[0.98]",
-                          tab.id === 'home' && "border-primary/45"
-                        )}
-                        ref={(el) => {
-                          if (el) itemRefs.current.set(index, el);
-                          else itemRefs.current.delete(index);
-                        }}
-                        style={{
-                          transform: dragIndex === index ? `translateY(${dragOffsetY}px)` : 'translateY(0px)',
-                          transition: dragIndex === index ? 'none' : 'transform 0.18s ease',
-                          zIndex: dragIndex === index ? 10 : 1,
-                          opacity: dragIndex === index ? 0.96 : 1,
-                        }}
-                      >
-                        <div
-                          className="flex-1 flex items-center gap-3 min-w-0"
-                          style={{ touchAction: 'none', cursor: 'grab' }}
-                          onTouchStart={(e) => {
-                            if (e.touches[0]) handleLongPressStart(index, e.touches[0].clientY);
-                          }}
-                          onTouchEnd={handleLongPressCancel}
-                          onTouchCancel={handleLongPressCancel}
-                          onMouseDown={(e) => handleLongPressStart(index, e.clientY)}
-                          onMouseUp={handleLongPressCancel}
-                          onMouseLeave={handleLongPressCancel}
-                        >
-                          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-background border border-border/55 shrink-0">
-                            <Icon size={17} className={iconColor} strokeWidth={2.4} />
-                          </div>
-
-                          <div className="flex-1 min-w-0">
-                            <span className="font-bold text-sm block truncate text-foreground leading-tight">
-                              {TAB_LABELS[tab.id] || tab.id}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 pr-1">
-                          <button
-                            onClick={() => moveBottomTab(tab.id, 'up')}
-                            disabled={index === 0}
-                            className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-30 bg-background border border-border/55 hover:border-primary/40 active:scale-90 transition-all text-muted-foreground hover:text-primary"
-                            aria-label="Move up"
-                          >
-                            <ChevronUp size={15} strokeWidth={2.5} />
-                          </button>
-                          <button
-                            onClick={() => moveBottomTab(tab.id, 'down')}
-                            disabled={index === bottomTabs.length - 1}
-                            className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-30 bg-background border border-border/55 hover:border-primary/40 active:scale-90 transition-all text-muted-foreground hover:text-primary"
-                            aria-label="Move down"
-                          >
-                            <ChevronDown size={15} strokeWidth={2.5} />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                ) : (
+                  <UserCircle2 size={36} className="text-muted-foreground" />
+                )}
               </div>
-            </section>
 
-            {/* Reset */}
-            <section className="pt-2">
-              <button
-                onClick={handleResetCustomization}
-                className="btn-ghost-dashed w-full gap-2 !py-4"
-              >
-                <RotateCcw size={15} />
-                Reset everything to defaults
-              </button>
-              <p className="text-[11px] text-muted-foreground text-center mt-2 leading-snug">
-                Restores theme, style, and tab order. Your data stays safe.
-              </p>
-            </section>
-
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {showCurrencyPage && createPortal(
-        <div className="fixed inset-0 z-[10001] flex flex-col" style={{ background: 'hsl(var(--background))', overscrollBehavior: 'contain' }}>
-          {/* Top Header */}
-          <div className="flex items-center justify-between px-5 pt-12 pb-3 shrink-0">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => {
-                  setShowCurrencyPage(false);
-                }}
-                className="w-10 h-10 rounded-2xl bg-secondary/60 border border-border/55 flex items-center justify-center active:scale-90 transition-all"
-              >
-                <ChevronLeft size={18} strokeWidth={2.5} />
-              </button>
-              <h1 className="text-xl font-bold">Currency</h1>
-            </div>
-
-            {/* Top right selected currency badge when scrolled */}
-            {(() => {
-              const sel = CURRENCIES.find(c => c.code === selectedCurrency);
-              return sel ? (
-                <div
-                  className={cn(
-                    "w-10 h-10 rounded-2xl border-2 border-primary/60 bg-primary/10 flex items-center justify-center font-black text-primary text-base transition-all duration-300 shrink-0",
-                    currencyScrolled ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-base font-bold truncate text-foreground">{profile.name || 'Guest'}</p>
+                  {isEffectivePro && (
+                    <img src="/assets/pro-verified-gold.png" alt="Pro verified" className="w-4 h-4 object-contain" />
                   )}
-                  title={`${sel.name} (${sel.code})`}
-                >
-                  {sel.symbol}
                 </div>
-              ) : null;
-            })()}
-          </div>
-
-          <div
-            className="flex-1 overflow-y-auto px-5 pb-6"
-            style={{ overscrollBehavior: 'contain' }}
-            onScroll={(e) => {
-              const isScrolled = e.currentTarget.scrollTop > 50;
-              if (isScrolled !== currencyScrolled) {
-                setCurrencyScrolled(isScrolled);
-              }
-            }}
-          >
-            {/* Selected currency hero */}
-            {(() => {
-              const sel = CURRENCIES.find(c => c.code === selectedCurrency);
-              return sel ? (
-                <div className="flex flex-col items-center gap-1.5 py-4">
-                  <div className="w-20 h-20 rounded-full border-2 border-primary/60 bg-primary/10 flex items-center justify-center shadow-inner">
-                    <span className="text-3xl font-black text-primary leading-none">{sel.symbol}</span>
-                  </div>
-                  <span className="text-sm font-bold text-foreground mt-1">{sel.code}</span>
-                  <span className="text-xs text-muted-foreground">{sel.name}</span>
-                </div>
-              ) : null;
-            })()}
-
-            {/* Search bar - sticky right below the header when scrolled */}
-            <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-md pt-1 pb-3">
-              <div className="relative">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  value={currencySearch}
-                  onChange={(e) => setCurrencySearch(e.target.value)}
-                  placeholder="Search by name, code, or symbol"
-                  className="w-full h-11 pl-10 pr-3 rounded-2xl text-sm"
-                  style={{ background: 'hsl(var(--muted) / 0.3)', border: '1px solid hsl(var(--border) / 0.2)' }}
-                  autoFocus
-                />
+                <p className="text-xs text-muted-foreground truncate">{profile.email || 'No email added yet'}</p>
               </div>
             </div>
-
-            {filteredCurrencies.length === 0 ? (
-              <div className="ios-card-modern p-4 text-sm text-muted-foreground text-center">
-                No currency found for &quot;{currencySearch}&quot;.
-              </div>
-            ) : (
-              <div className="ios-card-modern overflow-hidden">
-                {filteredCurrencies.map((currency, idx) => {
-                  const isSelected = selectedCurrency === currency.code;
-                  return (
-                    <React.Fragment key={currency.code}>
-                      {idx > 0 && <div className="h-px bg-border/20 mx-4" />}
-                      <button
-                        onClick={() => {
-                          handleCurrencyChange(currency.code);
-                        }}
-                        className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985]"
-                      >
-                        {/* Symbol on left */}
-                        <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg shrink-0"
-                          style={{
-                            background: isSelected ? 'hsl(var(--primary) / 0.12)' : 'hsl(var(--secondary) / 0.6)',
-                            color: isSelected ? 'hsl(var(--primary))' : 'hsl(var(--foreground))',
-                          }}
-                        >
-                          {currency.symbol}
-                        </div>
-                        {/* Name + code on right */}
-                        <div className="flex-1 text-left min-w-0">
-                          <p className={`font-semibold text-sm truncate ${isSelected ? 'text-primary' : 'text-foreground'}`}>
-                            {currency.name}
-                          </p>
-                          <p className="text-xs text-muted-foreground">{currency.code}</p>
-                        </div>
-                        {isSelected && <Check size={16} className="text-primary shrink-0" />}
-                      </button>
-                    </React.Fragment>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* ── Reminders & Notifications Portal ── */}
-      {showNotificationMenu && createPortal(
-        <div
-          className="fixed inset-x-0 bottom-0 z-[10000] flex flex-col bg-background overscroll-none animate-in slide-in-from-bottom duration-300"
-          style={{
-            top: '-200px',
-            paddingTop: '200px',
-            height: 'calc(100dvh + 200px)',
-            width: '100vw',
-            background: 'hsl(var(--background))',
-          }}
-        >
-          {/* Header */}
-          <div className="px-5 pt-12 pb-4">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowNotificationMenu(false)}
-                className="w-10 h-10 rounded-2xl bg-secondary/60 border border-border/55 flex items-center justify-center active:scale-95 transition-all"
-                aria-label="Back"
-              >
-                <ChevronLeft size={18} strokeWidth={2.5} />
-              </button>
-              <h1 className="text-xl font-bold tracking-tight text-foreground">Notify Me</h1>
+            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-secondary/50 group-hover:bg-secondary shrink-0 transition-colors">
+              <ChevronRight size={16} className="text-muted-foreground" />
             </div>
-          </div>
+          </button>
 
-          <div className="flex-1 overflow-y-auto px-5 pb-10 space-y-6">
-            {/* Notification Permission Banner */}
-            {!hasNotificationPermission && (
-              <div className="slab-flat p-4 bg-primary/5 border border-primary/20 space-y-3 rounded-3xl">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-primary/15 flex items-center justify-center text-primary shrink-0 mt-0.5">
-                    <Bell size={15} strokeWidth={2.5} />
-                  </div>
-                  <div className="space-y-0.5 text-left">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-primary">Enable Alerts</h4>
-                    <p className="text-[11px] text-muted-foreground leading-snug">
-                      Grant notification permission to allow SplitMate to remind you on this device.
-                    </p>
-                  </div>
-                </div>
+          {/* Sign In prompt — only when not signed in */}
+          {!isGoogleConnected && (
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={isGoogleAuthBusy}
+              className="mt-2 ios-card-modern w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group hover:bg-primary/5"
+            >
+              {/* Google Icon */}
+              <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center shrink-0 border border-border/10">
+                <svg width="18" height="18" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <h2 className="font-bold text-sm text-primary">Sign In with Google</h2>
+                <p className="text-[11px] text-muted-foreground">Enable cloud backup & sync</p>
+              </div>
+              {isGoogleAuthBusy ? (
+                <RefreshCw size={16} className="text-primary animate-spin shrink-0" />
+              ) : (
+                <ChevronRight size={16} className="text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+              )}
+            </button>
+          )}
+        </div>
+
+        <div>
+          <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">PRO</p>
+          <div className="ios-card-modern overflow-hidden">
+
+            {/* Pro Features row */}
+            <button
+              onClick={() => navigate('/pro')}
+              className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all relative overflow-hidden group active:scale-[0.98]"
+            >
+              <img
+                src="/assets/pro-verified-gold.png"
+                alt="Pro verified"
+                className="w-7 h-7 object-contain shrink-0"
+              />
+              <div className="flex-1 text-left">
+                <h2 className="font-semibold text-sm text-foreground mb-0.5">
+                  Pro Features
+                </h2>
+                <p className={cn('text-[11px] text-muted-foreground', isEffectivePro && 'text-success/80')}>
+                  {isEffectivePro ? `Current plan: ${plan ?? 'Pro'}` : 'Upgrade to unlock premium tools'}
+                </p>
+              </div>
+              <div className="flex items-center justify-center w-6 h-6 shrink-0 transition-transform duration-300 group-hover:translate-x-0.5">
+                <ChevronRight size={18} className="text-muted-foreground/60 group-hover:text-primary transition-colors" />
+              </div>
+            </button>
+
+            {/* Divider + Ads row — only when not Pro */}
+            {!isEffectivePro && (
+              <>
+                <div className="h-px bg-border/20 mx-4" />
                 <button
+                  onClick={() => setShowCreatorProgram(true)}
+                  className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group relative overflow-hidden"
+                >
+                  <div className="shrink-0 text-purple-400 relative z-10">
+                    <Sparkles size={20} />
+                  </div>
+                  <div className="flex-1 text-left relative z-10">
+                    <h2 className="font-bold text-sm text-foreground flex items-center gap-2">
+                      Get Lifetime PRO Free
+                    </h2>
+                    <p className="text-[11px] text-muted-foreground">Post about the app on social media</p>
+                  </div>
+                  <ChevronRight size={16} className="text-muted-foreground/60 group-hover:text-purple-400 transition-colors shrink-0 relative z-10" />
+                </button>
+
+                <div className="h-px bg-border/20 mx-4" />
+                <button
+                  className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all relative active:scale-[0.985] group"
                   onClick={async () => {
-                    const granted = await requestNotificationPermission();
-                    if (granted) {
-                      setHasNotificationPermission(true);
-                      toast({ title: 'Notifications Enabled', description: 'You will now receive alerts for your reminders.' });
-                    } else {
-                      toast({ title: 'Permission Denied', description: 'Please enable notifications in your device settings.', variant: 'destructive' });
+                    if (isAdFree) return;
+                    const success = await showRewardAd();
+                    if (success) {
+                      toast({ title: "Reward Earned! 💎", description: "Ads have been successfully disabled for 24 hours. Enjoy your premium experience!" });
                     }
                   }}
-                  className="w-full h-10 rounded-xl bg-primary text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all"
                 >
-                  Grant Permission
+                  <div className={cn(
+                    "shrink-0 transition-all duration-700",
+                    isAdFree ? "text-emerald-500" : "text-primary"
+                  )}>
+                    {isAdFree ? <Crown size={20} className="animate-pulse" /> : <EyeOff size={20} />}
+                  </div>
+                  <div className="flex-1 text-left min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <h2 className={cn("font-black text-[13px] uppercase tracking-tighter italic", isAdFree ? "text-emerald-500" : "text-foreground")}>
+                        {isAdFree ? 'Premium Ad-Free Active' : 'Remove Advertisements'}
+                      </h2>
+                      {isAdFree && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground font-bold leading-none mt-1.5 uppercase tracking-widest opacity-60">
+                      {isAdFree ? `Clean UI for the next ${remainingTime}` : 'Go Ad-Free for 24 Hours'}
+                    </p>
+                  </div>
+                  {isAdFree ? (
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <div className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 shadow-inner">
+                        <span className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">{remainingTime}</span>
+                      </div>
+                      <span className="text-[8px] font-bold text-muted-foreground/40 uppercase tracking-[0.2em] pr-0.5">Expires</span>
+                    </div>
+                  ) : (
+                    <ChevronRight size={16} className="text-muted-foreground/60 group-hover:text-primary transition-colors shrink-0" />
+                  )}
                 </button>
-              </div>
+              </>
             )}
 
-            {/* Daily Reminder Setup */}
-            <section>
-              <div className="section-head mb-3">
-                <h2>Daily Reminder</h2>
-                <span className="mono-label">01 / Every Day</span>
-              </div>
-              <div className="slab-flat p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="text-left">
-                    <h3 className="font-bold text-sm">Daily Alert</h3>
-                    <p className="text-[11px] text-muted-foreground mt-1">Remind me to log today's expenses</p>
+            {/* Test Free Mode — dev only */}
+            {(import.meta.env.DEV || isDevOverrideEmail(profile?.email)) && (
+              <>
+                <div className="h-px bg-border/20 mx-4" />
+                <div
+                  onClick={() => {
+                    const next = proOverrideMode === 'force-free' ? 'off' : 'force-free';
+                    setProOverride(next === 'force-free' ? 'force-free' : null);
+                    setProOverrideMode(next);
+                    if (next === 'force-free') {
+                      localStorage.removeItem('ad_free_until');
+                      setAdsEnabledState(true);
+                      setAdsEnabled(true);
+                      window.dispatchEvent(new Event('splitmate_ads_changed'));
+                    }
+                    toast({
+                      title: next === 'force-free' ? 'Test Free Enabled' : 'Test Free Disabled',
+                      description: next === 'force-free' ? 'Pro access is forced off locally, including lifetime plans.' : 'Real subscription access is restored.',
+                    });
+                  }}
+                  className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all cursor-pointer active:scale-[0.985] group"
+                >
+                  <div className={cn(
+                    "shrink-0 transition-colors duration-300",
+                    proOverrideMode === 'force-free' ? "text-emerald-500" : "text-muted-foreground"
+                  )}>
+                    {proOverrideMode === 'force-free' ? <Lock size={20} /> : <Crown size={20} />}
                   </div>
-                  <Switch
-                    checked={dailyReminder.enabled}
-                    onCheckedChange={async (next) => {
-                      if (next) {
+                  <div className="flex-1 text-left">
+                    <h2 className="font-bold text-sm">Test Free Mode</h2>
+                    <p className="text-[11px] text-muted-foreground">Force local free-tier behavior</p>
+                  </div>
+                  <div className={cn(
+                    "w-12 h-6 rounded-full relative transition-all duration-300 border shrink-0",
+                    proOverrideMode === 'force-free' ? "bg-emerald-500/20" : "bg-secondary"
+                  )}>
+                    <div className={cn(
+                      "absolute top-1 w-4 h-4 rounded-full transition-all duration-300",
+                      proOverrideMode === 'force-free' ? "left-7 bg-emerald-500" : "left-1 bg-muted-foreground"
+                    )} />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Admin Panel — only shown to admin accounts */}
+            {showAdminPanel && (
+              <>
+                <div className="h-px bg-border/20 mx-4" />
+                <button
+                  onClick={() => navigate('/admin/pro-users')}
+                  className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
+                >
+                  <div className="shrink-0 text-amber-500">
+                    <Shield size={20} />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <h2 className="font-bold text-sm text-foreground">Admin Panel</h2>
+                    <p className="text-[11px] text-muted-foreground">Manage Pro users & subscriptions</p>
+                  </div>
+                  <ChevronRight size={16} className="text-muted-foreground/60 group-hover:text-amber-500 transition-colors shrink-0" />
+                </button>
+              </>
+            )}
+
+          </div>
+        </div>
+
+
+        <div>
+          <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">PREFERENCES</p>
+          <div className="ios-card-modern overflow-hidden">
+
+            {/* Customization */}
+            <button
+              onClick={() => setShowCustomize(true)}
+              className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
+            >
+              <Palette size={20} className="text-white shrink-0" />
+              <div className="flex-1 text-left">
+                <h2 className="font-bold text-sm">Customization</h2>
+                <p className="text-[11px] text-muted-foreground">Theme &amp; Bottom Tabs</p>
+              </div>
+              <ChevronRight size={16} className="text-muted-foreground" />
+            </button>
+
+            {/* Divider */}
+            <div className="h-px bg-border/20 mx-4" />
+
+            {/* Currency */}
+            <button
+              onClick={() => {
+                setCurrencySearch('');
+                setShowCurrencyPage(true);
+              }}
+              className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
+            >
+              <Coins size={20} className="text-white shrink-0" />
+              <div className="flex-1 text-left">
+                <h2 className="font-bold text-sm">Currency</h2>
+                <p className="text-[11px] text-muted-foreground">
+                  {selectedCurrency} · {CURRENCIES.find(c => c.code === selectedCurrency)?.symbol}
+                </p>
+              </div>
+              <ChevronRight size={16} className="text-muted-foreground" />
+            </button>
+
+            {/* Divider */}
+            <div className="h-px bg-border/20 mx-4" />
+
+            {/* Animation */}
+            <button
+              onClick={() => setShowAnimationMenu(true)}
+              className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
+            >
+              <Sparkles size={20} className="text-white shrink-0" />
+              <div className="flex-1 text-left">
+                <h2 className="font-bold text-sm">Animation</h2>
+                <p className="text-[11px] text-muted-foreground">Motion &amp; transition effects</p>
+              </div>
+              <ChevronRight size={16} className="text-muted-foreground" />
+            </button>
+
+            {/* Divider */}
+            <div className="h-px bg-border/20 mx-4" />
+
+            {/* Notify Me */}
+            <button
+              onClick={() => setShowNotificationMenu(true)}
+              className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
+            >
+              <Bell size={20} className="text-white shrink-0" />
+              <div className="flex-1 text-left">
+                <h2 className="font-bold text-sm">Notify Me</h2>
+                <p className="text-[11px] text-muted-foreground">Schedule daily reminder alerts</p>
+              </div>
+              <ChevronRight size={16} className="text-muted-foreground" />
+            </button>
+
+          </div>
+        </div>
+
+
+        {/* Animation Settings Modal */}
+        {createPortal(
+          <AnimatePresence>
+            {showAnimationMenu && (
+              <div className="fixed inset-0 z-[100000] flex items-end justify-center p-4 sm:p-0 pointer-events-none">
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setShowAnimationMenu(false)}
+                  className="absolute inset-0 bg-black/60 backdrop-blur-md pointer-events-auto"
+                />
+                <motion.div
+                  initial={{ y: "100%", opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: "100%", opacity: 0 }}
+                  transition={{ type: "spring", damping: 28, stiffness: 220 }}
+                  className="relative w-full max-w-md bg-card border border-border/10 rounded-[1.5rem] shadow-2xl z-[120] overflow-hidden flex flex-col max-h-[75vh] mb-4 pointer-events-auto"
+                >
+                  {/* Drag Indicator */}
+                  <div className="flex justify-center pt-3 pb-0">
+                    <div className="w-10 h-1 rounded-full bg-muted/20" />
+                  </div>
+
+                  <div className="p-6 pb-4 border-b border-border/10 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xl font-bold text-foreground">Advanced Animation</h3>
+                      <p className="text-xs text-muted-foreground mt-1">Experimental UX Props</p>
+                    </div>
+                    <button
+                      onClick={() => setShowAnimationMenu(false)}
+                      className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-muted-foreground active:scale-90 transition-all border border-border/10 shadow-sm"
+                    >
+                      <Check size={18} />
+                    </button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto p-5 pb-10">
+                    <div className="ios-card-modern overflow-hidden flex flex-col divide-y divide-border/30">
+                      {/* Liquid Navigation */}
+                      <div className="p-4 flex items-center gap-3.5">
+                        <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center shrink-0">
+                          <Sparkles size={20} className="text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-semibold text-sm text-foreground">Liquid Navigation</h4>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">Physics-based tab transitions</p>
+                        </div>
+                        <Switch
+                          checked={liquidGlassEnabled}
+                          onCheckedChange={(next) => {
+                            setLiquidGlassEnabledState(next);
+                            setLiquidGlassEnabled(next);
+                            window.dispatchEvent(new CustomEvent('splitmate_liquid_glass_changed', { detail: next }));
+                          }}
+                        />
+                      </div>
+
+                      {/* Page Sliding */}
+                      <div className="p-4 flex items-center gap-3.5">
+                        <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center shrink-0">
+                          <ChevronRight size={20} className="text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-semibold text-sm text-foreground">Page Sliding</h4>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">Cross-page sliding motion</p>
+                        </div>
+                        <Switch
+                          checked={pageSlideEnabled}
+                          onCheckedChange={(next) => {
+                            setPageSlideEnabledState(next);
+                            setPageSlideEnabled(next);
+                            window.dispatchEvent(new Event('splitmate_page_slide_changed'));
+                          }}
+                        />
+                      </div>
+
+                      {/* Swipe Navigation */}
+                      <div className="p-4 flex items-center gap-3.5">
+                        <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center shrink-0">
+                          <ArrowLeftRight size={20} className="text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-semibold text-sm text-foreground">Swipe Control</h4>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">Edge-swipe gestures</p>
+                        </div>
+                        <Switch
+                          checked={swipeNavEnabled}
+                          onCheckedChange={(next) => {
+                            setSwipeNavEnabledState(next);
+                            setSwipeNavEnabled(next);
+                            window.dispatchEvent(new Event('splitmate_swipe_nav_changed'));
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
+
+
+
+        {/* Backup & Restore */}
+        <div>
+          <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">DATA</p>
+          <div className="ios-card-modern overflow-hidden flex flex-col divide-y divide-border/30">
+            <button
+              onClick={() => navigate('/backup')}
+              className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
+            >
+              <Database size={20} className="text-white shrink-0" />
+              <div className="flex-1 text-left min-w-0">
+                <div className="flex items-center gap-2">
+                  <h2 className="font-bold text-sm text-foreground">Backup &amp; Restore</h2>
+                  {isGoogleConnected && profile.nightlyBackupEnabled && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-success/15 text-success">
+                      Auto
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground truncate">
+                  {isGoogleConnected
+                    ? cloudBackupUpdatedAt
+                      ? `Synced ${cloudBackupUpdatedAt.toLocaleDateString()}`
+                      : 'Cloud sync & local data backup'
+                    : 'Cloud sync, daily backup & file export'}
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                {cloudBackupUpdatedAt && (
+                  <span className="text-[11px] font-medium text-muted-foreground/70 hidden xs:inline">
+                    {cloudBackupUpdatedAt.toLocaleDateString()}
+                  </span>
+                )}
+                <ChevronRight size={16} className="text-muted-foreground shrink-0" />
+              </div>
+            </button>
+            <button
+              onClick={() => {
+                localStorage.removeItem('splitmate_onboarding_done');
+                window.location.reload();
+              }}
+              className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group"
+            >
+              <Presentation size={20} className="text-white shrink-0" />
+              <div className="flex-1 text-left min-w-0">
+                <h2 className="font-bold text-sm text-foreground">Restart Onboarding</h2>
+                <p className="text-[11px] text-muted-foreground">View the intro screens again</p>
+              </div>
+              <ChevronRight size={16} className="text-muted-foreground" />
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">ABOUT</p>
+          <div className="ios-card-modern overflow-hidden flex flex-col divide-y divide-border/30">
+            {/* About Developer */}
+            <a
+              href="https://x.com/The1UX"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all hover:bg-secondary/20 active:bg-secondary/30 active:scale-[0.985] group no-underline"
+            >
+              <UserCircle2 size={20} className="text-white shrink-0" />
+              <div className="flex-1 text-left min-w-0">
+                <h2 className="font-bold text-sm text-foreground">About Developer</h2>
+                <p className="text-[11px] text-muted-foreground">Hi, I'm The1UX! Privacy-first apps.</p>
+              </div>
+              <div className="h-8 px-3 rounded-xl bg-foreground text-background text-[10px] font-black uppercase tracking-tighter flex items-center gap-1.5 shrink-0 shadow-sm">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.25h-6.657l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                </svg>
+                Follow
+              </div>
+            </a>
+
+            {/* Share the App */}
+            <button
+              type="button"
+              onClick={handleShareApp}
+              className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all hover:bg-secondary/20 active:bg-secondary/30 active:scale-[0.985] group text-left"
+            >
+              <Share2 size={20} className="text-muted-foreground shrink-0" />
+              <div className="flex-1 text-left min-w-0">
+                <h2 className="font-bold text-sm text-foreground">Share the App</h2>
+                <p className="text-[11px] text-muted-foreground">Invite friends to track expenses together</p>
+              </div>
+              <ChevronRight size={16} className="text-muted-foreground" />
+            </button>
+
+            {/* Privacy Policy */}
+            <a
+              href="/privacy-policy.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all hover:bg-secondary/20 active:bg-secondary/30 active:scale-[0.985] group no-underline"
+            >
+              <Shield size={20} className="text-muted-foreground shrink-0" />
+              <div className="flex-1 text-left min-w-0">
+                <h2 className="font-bold text-sm text-foreground">Privacy Policy</h2>
+                <p className="text-[11px] text-muted-foreground">How we handle your data</p>
+              </div>
+              <ExternalLink size={16} className="text-muted-foreground" />
+            </a>
+
+            {/* Terms & Conditions */}
+            <a
+              href="/terms-and-conditions.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all hover:bg-secondary/20 active:bg-secondary/30 active:scale-[0.985] group no-underline"
+            >
+              <Info size={20} className="text-muted-foreground shrink-0" />
+              <div className="flex-1 text-left min-w-0">
+                <h2 className="font-bold text-sm text-foreground">Terms & Conditions</h2>
+                <p className="text-[11px] text-muted-foreground">App usage rules and guidelines</p>
+              </div>
+              <ExternalLink size={16} className="text-muted-foreground" />
+            </a>
+
+            {/* Help Center */}
+            <button
+              type="button"
+              onClick={() => setShowHelp(true)}
+              className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all hover:bg-secondary/20 active:bg-secondary/30 active:scale-[0.985] group text-left"
+            >
+              <HelpCircle size={20} className="text-muted-foreground shrink-0" />
+              <div className="flex-1 text-left min-w-0">
+                <h2 className="font-bold text-sm text-foreground">Help & Support</h2>
+                <p className="text-[11px] text-muted-foreground">FAQs and contact the developer</p>
+              </div>
+              <ChevronRight size={16} className="text-muted-foreground" />
+            </button>
+          </div>
+        </div>
+
+        {/* ── Portals ── */}
+
+        {/* ── Help Center Full-Page ── */}
+        {createPortal(
+          <AnimatePresence>
+            {showHelp && (
+              <motion.div
+                key="help-modal"
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="fixed inset-0 z-[12000] bg-background flex flex-col pointer-events-auto"
+              >
+                {/* Header */}
+                <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-md px-4 pt-4 pb-2 border-b border-border/10 flex items-center gap-3">
+                  <button
+                    onClick={() => setShowHelp(false)}
+                    className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 active:scale-95 transition-all bg-secondary/50"
+                  >
+                    <ChevronLeft size={20} />
+                  </button>
+                  <div className="flex-1">
+                    <h2 className="text-xl font-bold">Help & Support</h2>
+                    <p className="text-[11px] text-muted-foreground">Common questions answered</p>
+                  </div>
+                  <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center">
+                    <HelpCircle size={18} className="text-primary" />
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-36">
+                  {/* FAQ Section */}
+                  <p className="text-xs text-muted-foreground uppercase px-1 font-semibold">Frequently Asked Questions</p>
+                  <div className="ios-card-modern overflow-hidden divide-y divide-border/20">
+                    {[
+                      {
+                        q: 'How do I add an expense?',
+                        a: 'Tap the "+" button on the home screen. Fill in the amount, category, and description, then hit Save. You can also attach a receipt image.',
+                      },
+                      {
+                        q: 'How do I split a bill with friends?',
+                        a: 'Go to the Shared tab and create a new shared expense. Add your friends, set the split method (equal or custom), and save. Everyone gets a clear breakdown.',
+                      },
+                      {
+                        q: 'Is my data backed up automatically?',
+                        a: 'If you sign in with Google, your data is backed up to the cloud automatically. Without sign-in, data is stored locally on your device only.',
+                      },
+                      {
+                        q: 'How do I restore my data?',
+                        a: 'Go to Settings → Backup & Restore. If you are signed into Google, you will see your last cloud backup and can restore it with one tap.',
+                      },
+                      {
+                        q: 'What is PRO and what does it include?',
+                        a: 'PRO unlocks unlimited cloud backups, advanced analytics, custom categories, and removes ads. You can get Lifetime PRO for free via the Creator Program in Settings.',
+                      },
+                      {
+                        q: 'How do subscriptions work in the app?',
+                        a: 'The Subscriptions tab lets you track your recurring payments. Add a subscription with its name, cost, and billing cycle. The app shows upcoming renewals on a date scroll.',
+                      },
+                      {
+                        q: 'Can I export my data?',
+                        a: 'Yes! Go to Settings → Backup & Restore and use the Export option to download your data as a file. PRO users get additional export formats.',
+                      },
+                      {
+                        q: 'How do I delete my account and all data?',
+                        a: 'Go to Settings → Account Settings → Danger Zone → Delete Account & Data. Type DELETE to confirm. This permanently removes all data locally and from the cloud.',
+                      },
+                    ].map((faq, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setOpenFaqIndex(openFaqIndex === i ? null : i)}
+                        className="w-full text-left px-4 py-3.5 hover:bg-secondary/20 active:bg-secondary/30 transition-colors"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-semibold text-sm text-foreground leading-snug flex-1">{faq.q}</p>
+                          <motion.div
+                            animate={{ rotate: openFaqIndex === i ? 180 : 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="shrink-0"
+                          >
+                            <ChevronDown size={16} className="text-muted-foreground" />
+                          </motion.div>
+                        </div>
+                        <AnimatePresence>
+                          {openFaqIndex === i && (
+                            <motion.p
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className="text-[13px] text-muted-foreground leading-relaxed mt-2 overflow-hidden"
+                            >
+                              {faq.a}
+                            </motion.p>
+                          )}
+                        </AnimatePresence>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sticky Bottom — Contact Dev */}
+                <div className="absolute bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-md border-t border-border/10">
+                  <p className="text-[11px] text-muted-foreground text-center mb-3">Still have an issue? We're here to help.</p>
+                  <a
+                    href="mailto:try.sandeshk@gmail.com?subject=SplitMate-Help&body=Hi,%0A%0AI need help with:%20%0A%0AApp version: SplitMate Android"
+                    className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-bold text-sm bg-primary text-primary-foreground active:scale-[0.98] transition-all"
+                  >
+                    <MessageSquare size={16} />
+                    Contact Developer
+                  </a>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
+
+        {/* ── Customization Full-Page ── */}
+        {showCustomize && createPortal(
+          <div
+            className="fixed inset-x-0 bottom-0 z-[10000] flex flex-col bg-background overscroll-none"
+            style={{
+              top: '-200px', // Reach way above parent safe-area shift
+              paddingTop: '200px', // Move content back down
+              height: 'calc(100dvh + 200px)',
+              width: '100vw',
+              background: 'hsl(var(--background))',
+            }}
+            onTouchMove={(e) => { if (dragIndex !== null) { e.preventDefault(); handleDragMove(e.touches[0].clientY); } }}
+            onTouchEnd={() => { handleLongPressCancel(); handleDragEnd(); }}
+            onMouseMove={(e) => { if (dragIndex !== null) handleDragMove(e.clientY); }}
+            onMouseUp={() => { handleLongPressCancel(); handleDragEnd(); }}
+          >
+            {/* Header — editorial */}
+            <div className="px-5 pt-12 pb-4">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowCustomize(false)}
+                  className="w-10 h-10 rounded-2xl bg-secondary/60 border border-border/55 flex items-center justify-center active:scale-95 transition-all"
+                  aria-label="Back"
+                >
+                  <ChevronLeft size={18} strokeWidth={2.5} />
+                </button>
+                <h1 className="text-xl font-bold tracking-tight text-foreground">Customization</h1>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 pb-8 space-y-6">
+              {/* Theme — Appearance */}
+              <section>
+                <div className="section-head mb-3">
+                  <h2>Appearance</h2>
+                  <span className="mono-label">01 / Theme</span>
+                </div>
+                <div className="slab-flat p-5 space-y-4">
+                  <p className="text-[13px] text-muted-foreground leading-snug">
+                    Choose how the app looks.
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { mode: 'light' as ThemeMode, icon: Sun, label: 'Light' },
+                      { mode: 'dark' as ThemeMode, icon: Moon, label: 'Dark' },
+                      { mode: 'system' as ThemeMode, icon: Monitor, label: 'System' },
+                    ]).map(({ mode, icon: Icon, label }) => {
+                      const active = theme === mode;
+                      return (
+                        <button
+                          key={mode}
+                          onClick={() => handleThemeChange(mode)}
+                          className={cn(
+                            "h-16 flex flex-col items-center justify-center gap-1.5 rounded-2xl border transition-all active:scale-[0.97]",
+                            active
+                              ? "bg-primary/10 border-primary/50 text-primary"
+                              : "bg-secondary/40 border-border/55 text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          <Icon size={18} strokeWidth={2.2} />
+                          <span className="text-[11px] font-bold uppercase tracking-wider">{label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </section>
+
+              {/* Accent Color Section */}
+              <section>
+                <div className="section-head mb-3">
+                  <h2>Accent Color</h2>
+                  <span className="mono-label">02 / Color</span>
+                </div>
+                <div className="slab-flat p-5">
+                  <div className="flex items-center justify-between px-2 py-1">
+                    {([
+                      { id: 'orange' as AccentColor, label: 'Orange', bgClass: 'bg-[#ff6b35]' },
+                      { id: 'purple' as AccentColor, label: 'Purple', bgClass: 'bg-[#8b5cf6]' },
+                      { id: 'green' as AccentColor, label: 'Green', bgClass: 'bg-[#10b981]' },
+                      { id: 'blue' as AccentColor, label: 'Blue', bgClass: 'bg-[#3b82f6]' },
+                      { id: 'red' as AccentColor, label: 'Red', bgClass: 'bg-[#f43f5e]' },
+                    ]).map(({ id, label, bgClass }, index) => {
+                      const active = accentColor === id;
+                      const isProColor = index > 0;
+                      const locked = isProColor && !isEffectivePro;
+
+                      return (
+                        <button
+                          key={id}
+                          onClick={() => {
+                            if (locked) {
+                              requestProUpgrade('customization', 'Upgrade to unlock premium accent colors.');
+                              return;
+                            }
+                            if (accentColor === id) return;
+                            setAccentColorState(id);
+                            setStoredAccentColor(id);
+                            toast({ title: 'Accent Color Updated', description: `${label} theme is now active.` });
+                          }}
+                          className={cn(
+                            "w-12 h-12 rounded-full flex items-center justify-center relative active:scale-90 transition-all border-2",
+                            active ? "border-primary bg-primary/10" : "border-transparent hover:border-border/40",
+                            locked && "opacity-60 grayscale-[0.5]"
+                          )}
+                          title={label}
+                        >
+                          <div className={cn("w-8 h-8 rounded-full shrink-0 shadow-sm flex items-center justify-center", bgClass)}>
+                            {locked && <Lock size={12} className="text-white/90" strokeWidth={3} />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </section>
+
+              {/* App Font Section */}
+              <section>
+                <div className="section-head mb-3">
+                  <h2>App Font</h2>
+                  <span className="mono-label">FONT STYLE</span>
+                </div>
+                <div className="slab-flat p-5">
+                  <div className="flex flex-col gap-2">
+                    {([
+                      { id: 'nothing' as AppFont, label: 'Nothing (Dotted)', class: 'font-preview-nothing' },
+                      { id: 'samsung' as AppFont, label: 'Samsung Sans', class: 'font-preview-samsung' },
+                      { id: 'google' as AppFont, label: 'Google Sans', class: 'font-preview-google' },
+                      { id: 'system' as AppFont, label: 'System Default', class: 'font-preview-system' },
+                    ]).map(({ id, label, class: fontClass }, index) => {
+                      const active = appFontState === id;
+                      const isProFont = index < 3; // First 3 are custom fonts
+                      const locked = isProFont && !isEffectivePro;
+
+                      return (
+                        <button
+                          key={id}
+                          onClick={() => {
+                            if (locked) {
+                              requestProUpgrade('customization', 'Upgrade to unlock premium fonts.');
+                              return;
+                            }
+                            if (appFontState === id) return;
+                            setAppFontState(id);
+                            setStoredAppFont(id);
+                            toast({ title: 'Font Updated', description: `${label} font is now active.` });
+                          }}
+                          className={cn(
+                            "w-full h-14 rounded-[1rem] flex items-center justify-between px-4 active:scale-95 transition-all border-2",
+                            active ? "border-primary bg-primary/10 text-primary" : "border-border/30 bg-secondary/30 hover:border-border/60 text-foreground",
+                            locked && "opacity-60 grayscale-[0.5]"
+                          )}
+                        >
+                          <span className={cn("text-[15px]", fontClass, active ? "font-bold" : "font-medium")}>
+                            {label}
+                          </span>
+                          {locked ? (
+                            <Lock size={16} className="text-muted-foreground" />
+                          ) : active ? (
+                            <Check size={18} strokeWidth={3} className="text-primary" />
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </section>
+
+              {/* Bottom Tabs section */}
+              <section>
+                <div className="section-head mb-3">
+                  <h2>Bottom Navigation</h2>
+                  <span className="mono-label">03 / Tabs</span>
+                </div>
+                <div className="slab-flat p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-foreground">Show Tab Names</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">Display labels under icons</p>
+                    </div>
+                    <Switch
+                      checked={showTabNames}
+                      onCheckedChange={(checked) => {
+                        setShowTabNamesState(checked);
+                        setShowTabNamesEnabled(checked);
+                      }}
+                    />
+                  </div>
+
+                  <div className="h-px bg-border/40" />
+
+                  <p className="text-[13px] text-muted-foreground leading-snug">
+                    Reorder the tabs at the bottom of the app. Use the arrows or <span className="text-foreground font-semibold">long-press &amp; drag</span>.
+                  </p>
+
+                  <div className="space-y-2">
+                    {bottomTabs.map((tab, index) => {
+                      const isFixed = fixedTabSet.has(tab.id);
+                      const Icon = TAB_ICONS[tab.id] || Sparkles;
+                      const iconColor = TAB_COLORS[tab.id] || 'text-primary';
+                      return (
+                        <div
+                          key={tab.id}
+                          className={cn(
+                            "h-14 flex items-center gap-3 p-2 rounded-2xl transition-all bg-secondary/40 border border-border/55 active:scale-[0.98]",
+                            tab.id === 'home' && "border-primary/45"
+                          )}
+                          ref={(el) => {
+                            if (el) itemRefs.current.set(index, el);
+                            else itemRefs.current.delete(index);
+                          }}
+                          style={{
+                            transform: dragIndex === index ? `translateY(${dragOffsetY}px)` : 'translateY(0px)',
+                            transition: dragIndex === index ? 'none' : 'transform 0.18s ease',
+                            zIndex: dragIndex === index ? 10 : 1,
+                            opacity: dragIndex === index ? 0.96 : 1,
+                          }}
+                        >
+                          <div
+                            className="flex-1 flex items-center gap-3 min-w-0"
+                            style={{ touchAction: 'none', cursor: 'grab' }}
+                            onTouchStart={(e) => {
+                              if (e.touches[0]) handleLongPressStart(index, e.touches[0].clientY);
+                            }}
+                            onTouchEnd={handleLongPressCancel}
+                            onTouchCancel={handleLongPressCancel}
+                            onMouseDown={(e) => handleLongPressStart(index, e.clientY)}
+                            onMouseUp={handleLongPressCancel}
+                            onMouseLeave={handleLongPressCancel}
+                          >
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-background border border-border/55 shrink-0">
+                              <Icon size={17} className={iconColor} strokeWidth={2.4} />
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <span className="font-bold text-sm block truncate text-foreground leading-tight">
+                                {TAB_LABELS[tab.id] || tab.id}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 pr-1">
+                            <button
+                              onClick={() => moveBottomTab(tab.id, 'up')}
+                              disabled={index === 0}
+                              className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-30 bg-background border border-border/55 hover:border-primary/40 active:scale-90 transition-all text-muted-foreground hover:text-primary"
+                              aria-label="Move up"
+                            >
+                              <ChevronUp size={15} strokeWidth={2.5} />
+                            </button>
+                            <button
+                              onClick={() => moveBottomTab(tab.id, 'down')}
+                              disabled={index === bottomTabs.length - 1}
+                              className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-30 bg-background border border-border/55 hover:border-primary/40 active:scale-90 transition-all text-muted-foreground hover:text-primary"
+                              aria-label="Move down"
+                            >
+                              <ChevronDown size={15} strokeWidth={2.5} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </section>
+
+              {/* Reset */}
+              <section className="pt-2">
+                <button
+                  onClick={handleResetCustomization}
+                  className="btn-ghost-dashed w-full gap-2 !py-4"
+                >
+                  <RotateCcw size={15} />
+                  Reset everything to defaults
+                </button>
+                <p className="text-[11px] text-muted-foreground text-center mt-2 leading-snug">
+                  Restores theme, style, and tab order. Your data stays safe.
+                </p>
+              </section>
+
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {showCurrencyPage && createPortal(
+          <div className="fixed inset-0 z-[10001] flex flex-col" style={{ background: 'hsl(var(--background))', overscrollBehavior: 'contain' }}>
+            {/* Top Header */}
+            <div className="flex items-center justify-between px-5 pt-12 pb-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setShowCurrencyPage(false);
+                  }}
+                  className="w-10 h-10 rounded-2xl bg-secondary/60 border border-border/55 flex items-center justify-center active:scale-90 transition-all"
+                >
+                  <ChevronLeft size={18} strokeWidth={2.5} />
+                </button>
+                <h1 className="text-xl font-bold">Currency</h1>
+              </div>
+
+              {/* Top right selected currency badge when scrolled */}
+              {(() => {
+                const sel = CURRENCIES.find(c => c.code === selectedCurrency);
+                return sel ? (
+                  <div
+                    className={cn(
+                      "w-10 h-10 rounded-2xl border-2 border-primary/60 bg-primary/10 flex items-center justify-center font-black text-primary text-base transition-all duration-300 shrink-0",
+                      currencyScrolled ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
+                    )}
+                    title={`${sel.name} (${sel.code})`}
+                  >
+                    {sel.symbol}
+                  </div>
+                ) : null;
+              })()}
+            </div>
+
+            <div
+              className="flex-1 overflow-y-auto px-5 pb-6"
+              style={{ overscrollBehavior: 'contain' }}
+              onScroll={(e) => {
+                const isScrolled = e.currentTarget.scrollTop > 50;
+                if (isScrolled !== currencyScrolled) {
+                  setCurrencyScrolled(isScrolled);
+                }
+              }}
+            >
+              {/* Selected currency hero */}
+              {(() => {
+                const sel = CURRENCIES.find(c => c.code === selectedCurrency);
+                return sel ? (
+                  <div className="flex flex-col items-center gap-1.5 py-4">
+                    <div className="w-20 h-20 rounded-full border-2 border-primary/60 bg-primary/10 flex items-center justify-center shadow-inner">
+                      <span className="text-3xl font-black text-primary leading-none">{sel.symbol}</span>
+                    </div>
+                    <span className="text-sm font-bold text-foreground mt-1">{sel.code}</span>
+                    <span className="text-xs text-muted-foreground">{sel.name}</span>
+                  </div>
+                ) : null;
+              })()}
+
+              {/* Search bar - sticky right below the header when scrolled */}
+              <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-md pt-1 pb-3">
+                <div className="relative">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    value={currencySearch}
+                    onChange={(e) => setCurrencySearch(e.target.value)}
+                    placeholder="Search by name, code, or symbol"
+                    className="w-full h-11 pl-10 pr-3 rounded-2xl text-sm"
+                    style={{ background: 'hsl(var(--muted) / 0.3)', border: '1px solid hsl(var(--border) / 0.2)' }}
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              {filteredCurrencies.length === 0 ? (
+                <div className="ios-card-modern p-4 text-sm text-muted-foreground text-center">
+                  No currency found for &quot;{currencySearch}&quot;.
+                </div>
+              ) : (
+                <div className="ios-card-modern overflow-hidden">
+                  {filteredCurrencies.map((currency, idx) => {
+                    const isSelected = selectedCurrency === currency.code;
+                    return (
+                      <React.Fragment key={currency.code}>
+                        {idx > 0 && <div className="h-px bg-border/20 mx-4" />}
+                        <button
+                          onClick={() => {
+                            handleCurrencyChange(currency.code);
+                          }}
+                          className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985]"
+                        >
+                          {/* Symbol on left */}
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg shrink-0"
+                            style={{
+                              background: isSelected ? 'hsl(var(--primary) / 0.12)' : 'hsl(var(--secondary) / 0.6)',
+                              color: isSelected ? 'hsl(var(--primary))' : 'hsl(var(--foreground))',
+                            }}
+                          >
+                            {currency.symbol}
+                          </div>
+                          {/* Name + code on right */}
+                          <div className="flex-1 text-left min-w-0">
+                            <p className={`font-semibold text-sm truncate ${isSelected ? 'text-primary' : 'text-foreground'}`}>
+                              {currency.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground">{currency.code}</p>
+                          </div>
+                          {isSelected && <Check size={16} className="text-primary shrink-0" />}
+                        </button>
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {/* ── Reminders & Notifications Portal ── */}
+        {showNotificationMenu && createPortal(
+          <div
+            className="fixed inset-x-0 bottom-0 z-[10000] flex flex-col bg-background overscroll-none animate-in slide-in-from-bottom duration-300"
+            style={{
+              top: '-200px',
+              paddingTop: '200px',
+              height: 'calc(100dvh + 200px)',
+              width: '100vw',
+              background: 'hsl(var(--background))',
+            }}
+          >
+            {/* Header */}
+            <div className="px-5 pt-12 pb-4">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowNotificationMenu(false)}
+                  className="w-10 h-10 rounded-2xl bg-secondary/60 border border-border/55 flex items-center justify-center active:scale-95 transition-all"
+                  aria-label="Back"
+                >
+                  <ChevronLeft size={18} strokeWidth={2.5} />
+                </button>
+                <h1 className="text-xl font-bold tracking-tight text-foreground">Notify Me</h1>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 pb-10 space-y-6">
+              {/* Notification Permission Banner */}
+              {!hasNotificationPermission && (
+                <div className="slab-flat p-4 bg-primary/5 border border-primary/20 space-y-3 rounded-3xl">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-primary/15 flex items-center justify-center text-primary shrink-0 mt-0.5">
+                      <Bell size={15} strokeWidth={2.5} />
+                    </div>
+                    <div className="space-y-0.5 text-left">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-primary">Enable Alerts</h4>
+                      <p className="text-[11px] text-muted-foreground leading-snug">
+                        Grant notification permission to allow SplitMate to remind you on this device.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const granted = await requestNotificationPermission();
+                      if (granted) {
+                        setHasNotificationPermission(true);
+                        toast({ title: 'Notifications Enabled', description: 'You will now receive alerts for your reminders.' });
+                      } else {
+                        toast({ title: 'Permission Denied', description: 'Please enable notifications in your device settings.', variant: 'destructive' });
+                      }
+                    }}
+                    className="w-full h-10 rounded-xl bg-primary text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all"
+                  >
+                    Grant Permission
+                  </button>
+                </div>
+              )}
+
+              {/* Daily Reminder Setup */}
+              <section>
+                <div className="section-head mb-3">
+                  <h2>Daily Reminder</h2>
+                  <span className="mono-label">01 / Every Day</span>
+                </div>
+                <div className="slab-flat p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-left">
+                      <h3 className="font-bold text-sm">Daily Alert</h3>
+                      <p className="text-[11px] text-muted-foreground mt-1">Remind me to log today's expenses</p>
+                    </div>
+                    <Switch
+                      checked={dailyReminder.enabled}
+                      onCheckedChange={async (next) => {
+                        if (next) {
+                          const granted = await requestNotificationPermission();
+                          setHasNotificationPermission(granted);
+                          if (!granted) {
+                            toast({
+                              title: "Permission Required",
+                              description: "Please enable notifications to receive reminders.",
+                              variant: "destructive"
+                            });
+                            return;
+                          }
+                        }
+                        const updated = { ...dailyReminder, enabled: next };
+                        setDailyReminder(updated);
+                        localStorage.setItem('splitmate_reminder_settings', JSON.stringify(updated));
+                        await syncScheduledNotifications();
+                        toast({
+                          title: next ? "Daily Reminders Active" : "Daily Reminders Paused",
+                          description: next ? `We will notify you at ${updated.times.map(t => formatTime12h(t)).join(', ')} every day.` : "You won't receive daily reminder alerts.",
+                        });
+                      }}
+                    />
+                  </div>
+
+                  {dailyReminder.enabled && (
+                    <div className="pt-3 border-t border-border/10 animate-in slide-in-from-top-2 duration-200 text-left space-y-3">
+                      <label className="block text-[10px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] px-1">Alert Times</label>
+                      <div className="space-y-2.5">
+                        {dailyReminder.times.map((time, idx) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <input
+                              type="time"
+                              value={time}
+                              onChange={async (e) => {
+                                const nextTimes = [...dailyReminder.times];
+                                nextTimes[idx] = e.target.value;
+                                const updated = { ...dailyReminder, times: nextTimes };
+                                setDailyReminder(updated);
+                                localStorage.setItem('splitmate_reminder_settings', JSON.stringify(updated));
+                                await syncScheduledNotifications();
+                              }}
+                              className="flex-1 h-12 px-4 rounded-2xl text-[14px] font-black bg-secondary/30 border border-border/10 focus:ring-2 focus:ring-primary/20 transition-all font-mono"
+                            />
+                            {dailyReminder.times.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const nextTimes = dailyReminder.times.filter((_, i) => i !== idx);
+                                  const updated = { ...dailyReminder, times: nextTimes };
+                                  setDailyReminder(updated);
+                                  localStorage.setItem('splitmate_reminder_settings', JSON.stringify(updated));
+                                  await syncScheduledNotifications();
+                                  toast({ title: 'Time Removed', description: 'Reminder slot removed.' });
+                                }}
+                                className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center active:scale-95 transition-all"
+                              >
+                                <X size={16} strokeWidth={2.5} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {dailyReminder.times.length < 3 && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const nextTimes = [...dailyReminder.times, '12:00'];
+                            const updated = { ...dailyReminder, times: nextTimes };
+                            setDailyReminder(updated);
+                            localStorage.setItem('splitmate_reminder_settings', JSON.stringify(updated));
+                            await syncScheduledNotifications();
+                            toast({ title: 'Time Slot Added', description: `You can schedule up to 3 slots.` });
+                          }}
+                          className="w-full h-11 rounded-2xl bg-secondary/50 border border-dashed border-border/20 text-[10px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 text-muted-foreground hover:text-foreground"
+                        >
+                          <Plus size={12} strokeWidth={3} />
+                          Add Time Slot ({dailyReminder.times.length}/3)
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {/* Custom Specific Date Reminders */}
+              <section>
+                <div className="section-head mb-3">
+                  <h2>One-time Reminder</h2>
+                  <span className="mono-label">02 / Custom Date</span>
+                </div>
+                <div className="slab-flat p-5 space-y-4 text-left">
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    Schedule a specific date and time to alert you. Great for month-ends or payday.
+                  </p>
+
+                  <div className="space-y-3.5">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <label className="block text-[9px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] px-1">Select Date</label>
+                        <input
+                          type="date"
+                          value={newCustomReminder.date}
+                          onChange={(e) => setNewCustomReminder(p => ({ ...p, date: e.target.value }))}
+                          className="w-full h-12 px-4 rounded-2xl text-xs font-bold bg-secondary/30 border border-border/10 focus:ring-2 focus:ring-primary/20 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="block text-[9px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] px-1">Select Time</label>
+                        <input
+                          type="time"
+                          value={newCustomReminder.time}
+                          onChange={(e) => setNewCustomReminder(p => ({ ...p, time: e.target.value }))}
+                          className="w-full h-12 px-4 rounded-2xl text-xs font-bold bg-secondary/30 border border-border/10 focus:ring-2 focus:ring-primary/20 transition-all font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-[9px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] px-1">Message</label>
+                      <input
+                        type="text"
+                        value={newCustomReminder.message}
+                        onChange={(e) => setNewCustomReminder(p => ({ ...p, message: e.target.value }))}
+                        placeholder="Add entry for today! 💸"
+                        className="w-full h-12 px-4 rounded-2xl text-xs font-bold bg-secondary/30 border border-border/10 focus:ring-2 focus:ring-primary/20 transition-all"
+                      />
+                    </div>
+
+                    <button
+                      onClick={async () => {
+                        if (!newCustomReminder.date || !newCustomReminder.time) return;
                         const granted = await requestNotificationPermission();
                         setHasNotificationPermission(granted);
                         if (!granted) {
                           toast({
                             title: "Permission Required",
-                            description: "Please enable notifications to receive reminders.",
+                            description: "Please enable notifications to receive custom alerts.",
                             variant: "destructive"
                           });
                           return;
                         }
-                      }
-                      const updated = { ...dailyReminder, enabled: next };
-                      setDailyReminder(updated);
-                      localStorage.setItem('splitmate_reminder_settings', JSON.stringify(updated));
-                      await syncScheduledNotifications();
-                      toast({
-                        title: next ? "Daily Reminders Active" : "Daily Reminders Paused",
-                        description: next ? `We will notify you at ${updated.times.map(t => formatTime12h(t)).join(', ')} every day.` : "You won't receive daily reminder alerts.",
-                      });
-                    }}
-                  />
+
+                        const reminder = {
+                          id: generateId(),
+                          date: newCustomReminder.date,
+                          time: newCustomReminder.time,
+                          message: newCustomReminder.message.trim() || 'Add entry for today! 💸',
+                          notified: false
+                        };
+                        const updated = [...customReminders, reminder].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+                        setCustomReminders(updated);
+                        localStorage.setItem('splitmate_custom_reminders', JSON.stringify(updated));
+                        await syncScheduledNotifications();
+                        toast({ title: 'Reminder Scheduled', description: `Alert set for ${new Date(reminder.date).toLocaleDateString()} at ${formatTime12h(reminder.time)}` });
+                        setNewCustomReminder({
+                          date: new Date().toISOString().slice(0, 10),
+                          time: '20:00',
+                          message: 'Add entry for today! 💸',
+                        });
+                      }}
+                      className="w-full h-12 rounded-2xl bg-primary text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/10"
+                    >
+                      <Plus size={14} strokeWidth={2.5} />
+                      Schedule Alert
+                    </button>
+                  </div>
                 </div>
+              </section>
 
-                {dailyReminder.enabled && (
-                  <div className="pt-3 border-t border-border/10 animate-in slide-in-from-top-2 duration-200 text-left space-y-3">
-                    <label className="block text-[10px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] px-1">Alert Times</label>
-                    <div className="space-y-2.5">
-                      {dailyReminder.times.map((time, idx) => (
-                        <div key={idx} className="flex items-center gap-2">
-                          <input
-                            type="time"
-                            value={time}
-                            onChange={async (e) => {
-                              const nextTimes = [...dailyReminder.times];
-                              nextTimes[idx] = e.target.value;
-                              const updated = { ...dailyReminder, times: nextTimes };
-                              setDailyReminder(updated);
-                              localStorage.setItem('splitmate_reminder_settings', JSON.stringify(updated));
-                              await syncScheduledNotifications();
-                            }}
-                            className="flex-1 h-12 px-4 rounded-2xl text-[14px] font-black bg-secondary/30 border border-border/10 focus:ring-2 focus:ring-primary/20 transition-all font-mono"
-                          />
-                          {dailyReminder.times.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const nextTimes = dailyReminder.times.filter((_, i) => i !== idx);
-                                const updated = { ...dailyReminder, times: nextTimes };
-                                setDailyReminder(updated);
-                                localStorage.setItem('splitmate_reminder_settings', JSON.stringify(updated));
-                                await syncScheduledNotifications();
-                                toast({ title: 'Time Removed', description: 'Reminder slot removed.' });
-                              }}
-                              className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center active:scale-95 transition-all"
-                            >
-                              <X size={16} strokeWidth={2.5} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    {dailyReminder.times.length < 3 && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const nextTimes = [...dailyReminder.times, '12:00'];
-                          const updated = { ...dailyReminder, times: nextTimes };
-                          setDailyReminder(updated);
-                          localStorage.setItem('splitmate_reminder_settings', JSON.stringify(updated));
-                          await syncScheduledNotifications();
-                          toast({ title: 'Time Slot Added', description: `You can schedule up to 3 slots.` });
-                        }}
-                        className="w-full h-11 rounded-2xl bg-secondary/50 border border-dashed border-border/20 text-[10px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 text-muted-foreground hover:text-foreground"
+              {/* List of Custom Reminders */}
+              {customReminders.length > 0 && (
+                <section>
+                  <div className="section-head mb-3">
+                    <h2>Active Alerts</h2>
+                    <span className="mono-label">SCHEDULED Reminders</span>
+                  </div>
+                  <div className="space-y-2.5">
+                    {customReminders.map(reminder => (
+                      <div
+                        key={reminder.id}
+                        className={cn(
+                          "p-4 rounded-3xl border text-left flex items-center justify-between gap-3.5 transition-all",
+                          reminder.notified
+                            ? "bg-secondary/20 border-border/5 opacity-50"
+                            : "bg-card border-border/10 shadow-sm"
+                        )}
                       >
-                        <Plus size={12} strokeWidth={3} />
-                        Add Time Slot ({dailyReminder.times.length}/3)
-                      </button>
-                    )}
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black text-foreground/80 uppercase">
+                              {new Date(reminder.date).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                            </span>
+                            <span className="text-[10px] font-bold text-muted-foreground font-mono">{formatTime12h(reminder.time)}</span>
+                            {reminder.notified && (
+                              <span className="text-[8px] font-black bg-success/15 text-success px-1.5 py-0.5 rounded-md uppercase">Sent</span>
+                            )}
+                          </div>
+                          <p className="text-xs font-semibold text-foreground/90 truncate leading-tight">{reminder.message}</p>
+                        </div>
+
+                        <button
+                          onClick={async () => {
+                            const updated = customReminders.filter(r => r.id !== reminder.id);
+                            setCustomReminders(updated);
+                            localStorage.setItem('splitmate_custom_reminders', JSON.stringify(updated));
+                            await syncScheduledNotifications();
+                            toast({ title: 'Reminder Deleted', description: 'Reminder was removed.' });
+                          }}
+                          className="w-9 h-9 rounded-xl bg-destructive/10 text-destructive flex items-center justify-center hover:bg-destructive hover:text-white transition-all shrink-0"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                )}
-              </div>
-            </section>
+                </section>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
 
-            {/* Custom Specific Date Reminders */}
-            <section>
-              <div className="section-head mb-3">
-                <h2>One-time Reminder</h2>
-                <span className="mono-label">02 / Custom Date</span>
-              </div>
-              <div className="slab-flat p-5 space-y-4 text-left">
-                <p className="text-[11px] text-muted-foreground leading-snug">
-                  Schedule a specific date and time to alert you. Great for month-ends or payday.
-                </p>
-
-                <div className="space-y-3.5">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <label className="block text-[9px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] px-1">Select Date</label>
-                      <input
-                        type="date"
-                        value={newCustomReminder.date}
-                        onChange={(e) => setNewCustomReminder(p => ({ ...p, date: e.target.value }))}
-                        className="w-full h-12 px-4 rounded-2xl text-xs font-bold bg-secondary/30 border border-border/10 focus:ring-2 focus:ring-primary/20 transition-all"
-                      />
+        {/* ── Delete Modal ── */}
+        {deleteStep !== 'closed' && createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-4"
+            style={{ background: 'hsl(0 0% 0% / 0.6)', backdropFilter: 'blur(8px)' }}
+            onClick={() => setDeleteStep('closed')}
+          >
+            <div
+              className="w-full max-w-md rounded-3xl overflow-hidden"
+              style={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border) / 0.5)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Step 1: Select what to delete */}
+              {deleteStep === 'select' && (
+                <div className="p-5 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'hsl(var(--danger) / 0.12)' }}>
+                      <Trash2 size={18} style={{ color: 'hsl(var(--danger))' }} />
                     </div>
-                    <div className="space-y-2">
-                      <label className="block text-[9px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] px-1">Select Time</label>
-                      <input
-                        type="time"
-                        value={newCustomReminder.time}
-                        onChange={(e) => setNewCustomReminder(p => ({ ...p, time: e.target.value }))}
-                        className="w-full h-12 px-4 rounded-2xl text-xs font-bold bg-secondary/30 border border-border/10 focus:ring-2 focus:ring-primary/20 transition-all font-mono"
-                      />
+                    <div>
+                      <h3 className="font-bold text-base">Delete Data</h3>
+                      <p className="text-xs text-muted-foreground">Choose what to remove</p>
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="block text-[9px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] px-1">Message</label>
+                  {/* Select all */}
+                  <button
+                    onClick={selectAllForDelete}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-xs font-semibold text-muted-foreground"
+                    style={{ background: 'hsl(var(--secondary) / 0.5)' }}
+                  >
+                    <div className="w-5 h-5 rounded-full border flex items-center justify-center"
+                      style={{
+                        background: deleteSelections.personal && deleteSelections.shared && deleteSelections.links && deleteSelections.more ? 'hsl(var(--danger))' : 'transparent',
+                        borderColor: deleteSelections.personal && deleteSelections.shared && deleteSelections.links && deleteSelections.more ? 'hsl(var(--danger))' : 'hsl(var(--border))',
+                      }}>
+                      {deleteSelections.personal && deleteSelections.shared && deleteSelections.links && deleteSelections.more && <Check size={12} color="white" />}
+                    </div>
+                    Select All
+                  </button>
+
+                  {/* Personal */}
+                  <button
+                    onClick={() => toggleDeleteSelection('personal')}
+                    className="w-full flex items-center gap-3 px-4 py-3.5 rounded-[1.5rem] transition-all duration-150 text-left"
+                    style={{
+                      background: deleteSelections.personal ? 'hsl(var(--danger) / 0.08)' : 'hsl(var(--secondary) / 0.5)',
+                      border: `1px solid ${deleteSelections.personal ? 'hsl(var(--danger) / 0.25)' : 'hsl(var(--border) / 0.25)'}`,
+                    }}
+                  >
+                    <div className="w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0"
+                      style={{
+                        background: deleteSelections.personal ? 'hsl(var(--danger))' : 'transparent',
+                        borderColor: deleteSelections.personal ? 'hsl(var(--danger))' : 'hsl(var(--border))',
+                      }}>
+                      {deleteSelections.personal && <Check size={12} color="white" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm">Personal Expenses</p>
+                      <p className="text-[11px] text-muted-foreground">{personalCount} expense{personalCount !== 1 ? 's' : ''} will be deleted</p>
+                    </div>
+                    <span className="text-lg font-bold" style={{ color: deleteSelections.personal ? 'hsl(var(--danger))' : 'hsl(var(--muted-foreground))' }}>
+                      {personalCount}
+                    </span>
+                  </button>
+
+                  {/* Shared */}
+                  <button
+                    onClick={() => toggleDeleteSelection('shared')}
+                    className="w-full flex items-center gap-3 px-4 py-3.5 rounded-[1.5rem] transition-all duration-150 text-left"
+                    style={{
+                      background: deleteSelections.shared ? 'hsl(var(--danger) / 0.08)' : 'hsl(var(--secondary) / 0.5)',
+                      border: `1px solid ${deleteSelections.shared ? 'hsl(var(--danger) / 0.25)' : 'hsl(var(--border) / 0.25)'}`,
+                    }}
+                  >
+                    <div className="w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0"
+                      style={{
+                        background: deleteSelections.shared ? 'hsl(var(--danger))' : 'transparent',
+                        borderColor: deleteSelections.shared ? 'hsl(var(--danger))' : 'hsl(var(--border))',
+                      }}>
+                      {deleteSelections.shared && <Check size={12} color="white" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm">Shared Expenses</p>
+                      <p className="text-[11px] text-muted-foreground">{sharedCount} transaction{sharedCount !== 1 ? 's' : ''} & all balances</p>
+                    </div>
+                    <span className="text-lg font-bold" style={{ color: deleteSelections.shared ? 'hsl(var(--danger))' : 'hsl(var(--muted-foreground))' }}>
+                      {sharedCount}
+                    </span>
+                  </button>
+
+                  {/* Links */}
+                  <button
+                    onClick={() => toggleDeleteSelection('links')}
+                    className="w-full flex items-center gap-3 px-4 py-3.5 rounded-[1.5rem] transition-all duration-150 text-left"
+                    style={{
+                      background: deleteSelections.links ? 'hsl(var(--danger) / 0.08)' : 'hsl(var(--secondary) / 0.5)',
+                      border: `1px solid ${deleteSelections.links ? 'hsl(var(--danger) / 0.25)' : 'hsl(var(--border) / 0.25)'}`,
+                    }}
+                  >
+                    <div className="w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0"
+                      style={{
+                        background: deleteSelections.links ? 'hsl(var(--danger))' : 'transparent',
+                        borderColor: deleteSelections.links ? 'hsl(var(--danger))' : 'hsl(var(--border))',
+                      }}>
+                      {deleteSelections.links && <Check size={12} color="white" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm">Links & Groups</p>
+                      <p className="text-[11px] text-muted-foreground">{linksCount} link{linksCount !== 1 ? 's' : ''}, {groupsCount} group{groupsCount !== 1 ? 's' : ''}</p>
+                    </div>
+                    <span className="text-lg font-bold" style={{ color: deleteSelections.links ? 'hsl(var(--danger))' : 'hsl(var(--muted-foreground))' }}>
+                      {linksCount + groupsCount}
+                    </span>
+                  </button>
+
+                  {/* More Features */}
+                  <button
+                    onClick={() => toggleDeleteSelection('more')}
+                    className="w-full flex items-center gap-3 px-4 py-3.5 rounded-[1.5rem] transition-all duration-150 text-left"
+                    style={{
+                      background: deleteSelections.more ? 'hsl(var(--danger) / 0.08)' : 'hsl(var(--secondary) / 0.5)',
+                      border: `1px solid ${deleteSelections.more ? 'hsl(var(--danger) / 0.25)' : 'hsl(var(--border) / 0.25)'}`,
+                    }}
+                  >
+                    <div className="w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0"
+                      style={{
+                        background: deleteSelections.more ? 'hsl(var(--danger))' : 'transparent',
+                        borderColor: deleteSelections.more ? 'hsl(var(--danger))' : 'hsl(var(--border))',
+                      }}>
+                      {deleteSelections.more && <Check size={12} color="white" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm">Extra Features & Tools</p>
+                      <p className="text-[11px] text-muted-foreground">Loans, Goals, Subscriptions & Notes</p>
+                    </div>
+                    <span className="text-lg font-bold" style={{ color: deleteSelections.more ? 'hsl(var(--danger))' : 'hsl(var(--muted-foreground))' }}>
+                      {moreCount}
+                    </span>
+                  </button>
+
+                  {/* Actions */}
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => setDeleteStep('closed')}
+                      className="flex-1 px-4 py-3 rounded-[1.25rem] font-semibold text-sm"
+                      style={{ background: 'hsl(var(--secondary))', border: '1px solid hsl(var(--border) / 0.3)' }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => hasAnySelection && setDeleteStep('confirm')}
+                      disabled={!hasAnySelection}
+                      className="flex-1 px-4 py-3 rounded-[1.25rem] font-semibold text-sm disabled:opacity-30 transition-opacity"
+                      style={{
+                        background: 'hsl(var(--danger))',
+                        color: 'white',
+                        boxShadow: hasAnySelection ? '0 4px 12px -4px hsl(var(--danger) / 0.5)' : 'none',
+                      }}
+                    >
+                      Continue ({selectedDeleteCount()})
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 2: Final confirmation */}
+              {deleteStep === 'confirm' && (
+                <div className="p-5 space-y-4 relative">
+                  {isDeleting && (
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm rounded-[24px]">
+                      <RefreshCw size={32} className="text-destructive animate-spin mb-3" />
+                      <p className="text-sm font-bold animate-pulse text-foreground">Deleting Account & Data...</p>
+                      {isGoogleConnected && <p className="text-[11px] text-muted-foreground mt-1">Removing from cloud backup...</p>}
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'hsl(var(--danger) / 0.15)' }}>
+                      <AlertTriangle size={18} style={{ color: 'hsl(var(--danger))' }} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-base" style={{ color: 'hsl(var(--danger))' }}>Final Confirmation</h3>
+                      <p className="text-[11px] text-muted-foreground leading-tight">This will wipe all data and<br/>cannot be undone.</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl p-4 space-y-3" style={{ background: 'hsl(var(--danger) / 0.06)', border: '1px solid hsl(var(--danger) / 0.12)' }}>
+                    <p className="text-sm font-semibold text-foreground text-center">
+                      To confirm, type <strong className="text-destructive select-none tracking-widest">DELETE</strong> below
+                    </p>
                     <input
                       type="text"
-                      value={newCustomReminder.message}
-                      onChange={(e) => setNewCustomReminder(p => ({ ...p, message: e.target.value }))}
-                      placeholder="Add entry for today! 💸"
-                      className="w-full h-12 px-4 rounded-2xl text-xs font-bold bg-secondary/30 border border-border/10 focus:ring-2 focus:ring-primary/20 transition-all"
+                      value={deleteConfirmationText}
+                      onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                      placeholder="DELETE"
+                      className="w-full text-center h-12 rounded-xl text-lg font-black tracking-widest outline-none bg-background border border-destructive/20 focus:border-destructive transition-colors text-destructive uppercase"
                     />
                   </div>
 
-                  <button
-                    onClick={async () => {
-                      if (!newCustomReminder.date || !newCustomReminder.time) return;
-                      const granted = await requestNotificationPermission();
-                      setHasNotificationPermission(granted);
-                      if (!granted) {
-                        toast({
-                          title: "Permission Required",
-                          description: "Please enable notifications to receive custom alerts.",
-                          variant: "destructive"
-                        });
-                        return;
-                      }
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => {
+                        setDeleteStep('closed');
+                        setDeleteConfirmationText("");
+                      }}
+                      disabled={isDeleting}
+                      className="flex-1 px-4 py-3 rounded-2xl font-semibold text-sm disabled:opacity-50"
+                      style={{ background: 'hsl(var(--secondary))', border: '1px solid hsl(var(--border) / 0.3)' }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleConfirmDelete}
+                      disabled={deleteConfirmationText !== 'DELETE' || isDeleting}
+                      className="flex-[1.5] flex items-center justify-center gap-2 px-4 py-3 rounded-2xl font-bold text-sm disabled:opacity-30 transition-all active:scale-[0.98]"
+                      style={{
+                        background: 'hsl(var(--danger))',
+                        color: 'white',
+                        boxShadow: deleteConfirmationText === 'DELETE' ? '0 4px 12px -4px hsl(var(--danger) / 0.5)' : 'none',
+                      }}
+                    >
+                      Delete Forever
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
 
-                      const reminder = {
-                        id: generateId(),
-                        date: newCustomReminder.date,
-                        time: newCustomReminder.time,
-                        message: newCustomReminder.message.trim() || 'Add entry for today! 💸',
-                        notified: false
-                      };
-                      const updated = [...customReminders, reminder].sort((a,b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
-                      setCustomReminders(updated);
-                      localStorage.setItem('splitmate_custom_reminders', JSON.stringify(updated));
-                      await syncScheduledNotifications();
-                      toast({ title: 'Reminder Scheduled', description: `Alert set for ${new Date(reminder.date).toLocaleDateString()} at ${formatTime12h(reminder.time)}` });
-                      setNewCustomReminder({
-                        date: new Date().toISOString().slice(0, 10),
-                        time: '20:00',
-                        message: 'Add entry for today! 💸',
-                      });
-                    }}
-                    className="w-full h-12 rounded-2xl bg-primary text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/10"
+
+        {/* ── Privacy Info Modal ── */}
+        {showPrivacy && createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+            style={{ background: 'hsl(0 0% 0% / 0.6)', backdropFilter: 'blur(8px)' }}
+            onClick={() => setShowPrivacy(false)}
+          >
+            <div
+              className="w-full max-w-sm rounded-[24px] overflow-hidden"
+              style={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border) / 0.5)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="p-5 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'hsl(var(--primary) / 0.12)' }}>
+                    <Shield size={18} className="text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base">Privacy & Sign In</h3>
+                    <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <Check size={10} className="text-primary" />
+                      100% Optional
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3 text-sm text-foreground/90 leading-relaxed px-1">
+                  <p>
+                    You do <strong className="font-bold">NOT</strong> need to sign in to use this app. All your data is stored securely on your device by default.
+                  </p>
+                  <div className="p-3 rounded-2xl" style={{ background: 'hsl(var(--secondary) / 0.5)', border: '1px solid hsl(var(--border) / 0.3)' }}>
+                    <h4 className="font-semibold text-xs mb-1">Why ask for a Google account?</h4>
+                    <p className="text-xs text-muted-foreground">
+                      Signing in simply allows you to backup your app data securely to your own Google Drive.
+                      We do not track you, sell your data, or access any files outside of this app's backup folder.
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-2xl" style={{ background: 'hsl(var(--secondary) / 0.5)', border: '1px solid hsl(var(--border) / 0.3)' }}>
+                    <h4 className="font-semibold text-xs mb-1">Receipt & Proof Images Privacy</h4>
+                    <p className="text-xs text-muted-foreground">
+                      For your privacy, attached proof and bill images are stored strictly on your local device and never uploaded to any servers. Note that clearing app data or uninstalling the app will permanently delete stored images.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    onClick={() => setShowPrivacy(false)}
+                    className="w-full px-4 py-3 rounded-2xl font-semibold text-sm transition-all"
+                    style={{ background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}
                   >
-                    <Plus size={14} strokeWidth={2.5} />
-                    Schedule Alert
+                    Understood
                   </button>
                 </div>
               </div>
-            </section>
+            </div>
+          </div>,
+          document.body
+        )}
 
-            {/* List of Custom Reminders */}
-            {customReminders.length > 0 && (
-              <section>
-                <div className="section-head mb-3">
-                  <h2>Active Alerts</h2>
-                  <span className="mono-label">SCHEDULED Reminders</span>
+        {/* Sign Out Confirmation Sheet */}
+        {showSignOutConfirm && createPortal(
+          <div className="fixed inset-0 z-[12000] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-300" onClick={() => setShowSignOutConfirm(false)}>
+            <div
+              className="w-full max-w-md bg-card rounded-[2.5rem] p-8 pt-10 pb-12 space-y-6 animate-in slide-in-from-bottom-10 border border-border/10 duration-500 shadow-2xl relative overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Backglow line */}
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-1 bg-muted/20 rounded-full mt-3" />
+
+              <div className="text-center space-y-4">
+                <div className="w-20 h-20 rounded-[2.5rem] bg-destructive/10 flex items-center justify-center mx-auto mb-4 border border-destructive/20 active:scale-95 transition-all">
+                  <LogOut size={36} className="text-destructive translate-x-1" />
                 </div>
-                <div className="space-y-2.5">
-                  {customReminders.map(reminder => (
-                    <div
-                      key={reminder.id}
-                      className={cn(
-                        "p-4 rounded-3xl border text-left flex items-center justify-between gap-3.5 transition-all",
-                        reminder.notified
-                          ? "bg-secondary/20 border-border/5 opacity-50"
-                          : "bg-card border-border/10 shadow-sm"
-                      )}
-                    >
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-black text-foreground/80 uppercase">
-                            {new Date(reminder.date).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                          </span>
-                          <span className="text-[10px] font-bold text-muted-foreground font-mono">{formatTime12h(reminder.time)}</span>
-                          {reminder.notified && (
-                            <span className="text-[8px] font-black bg-success/15 text-success px-1.5 py-0.5 rounded-md uppercase">Sent</span>
-                          )}
+                <h2 className="text-xl font-bold tracking-tight text-foreground uppercase">Sign Out?</h2>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-4">
+                <button
+                  onClick={() => setShowSignOutConfirm(false)}
+                  className="h-14 rounded-2xl bg-secondary font-black uppercase tracking-widest text-[11px] active:scale-95 transition-all text-muted-foreground border border-border/10"
+                >
+                  Stay
+                </button>
+                <button
+                  onClick={() => {
+                    setShowSignOutConfirm(false);
+                    handleGoogleSignOut();
+                  }}
+                  className="h-14 rounded-2xl bg-destructive text-white font-black uppercase tracking-widest text-[11px] shadow-lg shadow-destructive/20 active:scale-95 transition-all"
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {/* Full Screen Avatar View */}
+        {showFullScreenAvatar && profile.avatar && createPortal(
+          <div
+            className="fixed inset-0 z-[11000] flex items-center justify-center bg-black/90 backdrop-blur-xl animate-in fade-in duration-300"
+            onClick={() => setShowFullScreenAvatar(false)}
+          >
+            <div className="absolute top-12 right-6 z-10">
+              <button
+                onClick={() => setShowFullScreenAvatar(false)}
+                className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center active:scale-95 transition-all border border-white/10"
+              >
+                <X size={24} className="text-white" />
+              </button>
+            </div>
+
+            <div
+              className="w-full max-w-[90vw] aspect-square rounded-[3rem] overflow-hidden shadow-2xl border-4 border-white/5 animate-in zoom-in-95 duration-500"
+              onClick={e => e.stopPropagation()}
+            >
+              {(() => {
+                // Upgrade quality for Google photos in full view
+                let highResAvatar = profile.avatar;
+                if (highResAvatar?.includes('googleusercontent.com')) {
+                  highResAvatar = highResAvatar.replace(/[?&]sz=\d+/i, '').replace(/[?&]s=\d+/i, '');
+                  highResAvatar += highResAvatar.includes('?') ? '&s=0' : '?s=0'; // s=0 often means original resolution
+                }
+                return (
+                  <img
+                    src={highResAvatar}
+                    alt="Profile Full View"
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                );
+              })()}
+            </div>
+
+            <div className="absolute bottom-12 left-0 right-0 text-center space-y-2 px-8">
+              <h2 className="text-xl font-bold text-white tracking-tight">{profile.name}</h2>
+              <div className="flex items-center justify-center gap-2 opacity-50">
+                <div className="w-1.5 h-1.5 rounded-full bg-success" />
+                <p className="text-[9px] text-white font-black uppercase tracking-[0.3em]">Original Quality Active</p>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {/* Creator Program Modal */}
+        {createPortal(
+          <AnimatePresence>
+            {showCreatorProgram && (
+              <motion.div
+                key="creator-program-modal"
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="fixed inset-0 z-[12000] bg-background flex flex-col pointer-events-auto"
+              >
+                <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-md px-4 pt-4 pb-2 border-b border-border/10 flex items-center gap-3">
+                  <button
+                    onClick={() => setShowCreatorProgram(false)}
+                    className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 active:scale-95 transition-all bg-secondary/50"
+                  >
+                    <ChevronLeft size={20} />
+                  </button>
+                  <h2 className="text-xl font-bold">Creator Program</h2>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6 space-y-8 pb-24">
+                  <div className="flex flex-col items-center text-center space-y-4 pt-4">
+                    <div className="w-20 h-20 rounded-[2rem] bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-orange-500/20 flex items-center justify-center border border-purple-500/20">
+                      <Sparkles className="text-purple-400 w-10 h-10" />
+                    </div>
+                    <div>
+                      <h2 className="text-3xl font-black tracking-tight mb-2">Lifetime PRO Free</h2>
+                      <p className="text-sm text-muted-foreground leading-relaxed px-4">
+                        Share SplitMate with your audience on your favorite platform and get Lifetime PRO absolutely free!
+                      </p>
+                    </div>
+
+                    {/* Social Icons Row */}
+                    <div className="flex items-center justify-center gap-4 pt-2 pb-2">
+                      {/* X logo */}
+                      <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.25h-6.657l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                        </svg>
+                      </div>
+                      {/* Threads logo */}
+                      <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center text-white border border-border/10">
+                        <svg width="20" height="20" viewBox="0 0 192 192" fill="currentColor">
+                          <path d="M141.537 88.9883C140.71 88.5919 139.87 88.2104 139.019 87.8451C137.537 60.5382 122.616 44.905 97.5619 44.745C97.4484 44.7443 97.3355 44.7443 97.222 44.7443C82.2364 44.7443 69.7731 51.1409 62.102 62.7807L75.881 72.2328C81.6116 63.5383 90.6052 61.6848 97.2286 61.6848C97.3051 61.6848 97.3819 61.6848 97.4576 61.6855C105.707 61.7381 111.932 64.1366 115.961 68.814C118.893 72.2193 120.854 76.925 121.825 82.8638C114.511 81.6207 106.601 81.2385 98.145 81.7233C74.3247 83.0954 59.0111 96.9879 60.0396 116.292C60.5615 126.084 65.4397 134.508 73.775 140.011C80.8224 144.663 89.899 146.938 99.3323 146.423C111.79 145.74 121.563 140.987 128.381 132.296C133.559 125.696 136.834 117.143 138.28 106.366C144.217 109.949 148.617 114.664 151.047 120.332C155.179 129.967 155.42 145.8 142.501 158.708C131.182 170.016 117.576 174.908 97.0135 175.059C74.2042 174.89 56.9538 167.575 45.7381 153.317C35.2355 139.966 29.8077 120.682 29.6052 96C29.8077 71.3178 35.2355 52.0336 45.7381 38.6827C56.9538 24.4249 74.2039 17.11 97.0132 16.9405C119.988 17.1113 137.539 24.4614 149.184 38.788C154.894 45.8136 159.199 54.6488 162.037 64.9503L178.184 60.6422C174.744 47.9622 169.331 37.0357 161.965 27.974C147.036 9.60668 125.202 0.195148 97.0695 0H96.9569C68.8816 0.194473 47.2921 9.6418 32.7883 28.0793C19.8819 44.4864 13.2244 67.3157 13.0007 95.9325L13 96L13.0007 96.0675C13.2244 124.684 19.8819 147.514 32.7883 163.921C47.2921 182.358 68.8816 191.806 96.9569 192H97.0695C122.03 191.827 139.624 185.292 154.118 170.811C173.081 151.866 172.51 128.119 166.26 113.541C161.776 103.087 153.227 94.5962 141.537 88.9883ZM98.4405 129.507C88.0005 130.095 77.1544 125.409 76.6196 115.372C76.2232 107.93 81.9158 99.626 99.0812 98.6368C101.047 98.5234 102.976 98.468 104.871 98.468C111.106 98.468 116.939 99.0737 122.242 100.233C120.264 124.935 108.662 128.946 98.4405 129.507Z" />
+                        </svg>
+                      </div>
+                      {/* Instagram logo */}
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] flex items-center justify-center text-white">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>
+                      </div>
+                      {/* YouTube logo */}
+                      <div className="w-10 h-10 rounded-full bg-[#FF0000] flex items-center justify-center text-white">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" /></svg>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="ios-card-modern p-4 space-y-6">
+                      <div className="flex gap-4">
+                        <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0 font-bold text-xs shadow-inner">1</div>
+                        <div className="pt-1.5">
+                          <h3 className="font-bold text-sm mb-1 text-foreground">Post & Tag</h3>
+                          <p className="text-[13px] text-muted-foreground leading-relaxed">
+                            Post about the app and tag <strong className="text-foreground">@The1UX</strong>. Make sure to include the app link in your post.
+                          </p>
                         </div>
-                        <p className="text-xs font-semibold text-foreground/90 truncate leading-tight">{reminder.message}</p>
                       </div>
 
+                      <div className="flex gap-4">
+                        <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0 font-bold text-xs shadow-inner">2</div>
+                        <div className="pt-1.5">
+                          <h3 className="font-bold text-sm mb-1 text-foreground">Hit the Milestone</h3>
+                          <p className="text-[13px] text-muted-foreground leading-relaxed">
+                            Get <strong className="text-foreground">20k+ views</strong> within 48 hours of posting.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-4">
+                        <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0 font-bold text-xs shadow-inner">3</div>
+                        <div className="pt-1.5">
+                          <h3 className="font-bold text-sm mb-1 text-foreground">Claim your PRO</h3>
+                          <p className="text-[13px] text-muted-foreground leading-relaxed">
+                            Click the button below to email us your post link. We'll reply within 48h with your Lifetime PRO code!
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Suggested Post */}
+                    <h3 className="font-bold text-sm text-foreground">Suggested Post</h3>
+                    <div className="ios-card-modern p-4 space-y-3">
+                      <div className="relative bg-secondary/30 rounded-xl p-3 pt-4 border border-border/10 mb-2">
+                        <p className="text-[13px] text-muted-foreground italic leading-relaxed pr-8">
+                          Found a great free Spend Tracking App for Android Users! Get it here: https://play.google.com/store/apps/details?id=com.expensetrack1ux.dev App by @The1UX
+                        </p>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(`Found a great free Spend Tracking App for Android Users! Get it here: https://play.google.com/store/apps/details?id=com.expensetrack1ux.dev App by @The1UX`);
+                            toast({ title: "Copied to clipboard", description: "Ready to paste on your socials!" });
+                          }}
+                          className="absolute top-2 right-2 w-8 h-8 rounded-lg bg-background border border-border/20 flex items-center justify-center hover:bg-secondary active:scale-95 transition-all text-foreground"
+                          aria-label="Copy post text"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-primary/90 font-medium flex items-center gap-1.5 leading-tight">
+                        <Sparkles size={12} className="shrink-0" /> Make sure to include some pictures or a short video of the app in action!
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Email Button */}
+                  <a
+                    href="mailto:try.sandeshk@gmail.com?subject=SplitMate-Creator%20Program&body=Hi,%0Ahere's%20Post%20link:%20%0AMy%20social%20account:%20"
+                    className="w-full flex items-center justify-center gap-2 py-4 rounded-[1rem] font-bold text-[14px] transition-all active:scale-[0.98] mt-8 bg-primary text-primary-foreground"
+                  >
+                    Get Free PRO
+                    <ChevronRight size={16} />
+                  </a>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
+
+        {/* Account Settings Modal */}
+        {createPortal(
+          <AnimatePresence>
+            {showAccountSettings && (
+              <motion.div
+                key="account-settings-modal"
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="fixed inset-0 z-[12000] bg-background flex flex-col pointer-events-auto"
+              >
+                <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-md px-4 pt-4 pb-2 border-b border-border/10 flex items-center gap-3">
+                  <button
+                    onClick={() => setShowAccountSettings(false)}
+                    className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 active:scale-95 transition-all bg-secondary/50"
+                  >
+                    <ChevronLeft size={20} />
+                  </button>
+                  <h2 className="text-xl font-bold">Account Settings</h2>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-24">
+                  {/* Profile Edit Block */}
+                  {!isGoogleConnected && (
+                    <div>
+                      <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">Profile Information</p>
+                      <div className="ios-card-modern p-4 space-y-4">
+                        <div className="flex items-center gap-4">
+                          <button
+                            onClick={() => avatarInputRef.current?.click()}
+                            className="relative w-16 h-16 rounded-full overflow-hidden flex items-center justify-center bg-secondary border border-border/10 cursor-pointer group shrink-0"
+                          >
+                            {profile.avatar && !avatarLoadFailed ? (
+                              <img
+                                src={profile.avatar}
+                                alt="Profile"
+                                className="w-full h-full object-cover group-hover:opacity-75 transition-opacity"
+                                referrerPolicy="no-referrer"
+                                onError={() => setAvatarLoadFailed(true)}
+                              />
+                            ) : (
+                              <UserCircle2 size={36} className="text-muted-foreground group-hover:opacity-75 transition-opacity" />
+                            )}
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Pencil size={14} className="text-white" />
+                            </div>
+                          </button>
+                          <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-foreground">Edit Details</p>
+                            <p className="text-xs text-muted-foreground">Change name, email or bio</p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            ref={nameInputRef}
+                            value={profile.name}
+                            onChange={(e) => {
+                              if (!isGoogleConnected) handleProfileChange('name', e.target.value);
+                            }}
+                            placeholder="Your name"
+                            readOnly={isGoogleConnected}
+                            className={cn("w-full h-11 px-3 rounded-xl text-sm", isGoogleConnected && "opacity-60")}
+                            style={{
+                              background: 'hsl(var(--secondary) / 0.45)',
+                              border: '1px solid hsl(var(--border) / 0.3)',
+                            }}
+                          />
+                          <input
+                            type="email"
+                            value={profile.email}
+                            onChange={(e) => {
+                              if (!isGoogleConnected) handleProfileChange('email', e.target.value);
+                            }}
+                            placeholder="Email (optional)"
+                            readOnly={isGoogleConnected}
+                            className={cn("w-full h-11 px-3 rounded-xl text-sm", isGoogleConnected && "opacity-60")}
+                            style={{
+                              background: 'hsl(var(--secondary) / 0.45)',
+                              border: '1px solid hsl(var(--border) / 0.3)',
+                            }}
+                          />
+                          <textarea
+                            value={profile.bio}
+                            onChange={(e) => handleProfileChange('bio', e.target.value)}
+                            placeholder="Short bio (optional)"
+                            rows={2}
+                            className="w-full px-3 py-2 rounded-xl text-sm resize-none"
+                            style={{ background: 'hsl(var(--secondary) / 0.45)', border: '1px solid hsl(var(--border) / 0.3)' }}
+                          />
+                        </div>
+
+                        {isProfileDirty && (
+                          <div className="flex gap-2.5 pt-2">
+                            <button
+                              onClick={handleCancelProfileEdit}
+                              className="flex-1 px-4 py-3 rounded-2xl font-semibold text-sm border border-border bg-secondary/50"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={handleSaveProfile}
+                              className="flex-[2] flex items-center justify-center gap-2 px-4 py-3 rounded-2xl font-semibold text-sm"
+                              style={{
+                                background: 'linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)))',
+                                color: 'hsl(var(--primary-foreground))',
+                              }}
+                            >
+                              <Save size={14} />
+                              Save Changes
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex justify-center pt-2">
+                        <button
+                          onClick={() => setShowPrivacy(true)}
+                          className="text-[11px] font-medium text-muted-foreground hover:text-primary transition-colors flex items-center gap-1.5"
+                        >
+                          <Shield size={12} />
+                          Why do I need to sign in?
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Account Actions */}
+                  <div>
+                    <p className="text-xs text-muted-foreground px-2 mb-2 uppercase">Account Sync</p>
+                    <div className="ios-card-modern overflow-hidden">
+                      {isGoogleConnected ? (
+                        <button
+                          onClick={() => {
+                            triggerSignOutFlow();
+                          }}
+                          disabled={isGoogleAuthBusy}
+                          className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group hover:bg-secondary/20"
+                        >
+                          <LogOut size={20} className="text-foreground shrink-0" />
+                          <div className="flex-1 text-left">
+                            <h2 className="font-bold text-sm">Sign Out</h2>
+                            <p className="text-[11px] text-muted-foreground">Disconnect your Google account</p>
+                          </div>
+                          <ChevronRight size={16} className="text-muted-foreground/60 group-hover:text-foreground transition-colors" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleGoogleSignIn}
+                          disabled={isGoogleAuthBusy}
+                          className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group hover:bg-secondary/20"
+                        >
+                          <LogIn size={20} className="text-primary shrink-0" />
+                          <div className="flex-1 text-left">
+                            <h2 className="font-bold text-sm text-primary">Sign In with Google</h2>
+                            <p className="text-[11px] text-muted-foreground">Enable cloud sync & backups</p>
+                          </div>
+                          <ChevronRight size={16} className="text-muted-foreground/60 group-hover:text-primary transition-colors" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Danger Zone */}
+                  <div>
+                    <p className="text-xs text-destructive/80 px-2 mb-2 uppercase font-bold">Danger Zone</p>
+                    <div className="ios-card-modern overflow-hidden border border-destructive/20 bg-destructive/5">
                       <button
-                        onClick={async () => {
-                          const updated = customReminders.filter(r => r.id !== reminder.id);
-                          setCustomReminders(updated);
-                          localStorage.setItem('splitmate_custom_reminders', JSON.stringify(updated));
-                          await syncScheduledNotifications();
-                          toast({ title: 'Reminder Deleted', description: 'Reminder was removed.' });
-                        }}
-                        className="w-9 h-9 rounded-xl bg-destructive/10 text-destructive flex items-center justify-center hover:bg-destructive hover:text-white transition-all shrink-0"
+                        onClick={() => setDeleteStep('confirm')}
+                        className="w-full flex items-center gap-3.5 px-4 py-3.5 transition-all active:scale-[0.985] group hover:bg-destructive/10"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={20} className="text-destructive shrink-0" />
+                        <div className="flex-1 text-left">
+                          <h2 className="font-bold text-sm text-destructive">Delete Account & Data</h2>
+                          <p className="text-[11px] text-destructive/70">Permanently delete all your app data</p>
+                        </div>
+                        <ChevronRight size={16} className="text-destructive/50" />
                       </button>
                     </div>
-                  ))}
+                  </div>
+
                 </div>
-              </section>
+
+                {/* ── Delete Confirmation Overlay (z-13000, inside Account Settings) ── */}
+                <AnimatePresence>
+                  {deleteStep === 'confirm' && (
+                    <motion.div
+                      key="delete-confirm-overlay"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="absolute inset-0 z-[13000] bg-black/60 backdrop-blur-sm flex items-end justify-center p-4"
+                    >
+                      <motion.div
+                        initial={{ y: 80, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        exit={{ y: 80, opacity: 0 }}
+                        transition={{ type: 'spring', damping: 25, stiffness: 260 }}
+                        className="w-full rounded-[2rem] relative overflow-hidden"
+                        style={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--destructive) / 0.25)' }}
+                      >
+                        {/* Deleting animation overlay */}
+                        {isDeleting && (
+                          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm rounded-[2rem]">
+                            <RefreshCw size={36} className="text-destructive animate-spin mb-3" />
+                            <p className="text-base font-black text-foreground animate-pulse">Deleting everything...</p>
+                            {isGoogleConnected && (
+                              <p className="text-[11px] text-muted-foreground mt-1.5">Removing from cloud backup...</p>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="p-5 space-y-5">
+                          {/* Header */}
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-2xl bg-destructive/15 flex items-center justify-center shrink-0">
+                              <Trash2 size={22} className="text-destructive" />
+                            </div>
+                            <div>
+                              <h3 className="font-black text-lg text-destructive">Delete Everything?</h3>
+                              <p className="text-[11px] text-muted-foreground leading-tight">All data wiped permanently. Cannot be undone.</p>
+                            </div>
+                          </div>
+
+                          {/* What gets deleted */}
+                          <div className="rounded-2xl p-3.5 space-y-1.5" style={{ background: 'hsl(var(--destructive) / 0.07)', border: '1px solid hsl(var(--destructive) / 0.15)' }}>
+                            <p className="text-[11px] font-bold text-destructive mb-2 uppercase tracking-wide">Will delete:</p>
+                            {[
+                              'All personal expenses & transactions',
+                              'All shared expenses & balances',
+                              'All links, groups & contacts',
+                              'All loans, goals & subscriptions',
+                              isGoogleConnected ? 'Cloud backup (wiped from Firebase)' : null,
+                            ].filter(Boolean).map((item, i) => (
+                              <div key={i} className="flex items-center gap-2 text-sm text-foreground/80">
+                                <X size={12} className="text-destructive shrink-0" />
+                                <span>{item}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Type DELETE */}
+                          <div className="space-y-2">
+                            <p className="text-sm font-semibold text-center text-foreground">
+                              Type <strong className="text-destructive tracking-widest">DELETE</strong> to confirm
+                            </p>
+                            <input
+                              type="text"
+                              value={deleteConfirmationText}
+                              onChange={(e) => setDeleteConfirmationText(e.target.value.toUpperCase())}
+                              placeholder="DELETE"
+                              className="w-full text-center h-12 rounded-xl text-lg font-black tracking-[0.3em] outline-none bg-background border-2 border-destructive/20 focus:border-destructive transition-all text-destructive"
+                            />
+                          </div>
+
+                          {/* Action buttons */}
+                          <div className="flex gap-3 pb-1">
+                            <button
+                              onClick={() => {
+                                setDeleteStep('closed');
+                                setDeleteConfirmationText('');
+                              }}
+                              disabled={isDeleting}
+                              className="flex-1 py-3.5 rounded-2xl font-bold text-sm border border-border/30 bg-secondary disabled:opacity-40"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={handleConfirmDelete}
+                              disabled={deleteConfirmationText !== 'DELETE' || isDeleting}
+                              className="flex-[1.5] py-3.5 rounded-2xl font-black text-sm text-white disabled:opacity-30 transition-all active:scale-[0.97] flex items-center justify-center gap-2"
+                              style={{ background: 'hsl(var(--destructive))' }}
+                            >
+                              {isDeleting ? <RefreshCw size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                              Delete Forever
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
             )}
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* ── Delete Modal ── */}
-      {deleteStep !== 'closed' && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-4"
-          style={{ background: 'hsl(0 0% 0% / 0.6)', backdropFilter: 'blur(8px)' }}
-          onClick={() => setDeleteStep('closed')}
-        >
-          <div
-            className="w-full max-w-md rounded-3xl overflow-hidden"
-            style={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border) / 0.5)' }}
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Step 1: Select what to delete */}
-            {deleteStep === 'select' && (
-              <div className="p-5 space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'hsl(var(--danger) / 0.12)' }}>
-                    <Trash2 size={18} style={{ color: 'hsl(var(--danger))' }} />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-base">Delete Data</h3>
-                    <p className="text-xs text-muted-foreground">Choose what to remove</p>
-                  </div>
-                </div>
-
-                {/* Select all */}
-                <button
-                  onClick={selectAllForDelete}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-xs font-semibold text-muted-foreground"
-                  style={{ background: 'hsl(var(--secondary) / 0.5)' }}
-                >
-                  <div className="w-5 h-5 rounded-full border flex items-center justify-center"
-                    style={{
-                      background: deleteSelections.personal && deleteSelections.shared && deleteSelections.links && deleteSelections.more ? 'hsl(var(--danger))' : 'transparent',
-                      borderColor: deleteSelections.personal && deleteSelections.shared && deleteSelections.links && deleteSelections.more ? 'hsl(var(--danger))' : 'hsl(var(--border))',
-                    }}>
-                    {deleteSelections.personal && deleteSelections.shared && deleteSelections.links && deleteSelections.more && <Check size={12} color="white" />}
-                  </div>
-                  Select All
-                </button>
-
-                {/* Personal */}
-                <button
-                  onClick={() => toggleDeleteSelection('personal')}
-                  className="w-full flex items-center gap-3 px-4 py-3.5 rounded-[1.5rem] transition-all duration-150 text-left"
-                  style={{
-                    background: deleteSelections.personal ? 'hsl(var(--danger) / 0.08)' : 'hsl(var(--secondary) / 0.5)',
-                    border: `1px solid ${deleteSelections.personal ? 'hsl(var(--danger) / 0.25)' : 'hsl(var(--border) / 0.25)'}`,
-                  }}
-                >
-                  <div className="w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0"
-                    style={{
-                      background: deleteSelections.personal ? 'hsl(var(--danger))' : 'transparent',
-                      borderColor: deleteSelections.personal ? 'hsl(var(--danger))' : 'hsl(var(--border))',
-                    }}>
-                    {deleteSelections.personal && <Check size={12} color="white" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm">Personal Expenses</p>
-                    <p className="text-[11px] text-muted-foreground">{personalCount} expense{personalCount !== 1 ? 's' : ''} will be deleted</p>
-                  </div>
-                  <span className="text-lg font-bold" style={{ color: deleteSelections.personal ? 'hsl(var(--danger))' : 'hsl(var(--muted-foreground))' }}>
-                    {personalCount}
-                  </span>
-                </button>
-
-                {/* Shared */}
-                <button
-                  onClick={() => toggleDeleteSelection('shared')}
-                  className="w-full flex items-center gap-3 px-4 py-3.5 rounded-[1.5rem] transition-all duration-150 text-left"
-                  style={{
-                    background: deleteSelections.shared ? 'hsl(var(--danger) / 0.08)' : 'hsl(var(--secondary) / 0.5)',
-                    border: `1px solid ${deleteSelections.shared ? 'hsl(var(--danger) / 0.25)' : 'hsl(var(--border) / 0.25)'}`,
-                  }}
-                >
-                  <div className="w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0"
-                    style={{
-                      background: deleteSelections.shared ? 'hsl(var(--danger))' : 'transparent',
-                      borderColor: deleteSelections.shared ? 'hsl(var(--danger))' : 'hsl(var(--border))',
-                    }}>
-                    {deleteSelections.shared && <Check size={12} color="white" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm">Shared Expenses</p>
-                    <p className="text-[11px] text-muted-foreground">{sharedCount} transaction{sharedCount !== 1 ? 's' : ''} & all balances</p>
-                  </div>
-                  <span className="text-lg font-bold" style={{ color: deleteSelections.shared ? 'hsl(var(--danger))' : 'hsl(var(--muted-foreground))' }}>
-                    {sharedCount}
-                  </span>
-                </button>
-
-                {/* Links */}
-                <button
-                  onClick={() => toggleDeleteSelection('links')}
-                  className="w-full flex items-center gap-3 px-4 py-3.5 rounded-[1.5rem] transition-all duration-150 text-left"
-                  style={{
-                    background: deleteSelections.links ? 'hsl(var(--danger) / 0.08)' : 'hsl(var(--secondary) / 0.5)',
-                    border: `1px solid ${deleteSelections.links ? 'hsl(var(--danger) / 0.25)' : 'hsl(var(--border) / 0.25)'}`,
-                  }}
-                >
-                  <div className="w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0"
-                    style={{
-                      background: deleteSelections.links ? 'hsl(var(--danger))' : 'transparent',
-                      borderColor: deleteSelections.links ? 'hsl(var(--danger))' : 'hsl(var(--border))',
-                    }}>
-                    {deleteSelections.links && <Check size={12} color="white" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm">Links & Groups</p>
-                    <p className="text-[11px] text-muted-foreground">{linksCount} link{linksCount !== 1 ? 's' : ''}, {groupsCount} group{groupsCount !== 1 ? 's' : ''}</p>
-                  </div>
-                  <span className="text-lg font-bold" style={{ color: deleteSelections.links ? 'hsl(var(--danger))' : 'hsl(var(--muted-foreground))' }}>
-                    {linksCount + groupsCount}
-                  </span>
-                </button>
-
-                {/* More Features */}
-                <button
-                  onClick={() => toggleDeleteSelection('more')}
-                  className="w-full flex items-center gap-3 px-4 py-3.5 rounded-[1.5rem] transition-all duration-150 text-left"
-                  style={{
-                    background: deleteSelections.more ? 'hsl(var(--danger) / 0.08)' : 'hsl(var(--secondary) / 0.5)',
-                    border: `1px solid ${deleteSelections.more ? 'hsl(var(--danger) / 0.25)' : 'hsl(var(--border) / 0.25)'}`,
-                  }}
-                >
-                  <div className="w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0"
-                    style={{
-                      background: deleteSelections.more ? 'hsl(var(--danger))' : 'transparent',
-                      borderColor: deleteSelections.more ? 'hsl(var(--danger))' : 'hsl(var(--border))',
-                    }}>
-                    {deleteSelections.more && <Check size={12} color="white" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm">Extra Features & Tools</p>
-                    <p className="text-[11px] text-muted-foreground">Loans, Goals, Subscriptions & Notes</p>
-                  </div>
-                  <span className="text-lg font-bold" style={{ color: deleteSelections.more ? 'hsl(var(--danger))' : 'hsl(var(--muted-foreground))' }}>
-                    {moreCount}
-                  </span>
-                </button>
-
-                {/* Actions */}
-                <div className="flex gap-2 pt-1">
-                  <button
-                    onClick={() => setDeleteStep('closed')}
-                    className="flex-1 px-4 py-3 rounded-[1.25rem] font-semibold text-sm"
-                    style={{ background: 'hsl(var(--secondary))', border: '1px solid hsl(var(--border) / 0.3)' }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => hasAnySelection && setDeleteStep('confirm')}
-                    disabled={!hasAnySelection}
-                    className="flex-1 px-4 py-3 rounded-[1.25rem] font-semibold text-sm disabled:opacity-30 transition-opacity"
-                    style={{
-                      background: 'hsl(var(--danger))',
-                      color: 'white',
-                      boxShadow: hasAnySelection ? '0 4px 12px -4px hsl(var(--danger) / 0.5)' : 'none',
-                    }}
-                  >
-                    Continue ({selectedDeleteCount()})
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Step 2: Final confirmation */}
-            {deleteStep === 'confirm' && (
-              <div className="p-5 space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'hsl(var(--danger) / 0.15)' }}>
-                    <AlertTriangle size={18} style={{ color: 'hsl(var(--danger))' }} />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-base" style={{ color: 'hsl(var(--danger))' }}>Are you sure?</h3>
-                    <p className="text-xs text-muted-foreground">This cannot be undone</p>
-                  </div>
-                </div>
-
-                {/* Summary of what's being deleted */}
-                <div className="rounded-2xl p-3.5 space-y-2" style={{ background: 'hsl(var(--danger) / 0.06)', border: '1px solid hsl(var(--danger) / 0.12)' }}>
-                  <p className="text-xs font-semibold" style={{ color: 'hsl(var(--danger))' }}>Will be permanently deleted:</p>
-                  {deleteSelections.personal && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <X size={12} style={{ color: 'hsl(var(--danger))' }} />
-                      <span>{personalCount} personal expense{personalCount !== 1 ? 's' : ''}</span>
-                    </div>
-                  )}
-                  {deleteSelections.shared && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <X size={12} style={{ color: 'hsl(var(--danger))' }} />
-                      <span>{sharedCount} shared transaction{sharedCount !== 1 ? 's' : ''} + all balances</span>
-                    </div>
-                  )}
-                  {deleteSelections.links && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <X size={12} style={{ color: 'hsl(var(--danger))' }} />
-                      <span>{linksCount} link{linksCount !== 1 ? 's' : ''} & {groupsCount} group{groupsCount !== 1 ? 's' : ''}</span>
-                    </div>
-                  )}
-                  {deleteSelections.more && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <X size={12} style={{ color: 'hsl(var(--danger))' }} />
-                      <span>{moreCount} extra tool item{moreCount !== 1 ? 's' : ''}</span>
-                    </div>
-                  )}
-                  <div className="pt-1.5 mt-1.5" style={{ borderTop: '1px solid hsl(var(--danger) / 0.1)' }}>
-                    <p className="text-xs font-bold" style={{ color: 'hsl(var(--danger))' }}>Total: {selectedDeleteCount()} items</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-2 pt-1">
-                  <button
-                    onClick={() => setDeleteStep('select')}
-                    className="flex-1 px-4 py-3 rounded-2xl font-semibold text-sm"
-                    style={{ background: 'hsl(var(--secondary))', border: '1px solid hsl(var(--border) / 0.3)' }}
-                  >
-                    Go Back
-                  </button>
-                  <button
-                    onClick={handleConfirmDelete}
-                    className="flex-1 px-4 py-3 rounded-2xl font-bold text-sm"
-                    style={{
-                      background: 'hsl(var(--danger))',
-                      color: 'white',
-                      boxShadow: '0 4px 12px -4px hsl(var(--danger) / 0.5)',
-                    }}
-                  >
-                    Delete Forever
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>,
-        document.body
-      )}
-
-
-      {/* ── Privacy Info Modal ── */}
-      {showPrivacy && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
-          style={{ background: 'hsl(0 0% 0% / 0.6)', backdropFilter: 'blur(8px)' }}
-          onClick={() => setShowPrivacy(false)}
-        >
-          <div
-            className="w-full max-w-sm rounded-[24px] overflow-hidden"
-            style={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border) / 0.5)' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="p-5 space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'hsl(var(--primary) / 0.12)' }}>
-                  <Shield size={18} className="text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base">Privacy & Sign In</h3>
-                  <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                    <Check size={10} className="text-primary" />
-                    100% Optional
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-3 text-sm text-foreground/90 leading-relaxed px-1">
-                <p>
-                  You do <strong className="font-bold">NOT</strong> need to sign in to use this app. All your data is stored securely on your device by default.
-                </p>
-                <div className="p-3 rounded-2xl" style={{ background: 'hsl(var(--secondary) / 0.5)', border: '1px solid hsl(var(--border) / 0.3)' }}>
-                  <h4 className="font-semibold text-xs mb-1">Why ask for a Google account?</h4>
-                  <p className="text-xs text-muted-foreground">
-                    Signing in simply allows you to backup your app data securely to your own Google Drive.
-                    We do not track you, sell your data, or access any files outside of this app's backup folder.
-                  </p>
-                </div>
-                <div className="p-3 rounded-2xl" style={{ background: 'hsl(var(--secondary) / 0.5)', border: '1px solid hsl(var(--border) / 0.3)' }}>
-                  <h4 className="font-semibold text-xs mb-1">Receipt & Proof Images Privacy</h4>
-                  <p className="text-xs text-muted-foreground">
-                    For your privacy, attached proof and bill images are stored strictly on your local device and never uploaded to any servers. Note that clearing app data or uninstalling the app will permanently delete stored images.
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  onClick={() => setShowPrivacy(false)}
-                  className="w-full px-4 py-3 rounded-2xl font-semibold text-sm transition-all"
-                  style={{ background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))' }}
-                >
-                  Understood
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Sign Out Confirmation Sheet */}
-      {showSignOutConfirm && createPortal(
-        <div className="fixed inset-0 z-[12000] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-300" onClick={() => setShowSignOutConfirm(false)}>
-          <div
-            className="w-full max-w-md bg-card rounded-[2.5rem] p-8 pt-10 pb-12 space-y-6 animate-in slide-in-from-bottom-10 border border-border/10 duration-500 shadow-2xl relative overflow-hidden"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Backglow line */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-1 bg-muted/20 rounded-full mt-3" />
-
-            <div className="text-center space-y-4">
-              <div className="w-20 h-20 rounded-[2.5rem] bg-destructive/10 flex items-center justify-center mx-auto mb-4 border border-destructive/20 active:scale-95 transition-all">
-                <LogOut size={36} className="text-destructive translate-x-1" />
-              </div>
-              <h2 className="text-xl font-bold tracking-tight text-foreground uppercase">Sign Out?</h2>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 pt-4">
-              <button
-                onClick={() => setShowSignOutConfirm(false)}
-                className="h-14 rounded-2xl bg-secondary font-black uppercase tracking-widest text-[11px] active:scale-95 transition-all text-muted-foreground border border-border/10"
-              >
-                Stay
-              </button>
-              <button
-                onClick={() => {
-                  setShowSignOutConfirm(false);
-                  handleGoogleSignOut();
-                }}
-                className="h-14 rounded-2xl bg-destructive text-white font-black uppercase tracking-widest text-[11px] shadow-lg shadow-destructive/20 active:scale-95 transition-all"
-              >
-                Sign Out
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Full Screen Avatar View */}
-      {showFullScreenAvatar && profile.avatar && createPortal(
-        <div
-          className="fixed inset-0 z-[11000] flex items-center justify-center bg-black/90 backdrop-blur-xl animate-in fade-in duration-300"
-          onClick={() => setShowFullScreenAvatar(false)}
-        >
-          <div className="absolute top-12 right-6 z-10">
-            <button
-              onClick={() => setShowFullScreenAvatar(false)}
-              className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center active:scale-95 transition-all border border-white/10"
-            >
-              <X size={24} className="text-white" />
-            </button>
-          </div>
-
-          <div
-            className="w-full max-w-[90vw] aspect-square rounded-[3rem] overflow-hidden shadow-2xl border-4 border-white/5 animate-in zoom-in-95 duration-500"
-            onClick={e => e.stopPropagation()}
-          >
-            {(() => {
-              // Upgrade quality for Google photos in full view
-              let highResAvatar = profile.avatar;
-              if (highResAvatar?.includes('googleusercontent.com')) {
-                highResAvatar = highResAvatar.replace(/[?&]sz=\d+/i, '').replace(/[?&]s=\d+/i, '');
-                highResAvatar += highResAvatar.includes('?') ? '&s=0' : '?s=0'; // s=0 often means original resolution
-              }
-              return (
-                <img
-                  src={highResAvatar}
-                  alt="Profile Full View"
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-              );
-            })()}
-          </div>
-
-          <div className="absolute bottom-12 left-0 right-0 text-center space-y-2 px-8">
-            <h2 className="text-xl font-bold text-white tracking-tight">{profile.name}</h2>
-            <div className="flex items-center justify-center gap-2 opacity-50">
-              <div className="w-1.5 h-1.5 rounded-full bg-success" />
-              <p className="text-[9px] text-white font-black uppercase tracking-[0.3em]">Original Quality Active</p>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-    </div>
+          </AnimatePresence>,
+          document.body
+        )}
+      </div>
     </div>
   );
 }

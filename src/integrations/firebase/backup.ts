@@ -204,3 +204,16 @@ export async function loadBackupForCurrentUser(options?: { enforceFreeLimit?: bo
     platform: data.platform,
   };
 }
+export async function deleteCloudBackupForCurrentUser(): Promise<void> {
+  const user = getCurrentGoogleUser();
+  if (!user) return;
+  const ref = getBackupRef(user.uid);
+  try {
+    await retryOnce(() => withTimeout(deleteDoc(ref), 'Cloud backup delete'));
+  } catch (error) {
+    // If document doesn't exist, that's fine — it's already gone
+    const code = (error as { code?: string } | null)?.code ?? '';
+    if (code === 'not-found') return;
+    throw toActionableError(error, 'Cloud backup deletion failed.');
+  }
+}
