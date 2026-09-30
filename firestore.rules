@@ -93,5 +93,11 @@ service cloud.firestore {
                     && (resource.data.targetEmail == request.auth.token.email || resource.data.fromEmail == request.auth.token.email);
     }
 
+       // App-wide push notifications — readable by all users, writable/deletable by admin only
+    match /app_notifications/{docId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+
   }
 }

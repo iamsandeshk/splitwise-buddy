@@ -19,6 +19,13 @@ import {
   Search,
   CheckCircle2,
   ChevronDown,
+  Bell,
+  Plus,
+  Trash2,
+  Send,
+  Info,
+  Zap,
+  AlertCircle,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { cn } from '@/lib/utils';
@@ -35,13 +42,19 @@ import {
   type ProUserEntry,
   type BannedUserEntry,
 } from '@/integrations/firebase/admin';
+import {
+  fetchAllNotifications,
+  pushNotification,
+  deleteNotification,
+  type AppNotification,
+} from '@/integrations/firebase/notifications';
 import { getCurrentGoogleUser } from '@/integrations/firebase/auth';
 import { clearProStatusCache } from '@/lib/proAccess';
 
 export default function AdminProUsersPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<'pro' | 'banned'>('pro');
+  const [activeTab, setActiveTab] = useState<'pro' | 'banned' | 'notifications'>('pro');
   const [users, setUsers] = useState<ProUserEntry[]>([]);
   const [bannedUsers, setBannedUsers] = useState<BannedUserEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,6 +77,18 @@ export default function AdminProUsersPage() {
   const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
   const [hasAdminAccess, setHasAdminAccess] = useState(false);
   const [showInactiveUsers, setShowInactiveUsers] = useState(false);
+
+  // Notifications state
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [deletingNotifId, setDeletingNotifId] = useState<string | null>(null);
+  const [showPushForm, setShowPushForm] = useState(false);
+  const [pushTitle, setPushTitle] = useState('');
+  const [pushBody, setPushBody] = useState('');
+  const [pushEmoji, setPushEmoji] = useState('');
+  const [pushType, setPushType] = useState<'info' | 'warning' | 'success' | 'promo'>('info');
+  const [pushLink, setPushLink] = useState('');
+  const [isPushing, setIsPushing] = useState(false);
 
   const currentUser = getCurrentGoogleUser();
 
@@ -93,13 +118,26 @@ export default function AdminProUsersPage() {
     }
   }, []);
 
+  const loadNotifications = useCallback(async () => {
+    setNotifLoading(true);
+    try {
+      const list = await fetchAllNotifications();
+      setNotifications(list);
+    } catch (err) {
+      toast({ title: 'Error', description: (err as Error).message || 'Failed to load notifications.', variant: 'destructive' });
+    } finally {
+      setNotifLoading(false);
+    }
+  }, [toast]);
+
   useEffect(() => {
     if (hasAdminAccess) {
       void loadData();
+      void loadNotifications();
     } else {
       setLoading(false);
     }
-  }, [hasAdminAccess, loadData]);
+  }, [hasAdminAccess, loadData, loadNotifications]);
 
   const handlePasswordUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,7 +165,11 @@ export default function AdminProUsersPage() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    if (activeTab === 'notifications') {
+      await loadNotifications();
+    } else {
+      await loadData();
+    }
     setRefreshing(false);
     toast({ title: 'Refreshed', description: 'Admin data updated.' });
   };
@@ -231,6 +273,51 @@ try.sandeshk@gmail.com`
     }).catch(() => {});
   };
 
+  // ── Notification handlers ──────────────────────────────────────────────────
+  const handlePushNotification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pushTitle.trim() || !pushBody.trim()) {
+      toast({ title: 'Required fields missing', description: 'Title and body are required.', variant: 'destructive' });
+      return;
+    }
+    setIsPushing(true);
+    try {
+      await pushNotification({ title: pushTitle, body: pushBody, emoji: pushEmoji || undefined, type: pushType, link: pushLink || undefined });
+      toast({ title: '✅ Notification Pushed!', description: 'It is now live for all users.' });
+      setPushTitle('');
+      setPushBody('');
+      setPushEmoji('');
+      setPushLink('');
+      setPushType('info');
+      setShowPushForm(false);
+      await loadNotifications();
+    } catch (err) {
+      toast({ title: 'Push Failed', description: (err as Error).message || 'Could not push notification.', variant: 'destructive' });
+    } finally {
+      setIsPushing(false);
+    }
+  };
+
+  const handleDeleteNotification = async (id: string) => {
+    setDeletingNotifId(id);
+    try {
+      await deleteNotification(id);
+      setNotifications(prev => prev.filter(n => n.id !== id));
+      toast({ title: 'Notification Deleted', description: 'Removed from Firestore.' });
+    } catch (err) {
+      toast({ title: 'Delete Failed', description: (err as Error).message || 'Could not delete.', variant: 'destructive' });
+    } finally {
+      setDeletingNotifId(null);
+    }
+  };
+
+  function notifTypeIcon(type?: string) {
+    if (type === 'warning') return <AlertCircle size={14} className="text-amber-400" />;
+    if (type === 'success') return <CheckCircle2 size={14} className="text-emerald-400" />;
+    if (type === 'promo') return <Zap size={14} className="text-primary" />;
+    return <Info size={14} className="text-blue-400" />;
+  }
+
   // Password Prompt Screen
   if (!hasAdminAccess) {
     return (
@@ -329,7 +416,7 @@ try.sandeshk@gmail.com`
               </span>
             </h1>
             <p className="text-[11px] text-muted-foreground">
-              {activeProCount} Active Pro · {bannedUsers.length} Banned
+              {activeProCount} Active Pro · {bannedUsers.length} Banned · {notifications.length} Notifs
             </p>
           </div>
         </div>
@@ -347,7 +434,8 @@ try.sandeshk@gmail.com`
       </div>
 
       <div className="p-4 max-w-2xl mx-auto space-y-4">
-        {/* Action Bar */}
+        {/* Action Bar - only show ban button when not on notifications tab */}
+        {activeTab !== 'notifications' && (
         <div>
           <Button
             onClick={() => setShowBanModal(true)}
@@ -358,6 +446,7 @@ try.sandeshk@gmail.com`
             Ban User
           </Button>
         </div>
+        )}
 
         {/* Tab Switcher */}
         <div className="flex rounded-2xl bg-muted/40 p-1 border border-border/20">
@@ -371,7 +460,7 @@ try.sandeshk@gmail.com`
             )}
           >
             <Crown size={14} className={activeTab === 'pro' ? 'text-amber-500' : ''} />
-            Pro Users ({users.length})
+            Pro ({users.length})
           </button>
           <button
             onClick={() => setActiveTab('banned')}
@@ -383,11 +472,24 @@ try.sandeshk@gmail.com`
             )}
           >
             <Ban size={14} className={activeTab === 'banned' ? 'text-destructive' : ''} />
-            Banned Users ({bannedUsers.length})
+            Banned ({bannedUsers.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('notifications')}
+            className={cn(
+              'flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5',
+              activeTab === 'notifications'
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Bell size={14} className={activeTab === 'notifications' ? 'text-blue-400' : ''} />
+            Notifs ({notifications.length})
           </button>
         </div>
 
-        {/* Search */}
+        {/* Search - only on pro/banned tabs */}
+        {activeTab !== 'notifications' && (
         <div className="relative">
           <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -397,6 +499,7 @@ try.sandeshk@gmail.com`
             className="pl-9 h-11 rounded-xl bg-card border-border/40 text-xs"
           />
         </div>
+        )}
 
         {/* Loading State */}
         {loading && (
@@ -767,6 +870,162 @@ try.sandeshk@gmail.com`
                   </div>
                 </div>
               ))
+            )}
+          </div>
+        )}
+
+        {/* NOTIFICATIONS TAB */}
+        {activeTab === 'notifications' && (
+          <div className="space-y-4">
+            {/* Compose button */}
+            <button
+              onClick={() => setShowPushForm((v) => !v)}
+              className="w-full h-11 rounded-2xl font-bold text-xs border border-blue-500/30 text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 flex items-center justify-center gap-2 transition-all"
+            >
+              {showPushForm ? <X size={15} /> : <Plus size={15} />}
+              {showPushForm ? 'Cancel' : 'Push New Notification'}
+            </button>
+
+            {/* Compose form */}
+            {showPushForm && (
+              <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 space-y-3">
+                <h3 className="text-sm font-black text-foreground flex items-center gap-2">
+                  <Send size={15} className="text-blue-400" /> Compose Notification
+                </h3>
+                <form onSubmit={handlePushNotification} className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-2 space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-muted-foreground">Title *</label>
+                      <Input
+                        placeholder="e.g. New Feature 🎉"
+                        value={pushTitle}
+                        onChange={(e) => setPushTitle(e.target.value)}
+                        className="h-10 rounded-xl bg-muted/40 text-xs"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-muted-foreground">Emoji</label>
+                      <Input
+                        placeholder="🎉"
+                        value={pushEmoji}
+                        onChange={(e) => setPushEmoji(e.target.value)}
+                        className="h-10 rounded-xl bg-muted/40 text-xs"
+                        maxLength={4}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-muted-foreground">Body / Message *</label>
+                    <textarea
+                      placeholder="Write the notification message here..."
+                      value={pushBody}
+                      onChange={(e) => setPushBody(e.target.value)}
+                      className="w-full h-20 px-3 py-2.5 rounded-xl bg-muted/40 border border-border/40 text-xs text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-muted-foreground">Type</label>
+                      <select
+                        value={pushType}
+                        onChange={(e) => setPushType(e.target.value as 'info' | 'warning' | 'success' | 'promo')}
+                        className="w-full h-10 px-3 rounded-xl bg-muted/40 border border-border/40 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                      >
+                        <option value="info">ℹ️ Info</option>
+                        <option value="warning">⚠️ Warning</option>
+                        <option value="success">✅ Success</option>
+                        <option value="promo">⚡ Promo</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-muted-foreground">Link (optional)</label>
+                      <Input
+                        placeholder="https://..."
+                        value={pushLink}
+                        onChange={(e) => setPushLink(e.target.value)}
+                        className="h-10 rounded-xl bg-muted/40 text-xs"
+                        type="url"
+                      />
+                    </div>
+                  </div>
+
+                  <Button
+                    type="submit"
+                    className="w-full h-11 rounded-xl font-bold text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                    disabled={isPushing}
+                  >
+                    {isPushing ? (
+                      <><RefreshCw size={13} className="animate-spin mr-1.5" /> Pushing...</>
+                    ) : (
+                      <><Send size={13} className="mr-1.5" /> Push to All Users</>
+                    )}
+                  </Button>
+                </form>
+              </div>
+            )}
+
+            {/* Notifications List */}
+            {notifLoading ? (
+              <div className="py-12 text-center space-y-3">
+                <RefreshCw size={22} className="animate-spin text-blue-400 mx-auto" />
+                <p className="text-xs text-muted-foreground">Loading notifications...</p>
+              </div>
+            ) : notifications.length === 0 ? (
+              <div className="py-12 text-center space-y-2">
+                <Bell size={28} className="text-muted-foreground/40 mx-auto" />
+                <p className="text-xs text-muted-foreground">No notifications pushed yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {notifications.map((n) => (
+                  <div
+                    key={n.id}
+                    className="rounded-2xl border border-border/30 bg-card p-4 flex items-start gap-3"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-muted/40 border border-border/20 flex items-center justify-center shrink-0">
+                      {n.emoji ? (
+                        <span className="text-base">{n.emoji}</span>
+                      ) : (
+                        notifTypeIcon(n.type)
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-xs font-bold text-foreground truncate">{n.title}</span>
+                        <span className={cn(
+                          'px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0',
+                          n.type === 'warning' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' :
+                          n.type === 'success' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
+                          n.type === 'promo' ? 'bg-primary/10 text-primary border border-primary/20' :
+                          'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                        )}>
+                          {n.type}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-snug line-clamp-2">{n.body}</p>
+                      <p className="text-[10px] text-muted-foreground/50 mt-1 font-mono">
+                        {new Date(n.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteNotification(n.id)}
+                      disabled={deletingNotifId === n.id}
+                      className="w-8 h-8 rounded-xl bg-destructive/10 hover:bg-destructive/20 border border-destructive/20 flex items-center justify-center transition-all active:scale-90 shrink-0"
+                      title="Delete notification"
+                    >
+                      {deletingNotifId === n.id ? (
+                        <RefreshCw size={12} className="animate-spin text-destructive" />
+                      ) : (
+                        <Trash2 size={13} className="text-destructive" />
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}

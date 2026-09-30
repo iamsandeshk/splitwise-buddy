@@ -17,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { NotificationCard } from '@/components/NotificationCard';
 
 interface HomeTabProps {
   onAddPersonal: () => void;
@@ -444,6 +445,9 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
           <span className="text-base">Add income</span>
         </button>
       </div>
+
+      {/* Admin Notifications */}
+      <NotificationCard />
 
       {/* Dynamic Sections */}
       {settings.sectionOrder.map((sectionId) => {
