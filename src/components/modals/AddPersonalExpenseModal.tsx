@@ -4,7 +4,7 @@ import {
   savePersonalExpense, generateId, EXPENSE_CATEGORIES, getAccounts, getCurrency,
   getDefaultAccountId, getSuggestedReasons, saveSharedExpense, getUniquePersonNames,
   type PersonalExpense, type SharedExpense, type FinancialAccountType,
-  saveTransactionAttachment, resizeImageToDataUrl
+  saveTransactionAttachment, resizeImageToDataUrl, updateSharedExpenseAttachment
 } from '@/lib/storage';
 import {
   Tag, CalendarDays, ChevronLeft, Save, Plus, Image as ImageIcon, X,
@@ -135,12 +135,17 @@ export function AddPersonalExpenseModal({ isOpen, onClose, onAdd, initialIsIncom
         createdAt: new Date().toISOString(),
         settled: false,
         category: isIncome ? 'Income' : category,
-        accountId: isIncome ? undefined : (accountId || undefined),
+        accountId: accountId || undefined,
       };
+      
       const saved = saveSharedExpense(sharedExpense);
+      if (saved && attachmentDataUrl) {
+        saveTransactionAttachment(attachmentDataUrl, sharedExpense.id).then(attachId => {
+          if (attachId) updateSharedExpenseAttachment(sharedExpense.id, attachId);
+        }).catch(console.error);
+      }
       if (!saved) { setIsSubmitting(false); return; }
     } else {
-      // No person: standalone personal expense
       const expense: PersonalExpense = {
         id: generateId(),
         amount: numAmount,
@@ -148,10 +153,11 @@ export function AddPersonalExpenseModal({ isOpen, onClose, onAdd, initialIsIncom
         category: isIncome ? 'Income' : category,
         date,
         createdAt: new Date().toISOString(),
-        accountId: accountId || undefined,
         isIncome,
+        isMirror: false,
+        accountId: accountId || undefined,
       };
-
+      
       if (attachmentDataUrl) {
         try {
           const attachId = await saveTransactionAttachment(attachmentDataUrl, expense.id);

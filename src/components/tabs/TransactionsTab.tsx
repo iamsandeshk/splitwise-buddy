@@ -212,7 +212,7 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
                       {person.netBalance > 0 ? '+' : ''}{Math.abs(person.netBalance).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      {person.netBalance > 0 ? 'owes you' : person.netBalance < 0 ? 'you owe' : 'settled'}
+                      {person.netBalance < 0 ? 'owes you' : person.netBalance > 0 ? 'you owe' : 'settled'}
                     </p>
                   </div>
                   <ArrowUpRight size={14} className="text-muted-foreground/30 shrink-0" />

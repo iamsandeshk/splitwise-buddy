@@ -485,7 +485,7 @@ export default function PersonDetailsPage() {
           </div>
           <MoneyDisplay amount={person.netBalance} size="xl" showSign={true} />
           <p className="text-xs text-muted-foreground">
-            {person.netBalance > 0 ? "They owe you" : person.netBalance < 0 ? "You owe them" : "All settled! 🎉"}
+            {person.netBalance < 0 ? "They owe you" : person.netBalance > 0 ? "You owe them" : "All settled! 🎉"}
           </p>
 
           <div className="flex flex-col gap-2 mt-2">

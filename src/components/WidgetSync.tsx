@@ -34,20 +34,19 @@ export function WidgetSync() {
           0
         );
 
-        // Lifetime net = unsettled shared balance + all personal income - all personal expenses
-        const netTotalBalance =
-          netSharedBalance + lifetimePersonalIncome - lifetimePersonalExpenses;
-
+        // Cash flow net balance
         const sharedOwedToYou = personBalances
-          .filter((p) => p.netBalance > 0)
-          .reduce((sum, p) => sum + p.netBalance, 0);
-
-        const sharedYouOwe = personBalances
           .filter((p) => p.netBalance < 0)
           .reduce((sum, p) => sum + Math.abs(p.netBalance), 0);
 
-        const totalIncoming = sharedOwedToYou + lifetimePersonalIncome;
-        const totalOutgoing = sharedYouOwe + lifetimePersonalExpenses;
+        const sharedYouOwe = personBalances
+          .filter((p) => p.netBalance > 0)
+          .reduce((sum, p) => sum + p.netBalance, 0);
+
+        const totalIncoming = sharedYouOwe + lifetimePersonalIncome;
+        const totalOutgoing = sharedOwedToYou + lifetimePersonalExpenses;
+
+        const netTotalBalance = totalIncoming - totalOutgoing;
 
         const currencySymbol = getCurrency().symbol;
 

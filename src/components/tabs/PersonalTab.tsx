@@ -16,6 +16,13 @@ import { NativeAdCard } from '@/components/NativeAdCard';
 import { useBannerAd } from '@/hooks/useBannerAd';
 
 const CATEGORY_EMOJIS: Record<string, string> = {
+  'Food & Dining': '🍕',
+  Transportation: '🚗',
+  Shopping: '🛍️',
+  Entertainment: '🎬',
+  'Bills & Utilities': '📄',
+  Healthcare: '💊',
+  Education: '📚',
   Travel: '✈️',
   Groceries: '🛒',
   Other: '📦',
@@ -81,6 +88,24 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true, onSc
       // Ignore leftover demo data
       const isDemo = expense.id.startsWith('demo-sms-') || (expense.smsExternalId && expense.smsExternalId.startsWith('demo-sms-'));
       if (isDemo) return false;
+
+      // Ignore system-generated transactions based on source
+      if (expense.source === 'account' || expense.source === 'recurring' || expense.source === 'subscription') return false;
+
+      // Ignore legacy un-sourced system transactions based on reason text
+      const reasonLower = expense.reason.toLowerCase();
+      if (
+        reasonLower.startsWith('initial balance') ||
+        reasonLower.startsWith('loan given') ||
+        reasonLower.startsWith('loan borrowed') ||
+        reasonLower.startsWith('loan repayment') ||
+        reasonLower.startsWith('subscription:') ||
+        reasonLower.startsWith('savings transfer') ||
+        reasonLower.includes('goal deposit') ||
+        reasonLower.includes('goal withdrawal')
+      ) {
+        return false;
+      }
 
       const matchesSearch = expense.reason.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesFilter = filterType === 'all' 

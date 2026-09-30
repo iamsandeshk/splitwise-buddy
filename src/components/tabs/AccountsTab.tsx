@@ -11,6 +11,9 @@ import {
   getAccounts,
   saveAccount,
   savePersonalExpense,
+  getPersonalExpenses,
+  updatePersonalExpense,
+  deletePersonalExpense,
   generateId,
   type FinancialAccount,
   type FinancialAccountType,
@@ -109,7 +112,7 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
       id: accountId,
       name: form.name.trim(),
       type: form.type,
-      budget: isNew ? 0 : amount,
+      budget: 0, // Always use transaction for balance to keep HomeTab in sync
       isDefault: form.isDefault,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -117,17 +120,34 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
 
     if (!saved) return;
 
-    if (isNew && amount > 0) {
+    // Find existing initial balance transaction
+    const personal = getPersonalExpenses();
+    const existingInitialTx = personal.find(
+      (entry) => entry.accountId === accountId && !!entry.isIncome && entry.reason.toLowerCase().includes('initial balance')
+    );
+
+    if (existingInitialTx) {
+      if (amount > 0) {
+        updatePersonalExpense(existingInitialTx.id, { 
+          ...existingInitialTx, 
+          amount,
+          date: existingInitialTx.date.includes('T') ? existingInitialTx.date.split('T')[0] : existingInitialTx.date 
+        });
+      } else {
+        deletePersonalExpense(existingInitialTx.id);
+      }
+    } else if (amount > 0) {
       savePersonalExpense({
         id: generateId(),
         amount: amount,
         reason: `Initial Balance for ${form.name.trim()}`,
-        category: 'other',
-        date: new Date().toISOString(),
+        category: 'Other',
+        date: new Date().toISOString().split('T')[0],
         createdAt: new Date().toISOString(),
         isIncome: true,
         isMirror: false,
-        accountId: accountId
+        accountId: accountId,
+        source: 'account'
       });
     }
 

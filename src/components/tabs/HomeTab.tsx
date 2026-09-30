@@ -1,4 +1,4 @@
-import { Plus, TrendingUp, TrendingDown, Users, Wallet, Activity, Target, PieChart, ArrowUpRight, ArrowDownRight, Banknote, SlidersHorizontal, ChevronRight } from 'lucide-react';
+import { Plus, TrendingUp, TrendingDown, Users, Wallet, Activity, Target, PieChart, ArrowUpRight, ArrowDownRight, Banknote, SlidersHorizontal, ChevronRight, ChevronDown, Check, Calendar, History, Layers } from 'lucide-react';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
 import { ExpenseChart } from '@/components/ExpenseChart';
 import { getPersonalExpenses, getPersonBalances, getSharedExpenses, EXPENSE_CATEGORIES, getAccountProfile, getHomeSettings, processSubscriptionBilling } from '@/lib/storage';
@@ -11,6 +11,12 @@ import { GoalsWidget, LoansWidget, SubscriptionsWidget, PinnedLinksWidget, Categ
 import { useSessionAnimation } from '@/hooks/use-session-animation';
 import { useProGate } from '@/hooks/useProGate';
 import { EditHomeWidgetsModal } from '@/components/modals/EditHomeWidgetsModal';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface HomeTabProps {
   onAddPersonal: () => void;
@@ -20,9 +26,28 @@ interface HomeTabProps {
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
 }
 
+type BalanceTimeframe = 'present' | 'previous' | 'lifetime';
+
+function matchesMonth(dateStr: string | undefined | null, targetMonth: string): boolean {
+  if (!dateStr) return false;
+  if (dateStr.startsWith(targetMonth)) return true;
+  if (dateStr.length >= 7 && dateStr.slice(0, 7) === targetMonth) return true;
+  try {
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      return ym === targetMonth;
+    }
+  } catch {
+    // fallback
+  }
+  return false;
+}
+
 export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateToTab, onScroll }: HomeTabProps) {
   const shouldAnimate = useSessionAnimation('home-tab');
   const navigate = useNavigate();
+  const [dataVersion, setDataVersion] = useState(0);
   const personalExpenses = getPersonalExpenses();
   const personBalances = getPersonBalances();
   const sharedExpenses = getSharedExpenses();
@@ -32,9 +57,51 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
   const [showEditWidgets, setShowEditWidgets] = useState(false);
   const { isPro: isEffectivePro } = useProGate();
 
-  const stats = useMemo(() => {
-    const currentMonth = new Date().toISOString().slice(0, 7);
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonthIdx = now.getMonth();
 
+  const presentMonthDate = useMemo(() => new Date(currentYear, currentMonthIdx, 1), [currentYear, currentMonthIdx]);
+  const presentMonthKey = useMemo(() => `${currentYear}-${String(currentMonthIdx + 1).padStart(2, '0')}`, [currentYear, currentMonthIdx]);
+  const presentMonthShort = useMemo(() => presentMonthDate.toLocaleDateString('en', { month: 'short', year: '2-digit' }).toUpperCase(), [presentMonthDate]);
+  const presentMonthFull = useMemo(() => presentMonthDate.toLocaleDateString('en', { month: 'short', year: 'numeric' }), [presentMonthDate]);
+
+  const prevMonthDate = useMemo(() => new Date(currentYear, currentMonthIdx - 1, 1), [currentYear, currentMonthIdx]);
+  const prevMonthKey = useMemo(() => `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`, [prevMonthDate]);
+  const prevMonthShort = useMemo(() => prevMonthDate.toLocaleDateString('en', { month: 'short', year: '2-digit' }).toUpperCase(), [prevMonthDate]);
+  const prevMonthFull = useMemo(() => prevMonthDate.toLocaleDateString('en', { month: 'short', year: 'numeric' }), [prevMonthDate]);
+
+  const timeframeOptions = useMemo(() => [
+    {
+      id: 'present' as const,
+      label: 'Present Month',
+      dateLabel: presentMonthFull,
+      icon: Calendar,
+      badge: 'Current',
+    },
+    {
+      id: 'previous' as const,
+      label: 'Previous Month',
+      dateLabel: prevMonthFull,
+      icon: History,
+      badge: 'Last Mo',
+    },
+    {
+      id: 'lifetime' as const,
+      label: 'Lifetime',
+      dateLabel: 'All months & years',
+      icon: Layers,
+      badge: 'All-Time',
+    },
+  ], [presentMonthFull, prevMonthFull]);
+
+  const [balanceTimeframe, setBalanceTimeframe] = useState<BalanceTimeframe>('present');
+
+  const handleSelectTimeframe = (next: BalanceTimeframe) => {
+    setBalanceTimeframe(next);
+  };
+
+  const stats = useMemo(() => {
     // Ignore any leftover demo data that might still be in local storage
     const realPersonalExpenses = personalExpenses.filter(e =>
       !e.id.startsWith('demo-sms-') &&
@@ -43,30 +110,89 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
 
     // Monthly figures remain useful for the compact stats card below.
     const thisMonthPersonalExpenses = realPersonalExpenses
-      .filter(expense => expense.date.startsWith(currentMonth) && !expense.isIncome)
+      .filter(expense => matchesMonth(expense.date, presentMonthKey) && !expense.isIncome && !expense.isMirror)
       .reduce((sum, expense) => sum + expense.amount, 0);
 
     const thisMonthPersonalIncome = realPersonalExpenses
-      .filter(expense => expense.date.startsWith(currentMonth) && expense.isIncome)
+      .filter(expense => matchesMonth(expense.date, presentMonthKey) && expense.isIncome && !expense.isMirror)
       .reduce((sum, income) => sum + income.amount, 0);
 
-    // The main balance is lifetime and must not reset when the month changes.
+    // Lifetime figures
     const lifetimePersonalExpenses = realPersonalExpenses
-      .filter(expense => !expense.isIncome)
+      .filter(expense => !expense.isIncome && !expense.isMirror)
       .reduce((sum, expense) => sum + expense.amount, 0);
 
     const lifetimePersonalIncome = realPersonalExpenses
-      .filter(expense => expense.isIncome)
+      .filter(expense => expense.isIncome && !expense.isMirror)
       .reduce((sum, income) => sum + income.amount, 0);
 
-    const netSharedBalance = personBalances.reduce((sum, person) => sum + person.netBalance, 0);
+    // Timeframe-specific calculations for Total Balance card
+    let personalIncoming = 0;
+    let personalOutgoing = 0;
+    let sharedIncoming = 0;
+    let sharedOutgoing = 0;
 
-    // Lifetime net = unsettled shared balance + all personal income - all personal expenses.
-    const netTotalBalance = netSharedBalance + lifetimePersonalIncome - lifetimePersonalExpenses;
+    if (balanceTimeframe === 'lifetime') {
+      personalIncoming = lifetimePersonalIncome;
+      personalOutgoing = lifetimePersonalExpenses;
+
+      // netBalance < 0 means I paid them (they owe me -> outgoing cash)
+      sharedOutgoing = personBalances
+        .filter(p => p.netBalance < 0)
+        .reduce((sum, p) => sum + Math.abs(p.netBalance), 0);
+
+      // netBalance > 0 means they paid me (I owe them -> incoming cash)
+      sharedIncoming = personBalances
+        .filter(p => p.netBalance > 0)
+        .reduce((sum, p) => sum + p.netBalance, 0);
+    } else {
+      const targetMonthKey = balanceTimeframe === 'present' ? presentMonthKey : prevMonthKey;
+
+      personalIncoming = realPersonalExpenses
+        .filter(expense => expense.isIncome && !expense.isMirror && matchesMonth(expense.date, targetMonthKey))
+        .reduce((sum, income) => sum + income.amount, 0);
+
+      personalOutgoing = realPersonalExpenses
+        .filter(expense => !expense.isIncome && !expense.isMirror && matchesMonth(expense.date, targetMonthKey))
+        .reduce((sum, expense) => sum + expense.amount, 0);
+
+      const targetShared = sharedExpenses.filter(e => matchesMonth(e.date, targetMonthKey));
+
+      const peopleMap = new Map<string, { totalGiven: number; totalOwed: number }>();
+      targetShared.forEach(expense => {
+        if (expense.groupId) return;
+        if (!peopleMap.has(expense.personName)) {
+          peopleMap.set(expense.personName, { totalGiven: 0, totalOwed: 0 });
+        }
+        const person = peopleMap.get(expense.personName)!;
+        if (!expense.settled) {
+          if (expense.paidBy === 'me') {
+            person.totalOwed += expense.amount; // I paid -> they owe me (outgoing)
+          } else {
+            person.totalGiven += expense.amount; // They paid -> I owe them (incoming)
+          }
+        }
+      });
+
+      peopleMap.forEach(person => {
+        const net = person.totalGiven - person.totalOwed;
+        if (net < 0) {
+          sharedOutgoing += Math.abs(net);
+        } else if (net > 0) {
+          sharedIncoming += net;
+        }
+      });
+    }
+
+    const totalIncoming = sharedIncoming + personalIncoming;
+    const totalOutgoing = sharedOutgoing + personalOutgoing;
+
+    // Cash flow net balance: total cash received minus total cash spent/lent
+    const netTotalBalance = totalIncoming - totalOutgoing;
 
     const categoryData = EXPENSE_CATEGORIES.map(category => {
       const amount = realPersonalExpenses
-        .filter(expense => expense.category === category && expense.date.startsWith(currentMonth) && !expense.isIncome)
+        .filter(expense => expense.category === category && matchesMonth(expense.date, presentMonthKey) && !expense.isIncome)
         .reduce((sum, expense) => sum + expense.amount, 0);
       return { name: category, value: amount };
     }).filter(item => item.value > 0);
@@ -75,17 +201,6 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
       .filter(person => Math.abs(person.netBalance) > 0)
       .sort((a, b) => Math.abs(b.netBalance) - Math.abs(a.netBalance))
       .slice(0, 3);
-
-    const sharedOwedToYou = personBalances
-      .filter(p => p.netBalance > 0)
-      .reduce((sum, p) => sum + p.netBalance, 0);
-
-    const sharedYouOwe = personBalances
-      .filter(p => p.netBalance < 0)
-      .reduce((sum, p) => sum + Math.abs(p.netBalance), 0);
-
-    const totalIncoming = sharedOwedToYou + lifetimePersonalIncome;
-    const totalOutgoing = sharedYouOwe + lifetimePersonalExpenses;
 
     return {
       thisMonthPersonal: thisMonthPersonalExpenses,
@@ -96,11 +211,11 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
       topPeople,
       totalTransactions: realPersonalExpenses.length + sharedExpenses.length,
       categoryData,
-      owedToYou: totalIncoming,
+      totalIncoming,
       totalOutgoing,
       activePeople: personBalances.filter(p => p.netBalance !== 0).length,
     };
-  }, [personalExpenses, personBalances, sharedExpenses]);
+  }, [personalExpenses, personBalances, sharedExpenses, balanceTimeframe, presentMonthKey, prevMonthKey]);
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
@@ -120,12 +235,15 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
     processSubscriptionBilling();
     const syncName = () => setProfileName(getAccountProfile().name || 'Guest');
     const syncSettings = () => setSettings(getHomeSettings());
+    const syncData = () => setDataVersion(v => v + 1);
     window.addEventListener('splitmate_account_changed', syncName);
     window.addEventListener('home_settings_changed', syncSettings);
+    window.addEventListener('splitmate_data_changed', syncData);
     return () => {
       window.removeEventListener('splitmate_account_changed', syncName);
       window.removeEventListener('home_settings_changed', syncSettings);
-    }
+      window.removeEventListener('splitmate_data_changed', syncData);
+    };
   }, []);
 
   return (
@@ -171,10 +289,86 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
         <div className="absolute right-[-15px] top-[20%] -translate-y-[15%] pointer-events-none opacity-[0.04]">
           <Wallet size={120} className="text-foreground" strokeWidth={1} />
         </div>
-        {/* Corner code tag */}
-        <div className="absolute top-3 right-4 font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground/70">
-          NET · {new Date().toLocaleDateString('en', { month: 'short', year: '2-digit' }).toUpperCase()}
-        </div>
+
+        {/* Corner timeframe selector */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="group absolute top-3.5 right-4 z-20 inline-flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground/90 hover:text-foreground active:scale-95 transition-all bg-card/80 hover:bg-muted px-2.5 py-1 rounded-full border border-border/40 shadow-xs cursor-pointer select-none backdrop-blur-md"
+              title="Filter balance by timeframe"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0 transition-transform group-hover:scale-125" />
+              <span>
+                {balanceTimeframe === 'present'
+                  ? `NET · ${presentMonthShort}`
+                  : balanceTimeframe === 'previous'
+                  ? `NET · ${prevMonthShort}`
+                  : 'NET · LIFETIME'}
+              </span>
+              <ChevronDown size={10} className="opacity-60 group-hover:opacity-100 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            sideOffset={8}
+            className="w-64 p-1.5 rounded-2xl bg-card/95 backdrop-blur-2xl border border-border/50 shadow-[0_16px_36px_-6px_rgba(0,0,0,0.85),inset_0_1px_0_hsl(0_0%_100%/0.08)] z-50 animate-in fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
+          >
+            <div className="flex items-center justify-between px-2.5 pt-1.5 pb-2 mb-1 border-b border-border/40">
+              <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground/80 font-semibold">
+                Timeframe
+              </span>
+              <span className="font-mono text-[8px] uppercase tracking-[0.16em] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground border border-border/30">
+                {balanceTimeframe === 'present' ? 'Current' : balanceTimeframe === 'previous' ? 'Last Mo' : 'All Time'}
+              </span>
+            </div>
+
+            <div className="space-y-1">
+              {timeframeOptions.map((opt) => {
+                const isSelected = balanceTimeframe === opt.id;
+                const Icon = opt.icon;
+
+                return (
+                  <DropdownMenuItem
+                    key={opt.id}
+                    onClick={() => handleSelectTimeframe(opt.id)}
+                    className={`group relative flex items-center justify-between px-2.5 py-2.5 rounded-xl cursor-pointer transition-all outline-none ${
+                      isSelected
+                        ? 'bg-muted/80 text-foreground font-medium shadow-xs border border-border/60'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/40 border border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-all ${
+                          isSelected
+                            ? 'bg-primary/20 text-primary border border-primary/30 shadow-[0_0_12px_rgba(255,100,50,0.18)]'
+                            : 'bg-muted/50 text-muted-foreground group-hover:text-foreground group-hover:bg-muted/70'
+                        }`}
+                      >
+                        <Icon size={14} strokeWidth={isSelected ? 2.5 : 2} />
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className={`text-[13px] leading-tight tracking-tight ${isSelected ? 'font-bold text-foreground' : 'font-medium text-foreground/80 group-hover:text-foreground'}`}>
+                          {opt.label}
+                        </span>
+                        <span className="text-[11px] font-mono text-muted-foreground/80 leading-tight mt-0.5 truncate">
+                          {opt.dateLabel}
+                        </span>
+                      </div>
+                    </div>
+
+                    {isSelected && (
+                      <div className="w-5 h-5 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0 ml-2">
+                        <Check size={11} strokeWidth={3} className="text-primary" />
+                      </div>
+                    )}
+                  </DropdownMenuItem>
+                );
+              })}
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-muted-foreground mb-3">
           Total balance
@@ -190,7 +384,7 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
           />
         </div>
 
-        {(stats.owedToYou > 0 || stats.totalOutgoing > 0) && (
+        {(stats.totalIncoming > 0 || stats.totalOutgoing > 0 || balanceTimeframe !== 'lifetime') && (
           <div
             className="mt-5 pt-4 grid grid-cols-2 gap-0 divide-x"
             style={{ borderTop: '1px dashed hsl(var(--border) / 0.5)', borderColor: 'hsl(var(--border) / 0.4)' }}
@@ -200,7 +394,7 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
               <div className="flex items-center gap-1.5">
                 <ArrowDownRight size={14} className="text-success" />
                 <p className="font-heading text-lg font-bold text-success tabular-nums tracking-tight">
-                  {currency.symbol}{stats.owedToYou.toLocaleString(currency.locale)}
+                  {currency.symbol}{stats.totalIncoming.toLocaleString(currency.locale)}
                 </p>
               </div>
             </div>
@@ -342,7 +536,7 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
                             <div>
                               <p className="font-bold text-sm tracking-tight text-foreground">{person.name}</p>
                               <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide mt-0.5">
-                                {isPositive ? "Owes you" : isNegative ? "You owe" : "Settled"}
+                                {isPositive ? "You owe" : isNegative ? "Owes you" : "Settled"}
                               </p>
                             </div>
                           </div>

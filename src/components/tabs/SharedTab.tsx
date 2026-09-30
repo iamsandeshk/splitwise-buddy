@@ -122,15 +122,15 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
 
     const positiveBalances = personBalances.filter(p => p.netBalance > 0);
     const negativeBalances = personBalances.filter(p => p.netBalance < 0);
-    const owed = positiveBalances.reduce((sum, p) => sum + p.netBalance, 0);
-    const owe = Math.abs(negativeBalances.reduce((sum, p) => sum + p.netBalance, 0));
+    const youOwe = positiveBalances.reduce((sum, p) => sum + p.netBalance, 0);
+    const owedToYou = Math.abs(negativeBalances.reduce((sum, p) => sum + p.netBalance, 0));
 
     const chartData = [
       { name: 'Incoming', value: Math.abs(positiveBalances.reduce((sum, p) => sum + p.netBalance, 0)), color: 'hsl(149, 88%, 52%)' },
       { name: 'Outgoing', value: Math.abs(negativeBalances.reduce((sum, p) => sum + p.netBalance, 0)), color: 'hsl(0, 85%, 65%)' }
     ].filter(item => item.value > 0);
 
-    return { netBalance: net, balanceData: chartData, owedToYou: owed, youOwe: owe };
+    return { netBalance: net, balanceData: chartData, owedToYou, youOwe };
   }, [personBalances]);
 
   const handleAddExpense = () => {
@@ -484,14 +484,14 @@ export function SharedTab({ onOpenAccount, onBack, bannerAdActive = true }: Shar
               <div className="pr-4">
                 <div className="flex items-center gap-1.5">
                   <ArrowDownRight size={11} className="text-success" />
-                  <span className="mono-label">IN</span>
+                  <span className="mono-label">you get</span>
                 </div>
                 <p className="text-base font-bold tabular text-success mt-1">{currency.symbol}{owedToYou.toLocaleString(currency.locale)}</p>
               </div>
               <div className="pl-4">
                 <div className="flex items-center gap-1.5">
                   <ArrowUpRight size={11} className="text-danger" />
-                  <span className="mono-label">OUT</span>
+                  <span className="mono-label">you pay them</span>
                 </div>
                 <p className="text-base font-bold tabular text-danger mt-1">{currency.symbol}{youOwe.toLocaleString(currency.locale)}</p>
               </div>

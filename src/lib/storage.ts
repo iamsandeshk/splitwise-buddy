@@ -1786,8 +1786,8 @@ export function settleExpenseWithPerson(personName: string, paymentMode: string 
       amount: Math.abs(netBalance),
       reason: `Settlement via ${paymentMode}`,
       date: date,
-      paidBy: netBalance > 0 ? personName : 'me',
-      forPerson: netBalance > 0 ? 'me' : personName,
+      paidBy: netBalance < 0 ? personName : 'me',
+      forPerson: netBalance < 0 ? 'me' : personName,
       settled: true,
       category: 'Settlement',
       createdAt: new Date().toISOString()
@@ -1996,7 +1996,7 @@ export function getPersonBalances(includeGroups: boolean = false): PersonBalance
   });
 
   peopleMap.forEach(person => {
-    person.netBalance = person.totalOwed - person.totalGiven;
+    person.netBalance = person.totalGiven - person.totalOwed;
   });
 
   return Array.from(peopleMap.values()).sort((a, b) => b.transactions.length - a.transactions.length);
@@ -2076,7 +2076,7 @@ export function getGroupBalances(): GroupBalance[] {
   });
 
   balanceMap.forEach(group => {
-    group.netBalance = group.totalOwed - group.totalGiven;
+    group.netBalance = group.totalGiven - group.totalOwed;
   });
 
   return Array.from(balanceMap.values())
@@ -2112,15 +2112,15 @@ export function getGroupMemberNetPositions(groupId: string): Record<string, numb
     if (tx.forPerson === 'all' && tx.splitParticipants && tx.splitParticipants.length > 0) {
       const share = tx.amount / tx.splitParticipants.length;
 
-      // credit payer full amount, debit every participant their share
-      net[tx.paidBy] = (net[tx.paidBy] ?? 0) + tx.amount;
+      // Cash flow logic: paidBy loses cash (negative), participants gain value (positive)
+      net[tx.paidBy] = (net[tx.paidBy] ?? 0) - tx.amount;
       tx.splitParticipants.forEach(p => {
-        net[p] = (net[p] ?? 0) - share;
+        net[p] = (net[p] ?? 0) + share;
       });
     } else if (tx.forPerson !== 'all') {
-      // One-to-one: paidBy covered forPerson's expense
-      net[tx.paidBy] = (net[tx.paidBy] ?? 0) + tx.amount;
-      net[tx.forPerson] = (net[tx.forPerson] ?? 0) - tx.amount;
+      // One-to-one: paidBy loses cash (negative), forPerson gains value (positive)
+      net[tx.paidBy] = (net[tx.paidBy] ?? 0) - tx.amount;
+      net[tx.forPerson] = (net[tx.forPerson] ?? 0) + tx.amount;
     }
   });
 
@@ -2135,8 +2135,8 @@ export function getMinimalGroupSettlements(groupId: string): SimplifiedDebt[] {
 
   Object.entries(positions).forEach(([name, balance]) => {
     const rounded = Math.round(balance * 100) / 100;
-    if (rounded > 0.01) creditors.push({ name, amount: rounded });
-    if (rounded < -0.01) debtors.push({ name, amount: -rounded }); // store positive
+    if (rounded > 0.01) debtors.push({ name, amount: rounded }); // Positive = Received value = Debtor
+    if (rounded < -0.01) creditors.push({ name, amount: -rounded }); // Negative = Paid cash = Creditor
   });
 
   // Sort largest first for greedy min-cash-flow
@@ -2575,11 +2575,11 @@ export function getAccountSummaries(): FinancialAccountSummary[] {
     );
 
     const income = relatedPersonal
-      .filter((entry) => !!entry.isIncome)
+      .filter((entry) => !!entry.isIncome && !entry.isMirror)
       .reduce((sum, entry) => sum + entry.amount, 0);
 
     const personalSpent = relatedPersonal
-      .filter((entry) => !entry.isIncome)
+      .filter((entry) => !entry.isIncome && !entry.isMirror)
       .reduce((sum, entry) => sum + entry.amount, 0);
 
     const sharedSpent = shared
@@ -4147,6 +4147,7 @@ export function processRecurringPayments(): void {
       createdAt: new Date().toISOString(),
       accountId,
       isIncome: payment.type === 'income',
+      source: 'recurring',
     };
 
     savePersonalExpense(expense);
@@ -4251,6 +4252,7 @@ export function processSubscriptionBilling(): void {
           isMirror: true,
           mirrorFromId: sub.id,
           accountId: sub.accountId || getDefaultAccountId() || undefined,
+          source: 'subscription',
         };
         pExpenses.push(expense);
         anyPosted = true;

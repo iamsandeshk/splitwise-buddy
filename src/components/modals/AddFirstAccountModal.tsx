@@ -87,11 +87,12 @@ export function AddFirstAccountModal({
         amount: initialAmount,
         reason: `Initial Balance for ${accountName}`,
         category: 'Other',
-        date: new Date().toISOString(),
+        date: new Date().toISOString().split('T')[0],
         createdAt: new Date().toISOString(),
         isIncome: true,
         isMirror: false,
         accountId: newAccount.id,
+        source: 'account',
       });
     }
 

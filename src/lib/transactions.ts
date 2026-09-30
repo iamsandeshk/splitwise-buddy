@@ -54,7 +54,7 @@ export function getAllAppTransactions(): AppTransactionItem[] {
       type: isGroup ? 'group' : 'split-person',
       direction,
       amount: Math.abs(Number(item.amount || 0)),
-      reason: item.reason || item.category || 'Shared',
+      reason: (item.reason || item.category || 'Shared') + (!isGroup && item.personName ? (item.paidBy === 'me' ? ` (paid to ${item.personName})` : ` (paid by ${item.personName})`) : ''),
       date: item.date,
       createdAt: item.createdAt || item.date,
       sourceTab: 'shared',
