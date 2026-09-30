@@ -154,7 +154,7 @@ const COMMON_SUBSCRIPTIONS: CatalogService[] = [
 const CYCLES: SubscriptionCycle[] = ['monthly', 'quarterly', 'yearly', 'weekly', 'daily', 'lifetime'];
 
 function getLogoUrl(appName: string) {
-  const clean = appName.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const clean = (appName || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
   if (!clean) return undefined;
   return `https://www.google.com/s2/favicons?domain=${clean}.com&sz=128`;
 }
@@ -312,7 +312,7 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
       
       const tempDue = new Date(due);
       while (tempDue.getMonth() === currentMonth && tempDue.getFullYear() === currentYear) {
-        const mAmount = item.amount;
+        const mAmount = Number(item.amount) || 0;
         // Adjust amount for the visual to reflect standard monthly payment if they want exact?
         // Let's use the actual payment amount for the month if it triggers!
         total += mAmount;
@@ -404,11 +404,12 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
     const activeItems = items.filter(i => !i.paused);
     activeItems.forEach(item => {
       let mAmount = 0;
-      if (item.cycle === 'monthly') mAmount = item.amount;
-      else if (item.cycle === 'quarterly') mAmount = item.amount / 3;
-      else if (item.cycle === 'yearly') mAmount = item.amount / 12;
-      else if (item.cycle === 'weekly') mAmount = (item.amount * 52) / 12;
-      else if (item.cycle === 'daily') mAmount = item.amount * 30.4;
+      const amt = Number(item.amount) || 0;
+      if (item.cycle === 'monthly') mAmount = amt;
+      else if (item.cycle === 'quarterly') mAmount = amt / 3;
+      else if (item.cycle === 'yearly') mAmount = amt / 12;
+      else if (item.cycle === 'weekly') mAmount = (amt * 52) / 12;
+      else if (item.cycle === 'daily') mAmount = amt * 30.4;
       
       monthly += mAmount;
       yearly += mAmount * 12;
@@ -433,7 +434,7 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
   const filteredItems = useMemo(() => {
     const matchingItems = filter === 'All'
       ? items
-      : items.filter(item => item.cycle.toLowerCase() === filter.toLowerCase());
+      : items.filter(item => (item.cycle || '').toLowerCase() === filter.toLowerCase());
 
     return matchingItems
       .map((item, index) => ({
@@ -569,7 +570,7 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                       {item.logoUrl ? (
                          <img src={item.logoUrl} alt="" className="w-full h-full object-cover" />
                       ) : (
-                         <span className="text-lg font-bold">{item.appName.charAt(0)}</span>
+                         <span className="text-lg font-bold">{(item.appName || 'S').charAt(0)}</span>
                       )}
                     </div>
                  ))}
@@ -603,7 +604,7 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                        {di.logoUrl ? (
                          <img src={di.logoUrl} className="w-full h-full object-cover" />
                        ) : (
-                         <span className="text-[8px] font-bold text-white flex items-center justify-center h-full w-full">{di.appName.charAt(0)}</span>
+                         <span className="text-[8px] font-bold text-white flex items-center justify-center h-full w-full">{(di.appName || 'S').charAt(0)}</span>
                        )}
                      </div>
                    ))}
@@ -689,7 +690,7 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                         {item.logoUrl ? (
                            <img src={item.logoUrl} className="w-full h-full object-cover" />
                         ) : (
-                           <span className="font-bold text-xl">{item.appName.charAt(0)}</span>
+                           <span className="font-bold text-xl">{(item.appName || 'S').charAt(0)}</span>
                         )}
                      </div>
                      <div className="flex-1 min-w-0 flex items-center justify-between">
@@ -1159,7 +1160,7 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                                   {di.logoUrl ? (
                                     <img src={di.logoUrl} className="w-full h-full object-cover" />
                                   ) : (
-                                    <span className="text-[8px] font-bold text-white flex items-center justify-center w-full h-full">{di.appName.charAt(0)}</span>
+                                    <span className="text-[8px] font-bold text-white flex items-center justify-center w-full h-full">{(di.appName || 'S').charAt(0)}</span>
                                   )}
                                 </div>
                               ))}
@@ -1191,7 +1192,7 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                               {item.logoUrl ? (
                                  <img src={item.logoUrl} className="w-full h-full object-cover" />
                               ) : (
-                                 <span className="font-bold">{item.appName.charAt(0)}</span>
+                                 <span className="font-bold">{(item.appName || 'S').charAt(0)}</span>
                               )}
                             </div>
                             <div className="flex-1 min-w-0">

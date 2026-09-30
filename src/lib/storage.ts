@@ -4242,8 +4242,8 @@ export function processSubscriptionBilling(): void {
       if (!alreadyBilled) {
         const expense: PersonalExpense = {
           id: generateId(),
-          amount: sub.amount,
-          reason: `Subscription: ${sub.appName.trim()}`,
+          amount: Number(sub.amount) || 0,
+          reason: `Subscription: ${(sub.appName || 'Subscription').trim()}`,
           category: 'Bills & Utilities',
           date: billingDateStr,
           createdAt: new Date().toISOString(),
