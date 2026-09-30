@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { X, Info, CheckCircle2, Zap, ExternalLink, AlertCircle } from 'lucide-react';
 import {
   subscribeToNotifications,
@@ -13,7 +13,6 @@ function getDismissed(): Set<string> {
     const raw = localStorage.getItem(DISMISSED_KEY);
     if (raw) return new Set(JSON.parse(raw) as string[]);
   } catch { /* ignore parse errors */ }
-
   return new Set<string>();
 }
 
@@ -21,35 +20,42 @@ function saveDismissed(set: Set<string>): void {
   localStorage.setItem(DISMISSED_KEY, JSON.stringify(Array.from(set)));
 }
 
-const TYPE_STYLES: Record<string, { bg: string; border: string; icon: React.ReactNode; accentText: string }> = {
+interface TypeStyle {
+  accentColor: string;
+  labelColor: string;
+  iconNode: React.ReactNode;
+  label: string;
+}
+
+const TYPE_MAP: Record<string, TypeStyle> = {
   info: {
-    bg: 'bg-blue-500/10',
-    border: 'border-blue-500/25',
-    icon: <Info size={15} className="text-blue-400 shrink-0" />,
-    accentText: 'text-blue-400',
+    accentColor: 'hsl(215 80% 60%)',
+    labelColor: 'hsl(215 80% 70%)',
+    iconNode: <Info size={14} />,
+    label: 'INFO',
   },
   warning: {
-    bg: 'bg-amber-500/10',
-    border: 'border-amber-500/25',
-    icon: <AlertCircle size={15} className="text-amber-400 shrink-0" />,
-    accentText: 'text-amber-400',
+    accentColor: 'hsl(38 92% 55%)',
+    labelColor: 'hsl(38 92% 65%)',
+    iconNode: <AlertCircle size={14} />,
+    label: 'ALERT',
   },
   success: {
-    bg: 'bg-emerald-500/10',
-    border: 'border-emerald-500/25',
-    icon: <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />,
-    accentText: 'text-emerald-400',
+    accentColor: 'hsl(152 60% 48%)',
+    labelColor: 'hsl(152 60% 58%)',
+    iconNode: <CheckCircle2 size={14} />,
+    label: 'UPDATE',
   },
   promo: {
-    bg: 'bg-primary/10',
-    border: 'border-primary/25',
-    icon: <Zap size={15} className="text-primary shrink-0" />,
-    accentText: 'text-primary',
+    accentColor: 'hsl(var(--primary))',
+    labelColor: 'hsl(var(--primary))',
+    iconNode: <Zap size={14} />,
+    label: 'NEW',
   },
 };
 
-function getStyle(type?: string) {
-  return TYPE_STYLES[type || 'info'] || TYPE_STYLES.info;
+function getTypeStyle(type?: string): TypeStyle {
+  return TYPE_MAP[type || 'info'] ?? TYPE_MAP.info;
 }
 
 function timeAgo(iso: string): string {
@@ -60,8 +66,7 @@ function timeAgo(iso: string): string {
     if (m < 60) return `${m}m ago`;
     const h = Math.floor(m / 60);
     if (h < 24) return `${h}h ago`;
-    const d = Math.floor(h / 24);
-    return `${d}d ago`;
+    return `${Math.floor(h / 24)}d ago`;
   } catch {
     return '';
   }
@@ -74,11 +79,9 @@ export function NotificationCard() {
 
   useEffect(() => {
     const unsub = subscribeToNotifications((incoming) => {
-      // Fire system push for truly new notifications (not previously seen in this session)
       incoming.forEach((n) => {
         if (!seenIdsRef.current.has(n.id)) {
           seenIdsRef.current.add(n.id);
-          // Only push system notification for ones that aren't already dismissed
           if (!getDismissed().has(n.id)) {
             void scheduleLocalPush(n.title, n.body);
           }
@@ -102,77 +105,92 @@ export function NotificationCard() {
   if (visible.length === 0) return null;
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2">
       {visible.map((n) => {
-        const style = getStyle(n.type);
+        const ts = getTypeStyle(n.type);
         return (
           <div
             key={n.id}
-            className={`relative rounded-2xl border px-4 py-3.5 overflow-hidden transition-all ${style.bg} ${style.border}`}
+            className="relative overflow-hidden flex items-start gap-3 px-4 py-3.5"
             style={{
-              boxShadow: '0 2px 12px -4px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04)',
+              background: 'hsl(var(--card) / 0.75)',
+              border: '1px solid hsl(var(--border) / 0.45)',
+              borderRadius: '1.1rem',
+              boxShadow: '0 1px 8px -3px rgba(0,0,0,0.35)',
             }}
           >
-            {/* Subtle glow stripe top */}
+            {/* Left accent bar */}
             <div
-              className="absolute top-0 inset-x-0 h-px opacity-50"
-              style={{ background: `linear-gradient(90deg, transparent, currentColor, transparent)` }}
+              className="absolute left-0 top-3 bottom-3 w-[3px] rounded-full"
+              style={{ background: ts.accentColor, opacity: 0.9 }}
             />
 
-            {/* Dismiss button */}
-            <button
-              onClick={(e) => handleDismiss(n.id, e)}
-              className="absolute top-2.5 right-2.5 w-6 h-6 rounded-full bg-muted/60 hover:bg-muted border border-border/30 flex items-center justify-center transition-all active:scale-90"
-              title="Dismiss notification"
-              type="button"
+            {/* Icon bubble */}
+            <div
+              className="shrink-0 w-[34px] h-[34px] rounded-[0.7rem] flex items-center justify-center mt-0.5"
+              style={{
+                background: `color-mix(in srgb, ${ts.accentColor} 15%, transparent)`,
+                color: ts.accentColor,
+              }}
             >
-              <X size={12} className="text-muted-foreground" />
-            </button>
-
-            <div className="flex items-start gap-3 pr-7">
-              {/* Icon / Emoji */}
-              <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${style.bg} border ${style.border}`}>
-                {n.emoji ? (
-                  <span className="text-base leading-none">{n.emoji}</span>
-                ) : (
-                  style.icon
-                )}
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className={`font-mono text-[9px] uppercase tracking-[0.18em] font-semibold ${style.accentText}`}>
-                    {n.type === 'promo' ? 'Announcement' : n.type === 'warning' ? 'Alert' : n.type === 'success' ? 'Update' : 'Info'}
-                  </span>
-                  <span className="text-[9px] text-muted-foreground/60 font-mono ml-auto shrink-0">
-                    {timeAgo(n.createdAt)}
-                  </span>
-                </div>
-
-                <p className="text-sm font-bold text-foreground leading-tight tracking-tight">
-                  {n.title}
-                </p>
-
-                {n.body && (
-                  <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
-                    {n.body}
-                  </p>
-                )}
-
-                {n.link && (
-                  <a
-                    href={n.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`inline-flex items-center gap-1 mt-2 text-xs font-semibold ${style.accentText} hover:underline`}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    Learn more <ExternalLink size={11} />
-                  </a>
-                )}
-              </div>
+              {n.emoji ? (
+                <span className="text-[15px] leading-none">{n.emoji}</span>
+              ) : (
+                ts.iconNode
+              )}
             </div>
+
+            {/* Text */}
+            <div className="flex-1 min-w-0 pr-6">
+              <div className="flex items-center gap-2 mb-[3px]">
+                <span
+                  className="font-mono text-[9px] uppercase tracking-[0.2em] font-bold"
+                  style={{ color: ts.labelColor }}
+                >
+                  {ts.label}
+                </span>
+                <span className="ml-auto text-[9px] font-mono text-muted-foreground/45 shrink-0">
+                  {timeAgo(n.createdAt)}
+                </span>
+              </div>
+
+              <p className="text-[13px] font-bold text-foreground leading-snug tracking-tight">
+                {n.title}
+              </p>
+
+              {n.body && (
+                <p className="text-[11.5px] text-muted-foreground mt-[3px] leading-snug">
+                  {n.body}
+                </p>
+              )}
+
+              {n.link && (
+                <a
+                  href={n.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-semibold hover:underline"
+                  style={{ color: ts.accentColor }}
+                >
+                  Learn more <ExternalLink size={10} />
+                </a>
+              )}
+            </div>
+
+            {/* Dismiss */}
+            <button
+              type="button"
+              onClick={(e) => handleDismiss(n.id, e)}
+              className="absolute top-2.5 right-2.5 w-[22px] h-[22px] rounded-full flex items-center justify-center transition-all active:scale-90"
+              style={{
+                background: 'hsl(var(--muted) / 0.55)',
+                border: '1px solid hsl(var(--border) / 0.3)',
+              }}
+              title="Dismiss"
+            >
+              <X size={11} className="text-muted-foreground" />
+            </button>
           </div>
         );
       })}
