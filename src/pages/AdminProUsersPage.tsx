@@ -405,6 +405,19 @@ try.sandeshk@gmail.com`
     return <Info size={14} className="text-blue-400" />;
   }
 
+  function renderNotifEmoji(emoji: string | undefined, fallback: React.ReactNode, iconSize = 16) {
+    if (!emoji) return fallback;
+    if (emoji.startsWith('__ICON__')) {
+      const name = emoji.slice('__ICON__'.length);
+      const opt = ICON_PICKER_OPTIONS.find(o => o.name === name);
+      if (opt) {
+        const Comp = opt.icon;
+        return <Comp size={iconSize} />;
+      }
+      return fallback;
+    }
+    return <span className="text-base leading-none">{emoji}</span>;
+  }
 
   // Password Prompt Screen
   if (!hasAdminAccess) {
@@ -1159,11 +1172,7 @@ try.sandeshk@gmail.com`
                     className="w-full rounded-2xl border border-border/30 bg-card p-4 flex items-start gap-3 text-left active:scale-[0.98] transition-all hover:border-border/60 hover:bg-muted/20"
                   >
                     <div className="w-9 h-9 rounded-xl bg-muted/40 border border-border/20 flex items-center justify-center shrink-0">
-                      {n.emoji ? (
-                        <span className="text-base">{n.emoji}</span>
-                      ) : (
-                        notifTypeIcon(n.type)
-                      )}
+                      {renderNotifEmoji(n.emoji, notifTypeIcon(n.type), 15)}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
@@ -1208,11 +1217,7 @@ try.sandeshk@gmail.com`
             {/* Preview */}
             <div className="flex items-center gap-3 pb-3 border-b border-border/30">
               <div className="w-10 h-10 rounded-xl bg-muted/40 border border-border/20 flex items-center justify-center shrink-0">
-                {selectedNotif.emoji ? (
-                  <span className="text-lg">{selectedNotif.emoji}</span>
-                ) : (
-                  notifTypeIcon(selectedNotif.type)
-                )}
+                {renderNotifEmoji(selectedNotif.emoji, notifTypeIcon(selectedNotif.type), 18)}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-black text-foreground truncate">{selectedNotif.title}</p>
