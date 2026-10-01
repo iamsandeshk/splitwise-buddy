@@ -36,6 +36,7 @@ interface AccountFormState {
   id?: string;
   name: string;
   type: FinancialAccountType;
+  customTypeName?: string;
   budget: string;
   isDefault: boolean;
 }
