@@ -139,7 +139,7 @@ export function NotificationCard() {
 
   return (
     <div
-      className="relative overflow-hidden flex items-start gap-3 px-4 py-3.5"
+      className="relative overflow-hidden flex items-center gap-3 px-4 py-3.5"
       style={{
         background: 'hsl(var(--card) / 0.75)',
         border: '1px solid hsl(var(--border) / 0.45)',
@@ -155,7 +155,7 @@ export function NotificationCard() {
 
       {/* Icon bubble */}
       <div
-        className="shrink-0 w-[34px] h-[34px] rounded-[0.7rem] flex items-center justify-center mt-0.5"
+        className="shrink-0 w-[34px] h-[34px] rounded-[0.7rem] flex items-center justify-center"
         style={{
           background: `color-mix(in srgb, ${ts.accentColor} 15%, transparent)`,
           color: ts.accentColor,
@@ -169,7 +169,7 @@ export function NotificationCard() {
       </div>
 
       {/* Text */}
-      <div className="flex-1 min-w-0 pr-6">
+      <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-[3px]">
           <span
             className="font-mono text-[9px] uppercase tracking-[0.2em] font-bold"
@@ -182,29 +182,35 @@ export function NotificationCard() {
           </span>
         </div>
 
-        <p className="text-[13px] font-bold text-foreground leading-snug tracking-tight">
+        <p className="text-[13px] font-bold text-foreground leading-snug tracking-tight pr-6">
           {latest.title}
         </p>
 
         {latest.body && (
-          <p className="text-[11.5px] text-muted-foreground mt-[3px] leading-snug">
+          <p className="text-[11.5px] text-muted-foreground mt-[3px] leading-snug pr-6">
             {latest.body}
           </p>
         )}
-
-        {latest.link && (
-          <a
-            href={latest.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-semibold hover:underline"
-            style={{ color: ts.accentColor }}
-          >
-            Learn more <ExternalLink size={10} />
-          </a>
-        )}
       </div>
+
+      {/* Try button — only when link present */}
+      {latest.link && (
+        <a
+          href={latest.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-[0.6rem] font-bold text-[11px] tracking-wide transition-all active:scale-95 hover:opacity-90"
+          style={{
+            background: `color-mix(in srgb, ${ts.accentColor} 18%, transparent)`,
+            color: ts.accentColor,
+            border: `1px solid color-mix(in srgb, ${ts.accentColor} 35%, transparent)`,
+          }}
+        >
+          Try
+          <ExternalLink size={10} strokeWidth={2.5} />
+        </a>
+      )}
 
       {/* Dismiss */}
       <button
