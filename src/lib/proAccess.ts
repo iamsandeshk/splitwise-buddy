@@ -21,7 +21,8 @@ export type ProLimitFeature =
   | 'backup'
   | 'restore'
   | 'auto-backup'
-  | 'customization';
+  | 'customization'
+  | 'calendar-history';
 
 export type ProStatusCache = {
   isPro: boolean;

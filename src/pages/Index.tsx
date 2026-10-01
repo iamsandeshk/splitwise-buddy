@@ -659,7 +659,7 @@ const Index = () => {
     lastScrollTopRef.current = scrollTop;
   };
 
-  const isStickyTab = ['accounts', 'transactions', 'personal', 'more', 'loans', 'home', 'shared', 'calendar', 'categories', 'goals', 'subscriptions', 'converter', 'recurring'].includes(activeTab);
+  const isStickyTab = ['accounts', 'transactions', 'personal', 'more', 'loans', 'home', 'shared', 'calendar', 'categories', 'goals', 'subscriptions', 'converter', 'recurring', 'account', 'links'].includes(activeTab);
 
   const renderActiveTab = () => {
     switch (activeTab) {

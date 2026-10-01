@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import { ChevronLeft, ChevronRight, ArrowDownLeft, ArrowUpRight, Lock, Crown } from 'lucide-react';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
@@ -12,7 +12,7 @@ import {
 } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 import { useBannerAd } from '@/hooks/useBannerAd';
-import { isProUserCached } from '@/lib/proAccess';
+import { isProUserCached, requestProUpgrade } from '@/lib/proAccess';
 
 interface CalendarTabProps {
   onOpenAccount: () => void;
@@ -165,14 +165,14 @@ export function CalendarTab({ onOpenAccount, onBack, bannerAdActive = true }: Ca
   const isPastMonth = selectedMonthKey < currentMonthKey;
   const isFutureMonth = selectedMonthKey > currentMonthKey;
 
-  const canGoPrev = isPro
-    ? true // Pro can go back as far as they want
-    : selectedMonthKey > currentMonthKey; // Free can only navigate to current or future
+  const triggerProUpgrade = () =>
+    requestProUpgrade('calendar-history', 'Upgrade to Pro to browse past months and your full transaction history.');
 
-  const canGoNext = !isFutureMonth; // nobody goes past current month (no data)
+  const canGoPrev = isPro;
+  const canGoNext = !isFutureMonth;
 
   const goToPrev = () => {
-    if (!canGoPrev) return;
+    if (!isPro) { triggerProUpgrade(); return; }
     const [y, m] = selectedMonthKey.split('-').map(Number);
     const prevDate = new Date(y, m - 2, 1);
     const prev = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
@@ -187,6 +187,25 @@ export function CalendarTab({ onOpenAccount, onBack, bannerAdActive = true }: Ca
     const next = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
     setSelectedMonthKey(next);
     setSelectedDayKey('');
+  };
+
+  // Swipe detection
+  const touchStartX = useRef<number | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    touchStartX.current = null;
+    if (Math.abs(dx) < 40) return; // ignore tiny swipes
+    if (dx > 0) {
+      // swipe right → go to previous month
+      goToPrev();
+    } else {
+      // swipe left → go to next month
+      goToNext();
+    }
   };
 
   const monthTransactions = useMemo(
@@ -262,20 +281,21 @@ export function CalendarTab({ onOpenAccount, onBack, bannerAdActive = true }: Ca
       <div className="flex-1 px-4 pt-4 pb-2 space-y-5">
 
         {/* Calendar card */}
-        <div className="rounded-[1.5rem] border border-border/15 bg-gradient-to-b from-card/90 to-card/60 overflow-hidden">
+        <div
+          className="rounded-[1.5rem] border border-border/15 bg-gradient-to-b from-card/90 to-card/60 overflow-hidden"
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}
+        >
 
           {/* Month nav */}
           <div className="flex items-center justify-between px-4 pt-4 pb-3">
+            {/* Left — lock or chevron */}
             <button
               type="button"
-              disabled={!canGoPrev}
               onClick={goToPrev}
-              className={cn(
-                'w-9 h-9 rounded-xl border border-border/20 bg-secondary/40 flex items-center justify-center transition-all active:scale-90',
-                !canGoPrev ? 'opacity-30 cursor-not-allowed' : 'hover:bg-secondary/70',
-              )}
+              className="w-9 h-9 rounded-xl border border-border/20 bg-secondary/40 flex items-center justify-center transition-all active:scale-90 hover:bg-secondary/70"
             >
-              {!isPro && !isFutureMonth ? (
+              {!isPro ? (
                 <Lock size={15} className="text-muted-foreground" />
               ) : (
                 <ChevronLeft size={18} />
@@ -299,104 +319,79 @@ export function CalendarTab({ onOpenAccount, onBack, bannerAdActive = true }: Ca
             </button>
           </div>
 
-          {/* Pro lock overlay for past months when user is free */}
-          {isPastMonth && !isPro ? (
-            <div className="mx-4 mb-4 rounded-2xl border border-amber-500/20 bg-amber-500/5 py-10 flex flex-col items-center gap-3 text-center px-6">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center">
-                <Crown size={22} className="text-amber-500" />
-              </div>
-              <p className="text-sm font-bold text-foreground">Pro Only</p>
-              <p className="text-xs text-muted-foreground">
-                Upgrade to Pro to view past months and your full transaction history.
-              </p>
-            </div>
-          ) : (
-            <>
-              {/* Day headers */}
-              <div className="grid grid-cols-7 text-center text-[10px] uppercase tracking-wider text-muted-foreground font-bold px-2 pb-1">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                  <div key={d} className="py-1">{d}</div>
-                ))}
-              </div>
+          {/* Day headers */}
+          <div className="grid grid-cols-7 text-center text-[10px] uppercase tracking-wider text-muted-foreground font-bold px-2 pb-1">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+              <div key={d} className="py-1">{d}</div>
+            ))}
+          </div>
 
-              {/* Day grid */}
-              <div className="grid grid-cols-7 gap-0 px-2 pb-4">
-                {daySlots.map((slot, index) => {
-                  if (!slot) {
-                    return (
-                      <div
-                        key={`empty-${index}`}
-                        className="flex flex-col items-center justify-start pt-1 pb-2 min-h-[52px]"
-                      />
-                    );
-                  }
+          {/* Day grid */}
+          <div className="grid grid-cols-7 gap-0 px-2 pb-4">
+            {daySlots.map((slot, index) => {
+              if (!slot) {
+                return (
+                  <div
+                    key={`empty-${index}`}
+                    className="flex flex-col items-center justify-start pt-1 pb-2 min-h-[52px]"
+                  />
+                );
+              }
 
-                  const count = monthMarkedDays.get(slot.dayKey) || 0;
-                  const logos = daySubLogos.get(slot.dayKey) ?? [];
-                  const selected = slot.dayKey === selectedDayKey;
-                  const isToday = slot.dayKey === todayKey && isCurrentMonth;
-                  const hasActivity = count > 0;
+              const count = monthMarkedDays.get(slot.dayKey) || 0;
+              const logos = daySubLogos.get(slot.dayKey) ?? [];
+              const selected = slot.dayKey === selectedDayKey;
+              const isToday = slot.dayKey === todayKey && isCurrentMonth;
+              const hasActivity = count > 0;
 
-                  return (
-                    <button
-                      key={slot.dayKey}
-                      type="button"
-                      onClick={() => setSelectedDayKey(slot.dayKey)}
-                      className={cn(
-                        'flex flex-col items-center justify-start pt-1 pb-1.5 min-h-[52px] rounded-xl transition-all active:scale-95 relative',
-                        selected && 'bg-primary/10',
+              return (
+                <button
+                  key={slot.dayKey}
+                  type="button"
+                  onClick={() => setSelectedDayKey(slot.dayKey)}
+                  className="flex flex-col items-center justify-start pt-1 pb-1.5 min-h-[52px] rounded-xl transition-all active:scale-95 relative"
+                >
+                  {/* Day number — only this gets the orange circle */}
+                  <span
+                    className={cn(
+                      'w-7 h-7 rounded-full flex items-center justify-center text-[13px] font-semibold leading-none',
+                      isToday || selected
+                        ? 'bg-primary text-primary-foreground font-bold'
+                        : hasActivity
+                        ? 'text-foreground font-bold'
+                        : 'text-muted-foreground',
+                    )}
+                  >
+                    {slot.dayNumber}
+                  </span>
+
+                  {/* Subscription logos OR dot */}
+                  {hasActivity && (
+                    <div className="flex items-center justify-center gap-0.5 mt-0.5 h-[18px]">
+                      {logos.length > 0 ? (
+                        logos.map((logoUrl, i) => (
+                          <img
+                            key={i}
+                            src={logoUrl}
+                            alt=""
+                            className="w-[14px] h-[14px] rounded-full object-cover ring-[1px] ring-background shrink-0"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ))
+                      ) : (
+                        <span className="w-[6px] h-[6px] rounded-full bg-primary/70 shrink-0" />
                       )}
-                    >
-                      {/* Day number */}
-                      <span
-                        className={cn(
-                          'w-7 h-7 rounded-full flex items-center justify-center text-[13px] font-semibold leading-none',
-                          isToday && !selected
-                            ? 'bg-primary text-primary-foreground font-bold'
-                            : selected
-                            ? 'bg-primary text-primary-foreground font-bold'
-                            : hasActivity
-                            ? 'text-foreground font-bold'
-                            : 'text-muted-foreground',
-                        )}
-                      >
-                        {slot.dayNumber}
-                      </span>
-
-                      {/* Subscription logos OR transaction count dot */}
-                      {hasActivity && (
-                        <div className="flex items-center justify-center gap-0.5 mt-0.5 h-[18px]">
-                          {logos.length > 0 ? (
-                            logos.map((logoUrl, i) => (
-                              <img
-                                key={i}
-                                src={logoUrl}
-                                alt=""
-                                className="w-[14px] h-[14px] rounded-full object-cover ring-[1px] ring-background shrink-0"
-                                onError={(e) => {
-                                  (e.currentTarget as HTMLImageElement).style.display = 'none';
-                                }}
-                              />
-                            ))
-                          ) : (
-                            <span className="w-[6px] h-[6px] rounded-full bg-primary/70 shrink-0" />
-                          )}
-                          {count > (logos.length > 0 ? logos.length : 0) && logos.length === 0 && count > 1 && (
-                            <span className="text-[9px] font-bold text-primary/70 leading-none">
-                              {count}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Transactions panel */}
+        {/* Transactions panel — always show for current/future, show for past only if pro */}
         {(!isPastMonth || isPro) && (
           <div className="space-y-3">
             {/* Section header */}
@@ -437,7 +432,6 @@ export function CalendarTab({ onOpenAccount, onBack, bannerAdActive = true }: Ca
                     className="rounded-2xl border border-border/10 bg-card/70 px-4 py-3 flex items-center justify-between gap-3"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      {/* Icon — subscription logo or direction arrow */}
                       <div
                         className={cn(
                           'w-10 h-10 rounded-full border flex items-center justify-center shrink-0 overflow-hidden',
@@ -485,21 +479,6 @@ export function CalendarTab({ onOpenAccount, onBack, bannerAdActive = true }: Ca
                 ))}
               </div>
             )}
-          </div>
-        )}
-
-        {/* Free user locked past month CTA */}
-        {isPastMonth && !isPro && (
-          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5 flex items-center gap-4">
-            <div className="w-11 h-11 rounded-2xl bg-amber-500/10 flex items-center justify-center shrink-0">
-              <Crown size={20} className="text-amber-500" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-foreground">Unlock History</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Go Pro to browse any past month's transactions.
-              </p>
-            </div>
           </div>
         )}
       </div>
