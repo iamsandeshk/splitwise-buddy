@@ -26,6 +26,22 @@ import {
   Info,
   Zap,
   AlertCircle,
+  // Icon picker icons
+  Star,
+  Rocket,
+  Gift,
+  Megaphone,
+  Trophy,
+  Heart,
+  Sparkles,
+  ShoppingCart,
+  CreditCard,
+  Download,
+  Globe,
+  MessageCircle,
+  Flame,
+  Package,
+  type LucideIcon,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { cn } from '@/lib/utils';
@@ -50,6 +66,38 @@ import {
 } from '@/integrations/firebase/notifications';
 import { getCurrentGoogleUser } from '@/integrations/firebase/auth';
 import { clearProStatusCache } from '@/lib/proAccess';
+
+// 20 icon options for the notification icon picker
+const ICON_PICKER_OPTIONS: { name: string; icon: LucideIcon; label: string }[] = [
+  { name: 'Bell',          icon: Bell,          label: 'Bell'      },
+  { name: 'Star',          icon: Star,          label: 'Star'      },
+  { name: 'Rocket',        icon: Rocket,        label: 'Rocket'    },
+  { name: 'Gift',          icon: Gift,          label: 'Gift'      },
+  { name: 'Zap',           icon: Zap,           label: 'Zap'       },
+  { name: 'CheckCircle2',  icon: CheckCircle2,  label: 'Check'     },
+  { name: 'AlertCircle',   icon: AlertCircle,   label: 'Alert'     },
+  { name: 'Info',          icon: Info,          label: 'Info'      },
+  { name: 'Megaphone',     icon: Megaphone,     label: 'Announce'  },
+  { name: 'Trophy',        icon: Trophy,        label: 'Trophy'    },
+  { name: 'Heart',         icon: Heart,         label: 'Heart'     },
+  { name: 'Sparkles',      icon: Sparkles,      label: 'Sparkle'   },
+  { name: 'ShoppingCart',  icon: ShoppingCart,  label: 'Shop'      },
+  { name: 'CreditCard',    icon: CreditCard,    label: 'Payment'   },
+  { name: 'Shield',        icon: Shield,        label: 'Shield'    },
+  { name: 'Download',      icon: Download,      label: 'Download'  },
+  { name: 'Globe',         icon: Globe,         label: 'Global'    },
+  { name: 'MessageCircle', icon: MessageCircle, label: 'Message'   },
+  { name: 'Flame',         icon: Flame,         label: 'Hot'       },
+  { name: 'Package',       icon: Package,       label: 'Package'   },
+];
+
+// Custom type config for icon picker accent colours
+const TYPE_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  info:    { label: 'Info',    color: 'text-blue-400',    bg: 'bg-blue-500/10 border-blue-500/30'    },
+  warning: { label: 'Warning', color: 'text-amber-400',   bg: 'bg-amber-500/10 border-amber-500/30'  },
+  success: { label: 'Success', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30' },
+  promo:   { label: 'Promo',   color: 'text-primary',     bg: 'bg-primary/10 border-primary/30'      },
+};
 
 export default function AdminProUsersPage() {
   const navigate = useNavigate();
@@ -89,6 +137,9 @@ export default function AdminProUsersPage() {
   const [pushType, setPushType] = useState<'info' | 'warning' | 'success' | 'promo'>('info');
   const [pushLink, setPushLink] = useState('');
   const [isPushing, setIsPushing] = useState(false);
+
+  // Icon picker state
+  const [showIconPicker, setShowIconPicker] = useState(false);
 
   // Notification action sheet
   const [selectedNotif, setSelectedNotif] = useState<AppNotification | null>(null);
@@ -930,29 +981,19 @@ try.sandeshk@gmail.com`
                   <Send size={15} className="text-blue-400" /> Compose Notification
                 </h3>
                 <form onSubmit={handlePushNotification} className="space-y-3">
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="col-span-2 space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-muted-foreground">Title *</label>
-                      <Input
-                        placeholder="e.g. New Feature 🎉"
-                        value={pushTitle}
-                        onChange={(e) => setPushTitle(e.target.value)}
-                        className="h-10 rounded-xl bg-muted/40 text-xs"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-muted-foreground">Emoji</label>
-                      <Input
-                        placeholder="🎉"
-                        value={pushEmoji}
-                        onChange={(e) => setPushEmoji(e.target.value)}
-                        className="h-10 rounded-xl bg-muted/40 text-xs"
-                        maxLength={4}
-                      />
-                    </div>
+                  {/* Title row */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-muted-foreground">Title *</label>
+                    <Input
+                      placeholder="e.g. New Feature 🎉"
+                      value={pushTitle}
+                      onChange={(e) => setPushTitle(e.target.value)}
+                      className="h-10 rounded-xl bg-muted/40 text-xs"
+                      required
+                    />
                   </div>
 
+                  {/* Body */}
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold uppercase text-muted-foreground">Body / Message *</label>
                     <textarea
@@ -964,30 +1005,122 @@ try.sandeshk@gmail.com`
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-muted-foreground">Type</label>
-                      <select
-                        value={pushType}
-                        onChange={(e) => setPushType(e.target.value as 'info' | 'warning' | 'success' | 'promo')}
-                        className="w-full h-10 px-3 rounded-xl bg-muted/40 border border-border/40 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500/50"
-                      >
-                        <option value="info">ℹ️ Info</option>
-                        <option value="warning">⚠️ Warning</option>
-                        <option value="success">✅ Success</option>
-                        <option value="promo">⚡ Promo</option>
-                      </select>
+                  {/* Type selector pills */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase text-muted-foreground">Type</label>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {(Object.entries(TYPE_CONFIG) as [string, { label: string; color: string; bg: string }][]).map(([val, cfg]) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setPushType(val as 'info' | 'warning' | 'success' | 'promo')}
+                          className={cn(
+                            'flex flex-col items-center gap-1 py-2 rounded-xl border text-[10px] font-bold transition-all active:scale-95',
+                            pushType === val
+                              ? `${cfg.bg} ${cfg.color} shadow-sm`
+                              : 'bg-muted/30 border-border/30 text-muted-foreground hover:bg-muted/50'
+                          )}
+                        >
+                          <span className={pushType === val ? cfg.color : 'text-muted-foreground'}>{cfg.label}</span>
+                        </button>
+                      ))}
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-muted-foreground">Link (optional)</label>
-                      <Input
-                        placeholder="https://..."
-                        value={pushLink}
-                        onChange={(e) => setPushLink(e.target.value)}
-                        className="h-10 rounded-xl bg-muted/40 text-xs"
-                        type="url"
-                      />
+                  </div>
+
+                  {/* Icon picker */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold uppercase text-muted-foreground">Icon</label>
+                      {pushEmoji && (
+                        <button
+                          type="button"
+                          onClick={() => { setPushEmoji(''); setShowIconPicker(false); }}
+                          className="text-[9px] text-muted-foreground/60 hover:text-destructive font-medium"
+                        >
+                          Clear
+                        </button>
+                      )}
                     </div>
+
+                    {/* Selected preview / toggle */}
+                    <button
+                      type="button"
+                      onClick={() => setShowIconPicker(v => !v)}
+                      className="w-full flex items-center gap-2.5 h-10 px-3 rounded-xl bg-muted/40 border border-border/40 text-xs text-left transition-all hover:bg-muted/60"
+                    >
+                      {pushEmoji ? (
+                        pushEmoji.startsWith('__ICON__') ? (() => {
+                          const opt = ICON_PICKER_OPTIONS.find(o => `__ICON__${o.name}` === pushEmoji);
+                          return opt ? (
+                            <>
+                              <opt.icon size={14} className="text-blue-400 shrink-0" />
+                              <span className="text-foreground font-medium">{opt.label}</span>
+                            </>
+                          ) : null;
+                        })() : (
+                          <><span className="text-base leading-none">{pushEmoji}</span><span className="text-foreground font-medium">Custom emoji</span></>
+                        )
+                      ) : (
+                        <span className="text-muted-foreground">Pick an icon or type emoji…</span>
+                      )}
+                      <ChevronDown size={13} className={cn('ml-auto text-muted-foreground transition-transform', showIconPicker && 'rotate-180')} />
+                    </button>
+
+                    {showIconPicker && (
+                      <div className="rounded-xl border border-border/40 bg-muted/20 p-2 space-y-2">
+                        {/* 20 lucide icon grid */}
+                        <div className="grid grid-cols-5 gap-1.5">
+                          {ICON_PICKER_OPTIONS.map((opt) => {
+                            const isSelected = pushEmoji === `__ICON__${opt.name}`;
+                            return (
+                              <button
+                                key={opt.name}
+                                type="button"
+                                onClick={() => {
+                                  setPushEmoji(isSelected ? '' : `__ICON__${opt.name}`);
+                                  setShowIconPicker(false);
+                                }}
+                                className={cn(
+                                  'flex flex-col items-center gap-1 p-2 rounded-xl border text-[9px] font-bold transition-all active:scale-90',
+                                  isSelected
+                                    ? 'bg-blue-500/15 border-blue-500/40 text-blue-400'
+                                    : 'bg-muted/30 border-border/20 text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                                )}
+                                title={opt.label}
+                              >
+                                <opt.icon size={16} />
+                                <span className="leading-none truncate w-full text-center">{opt.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Custom emoji text input */}
+                        <div className="pt-1 border-t border-border/30 flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground shrink-0">Or emoji:</span>
+                          <input
+                            type="text"
+                            placeholder="🎉"
+                            value={pushEmoji.startsWith('__ICON__') ? '' : pushEmoji}
+                            onChange={(e) => setPushEmoji(e.target.value)}
+                            className="flex-1 h-8 px-2.5 rounded-lg bg-muted/40 border border-border/30 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                            maxLength={4}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Link */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-muted-foreground">Link (optional)</label>
+                    <Input
+                      placeholder="https://..."
+                      value={pushLink}
+                      onChange={(e) => setPushLink(e.target.value)}
+                      className="h-10 rounded-xl bg-muted/40 text-xs"
+                      type="url"
+                    />
                   </div>
 
                   <Button

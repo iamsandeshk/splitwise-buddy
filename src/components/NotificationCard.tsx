@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Info, CheckCircle2, Zap, ExternalLink, AlertCircle } from 'lucide-react';
+import {
+  X, Info, CheckCircle2, Zap, ExternalLink, AlertCircle,
+  Bell, Star, Rocket, Gift, Megaphone, Trophy, Heart, Sparkles,
+  ShoppingCart, CreditCard, Shield, Download, Globe, MessageCircle,
+  Flame, Package,
+} from 'lucide-react';
 import {
   subscribeToNotifications,
   scheduleLocalPush,
@@ -12,12 +17,29 @@ function getDismissed(): Set<string> {
   try {
     const raw = localStorage.getItem(DISMISSED_KEY);
     if (raw) return new Set(JSON.parse(raw) as string[]);
-  } catch { /* ignore parse errors */ }
+  } catch { /* ignore */ }
   return new Set<string>();
 }
 
 function saveDismissed(set: Set<string>): void {
   localStorage.setItem(DISMISSED_KEY, JSON.stringify(Array.from(set)));
+}
+
+// Map for __ICON__Name → lucide component
+const ICON_COMPONENT_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  Bell, Star, Rocket, Gift, Zap, CheckCircle2, AlertCircle, Info,
+  Megaphone, Trophy, Heart, Sparkles, ShoppingCart, CreditCard, Shield,
+  Download, Globe, MessageCircle, Flame, Package,
+};
+
+function renderEmojiOrIcon(emoji?: string, fallback?: React.ReactNode, size = 16) {
+  if (!emoji) return fallback ?? null;
+  if (emoji.startsWith('__ICON__')) {
+    const name = emoji.slice('__ICON__'.length);
+    const Comp = ICON_COMPONENT_MAP[name];
+    return Comp ? <Comp size={size} /> : fallback ?? null;
+  }
+  return <span className="text-[15px] leading-none">{emoji}</span>;
 }
 
 interface TypeStyle {
@@ -73,11 +95,9 @@ function timeAgo(iso: string): string {
 }
 
 export function NotificationCard() {
-  // All notifications from Firestore (newest first)
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(getDismissed);
   const [hasError, setHasError] = useState(false);
-  // Track the last known "latest" notification id so we can detect new arrivals
   const latestIdRef = useRef<string | null>(null);
   const seenIdsRef = useRef<Set<string>>(new Set());
 
@@ -86,7 +106,6 @@ export function NotificationCard() {
     try {
       unsub = subscribeToNotifications((incoming) => {
         try {
-          // Newest notification is incoming[0] (Firestore ordered desc)
           const newest = incoming[0] ?? null;
 
           incoming.forEach((n) => {
@@ -98,11 +117,8 @@ export function NotificationCard() {
             }
           });
 
-          // If a brand-new notification just appeared, clear the dismissed set
-          // so users always see the latest one regardless of past dismissals.
           if (newest && newest.id !== latestIdRef.current) {
             if (latestIdRef.current !== null) {
-              // There's a genuinely new notification — reset dismissed for all users
               const fresh = new Set<string>();
               setDismissed(fresh);
               saveDismissed(fresh);
@@ -122,7 +138,6 @@ export function NotificationCard() {
     return () => { try { unsub?.(); } catch { /* ignore */ } };
   }, []);
 
-  // Only ever show the single most recent notification that hasn't been dismissed
   const latest = notifications.find((n) => !dismissed.has(n.id)) ?? null;
 
   if (hasError || !latest) return null;
@@ -139,7 +154,7 @@ export function NotificationCard() {
 
   return (
     <div
-      className="relative overflow-hidden flex items-center gap-3 px-4 py-3.5"
+      className="relative overflow-hidden flex items-start gap-3 px-4 pt-3.5 pb-3.5"
       style={{
         background: 'hsl(var(--card) / 0.75)',
         border: '1px solid hsl(var(--border) / 0.45)',
@@ -155,22 +170,19 @@ export function NotificationCard() {
 
       {/* Icon bubble */}
       <div
-        className="shrink-0 w-[34px] h-[34px] rounded-[0.7rem] flex items-center justify-center"
+        className="shrink-0 w-[34px] h-[34px] rounded-[0.7rem] flex items-center justify-center mt-0.5"
         style={{
           background: `color-mix(in srgb, ${ts.accentColor} 15%, transparent)`,
           color: ts.accentColor,
         }}
       >
-        {latest.emoji ? (
-          <span className="text-[15px] leading-none">{latest.emoji}</span>
-        ) : (
-          ts.iconNode
-        )}
+        {renderEmojiOrIcon(latest.emoji, ts.iconNode, 15)}
       </div>
 
-      {/* Text */}
+      {/* Text column — contains everything including Try button */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-[3px]">
+        {/* Label + timestamp row — padded right to avoid X button overlap */}
+        <div className="flex items-center gap-2 mb-[3px] pr-7">
           <span
             className="font-mono text-[9px] uppercase tracking-[0.2em] font-bold"
             style={{ color: ts.labelColor }}
@@ -182,37 +194,37 @@ export function NotificationCard() {
           </span>
         </div>
 
-        <p className="text-[13px] font-bold text-foreground leading-snug tracking-tight pr-6">
+        <p className="text-[13px] font-bold text-foreground leading-snug tracking-tight pr-7">
           {latest.title}
         </p>
 
         {latest.body && (
-          <p className="text-[11.5px] text-muted-foreground mt-[3px] leading-snug pr-6">
+          <p className="text-[11.5px] text-muted-foreground mt-[3px] leading-snug">
             {latest.body}
           </p>
         )}
+
+        {/* Try button — sits naturally below body text, no X overlap */}
+        {latest.link && (
+          <a
+            href={latest.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="mt-2.5 inline-flex items-center gap-1 px-3 py-1.5 rounded-[0.6rem] font-bold text-[11px] tracking-wide transition-all active:scale-95 hover:opacity-90"
+            style={{
+              background: `color-mix(in srgb, ${ts.accentColor} 18%, transparent)`,
+              color: ts.accentColor,
+              border: `1px solid color-mix(in srgb, ${ts.accentColor} 35%, transparent)`,
+            }}
+          >
+            Try
+            <ExternalLink size={10} strokeWidth={2.5} />
+          </a>
+        )}
       </div>
 
-      {/* Try button — only when link present */}
-      {latest.link && (
-        <a
-          href={latest.link}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-[0.6rem] font-bold text-[11px] tracking-wide transition-all active:scale-95 hover:opacity-90"
-          style={{
-            background: `color-mix(in srgb, ${ts.accentColor} 18%, transparent)`,
-            color: ts.accentColor,
-            border: `1px solid color-mix(in srgb, ${ts.accentColor} 35%, transparent)`,
-          }}
-        >
-          Try
-          <ExternalLink size={10} strokeWidth={2.5} />
-        </a>
-      )}
-
-      {/* Dismiss */}
+      {/* Dismiss — top-right corner, no longer overlaps Try */}
       <button
         type="button"
         onClick={handleDismiss}
