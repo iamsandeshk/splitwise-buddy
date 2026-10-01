@@ -36,30 +36,49 @@ function getDb() {
 export function subscribeToNotifications(
   callback: (notifications: AppNotification[]) => void
 ): Unsubscribe {
-  const db = getDb();
-  const q = query(
-    collection(db, 'app_notifications'),
-    orderBy('createdAt', 'desc')
-  );
+  try {
+    const db = getDb();
+    const q = query(
+      collection(db, 'app_notifications'),
+      orderBy('createdAt', 'desc')
+    );
 
-  return onSnapshot(q, (snapshot) => {
-    const notifications: AppNotification[] = snapshot.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        title: data.title || '',
-        body: data.body || '',
-        emoji: data.emoji || undefined,
-        type: data.type || 'info',
-        link: data.link || undefined,
-        createdAt:
-          typeof data.createdAt?.toDate === 'function'
-            ? data.createdAt.toDate().toISOString()
-            : (data.createdAt || new Date().toISOString()),
-      };
-    });
-    callback(notifications);
-  });
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        try {
+          const notifications: AppNotification[] = snapshot.docs.map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              title: data.title || '',
+              body: data.body || '',
+              emoji: data.emoji || undefined,
+              type: data.type || 'info',
+              link: data.link || undefined,
+              createdAt:
+                typeof data.createdAt?.toDate === 'function'
+                  ? data.createdAt.toDate().toISOString()
+                  : (data.createdAt || new Date().toISOString()),
+            };
+          });
+          callback(notifications);
+        } catch (err) {
+          console.warn('[Notifications] Failed to parse snapshot:', err);
+          callback([]);
+        }
+      },
+      (err) => {
+        // Firestore permission denied, missing index, or offline — fail silently
+        console.warn('[Notifications] Firestore listener error:', err);
+        callback([]);
+      }
+    );
+  } catch (err) {
+    console.warn('[Notifications] Failed to initialize listener:', err);
+    // Return a no-op unsubscribe
+    return () => {};
+  }
 }
 
 /**

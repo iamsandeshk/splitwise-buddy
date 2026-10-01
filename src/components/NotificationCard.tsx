@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X, Info, CheckCircle2, Zap, ExternalLink, AlertCircle } from 'lucide-react';
 import {
   subscribeToNotifications,
@@ -75,24 +75,37 @@ function timeAgo(iso: string): string {
 export function NotificationCard() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(getDismissed);
+  const [hasError, setHasError] = useState(false);
   const seenIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    const unsub = subscribeToNotifications((incoming) => {
-      incoming.forEach((n) => {
-        if (!seenIdsRef.current.has(n.id)) {
-          seenIdsRef.current.add(n.id);
-          if (!getDismissed().has(n.id)) {
-            void scheduleLocalPush(n.title, n.body);
-          }
+    let unsub: (() => void) | undefined;
+    try {
+      unsub = subscribeToNotifications((incoming) => {
+        try {
+          incoming.forEach((n) => {
+            if (!seenIdsRef.current.has(n.id)) {
+              seenIdsRef.current.add(n.id);
+              if (!getDismissed().has(n.id)) {
+                void scheduleLocalPush(n.title, n.body);
+              }
+            }
+          });
+          setNotifications(incoming);
+        } catch (err) {
+          console.warn('[NotificationCard] update error:', err);
         }
       });
-      setNotifications(incoming);
-    });
-    return () => unsub();
+    } catch (err) {
+      console.warn('[NotificationCard] subscribe error:', err);
+      setHasError(true);
+    }
+    return () => { try { unsub?.(); } catch { /* ignore */ } };
   }, []);
 
   const visible = notifications.filter((n) => !dismissed.has(n.id));
+
+  if (hasError || visible.length === 0) return null;
 
   const handleDismiss = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -102,7 +115,7 @@ export function NotificationCard() {
     saveDismissed(next);
   };
 
-  if (visible.length === 0) return null;
+
 
   return (
     <div className="space-y-2">
