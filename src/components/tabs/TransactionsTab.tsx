@@ -241,7 +241,8 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
             No transactions found.
           </div>
         ) : (
-          filteredItems.map((item, idx) => {
+          <div className="flex flex-col gap-[2px]">
+            {filteredItems.map((item, idx) => {
             const meta = typeMeta[item.type];
             const amountClass = item.direction === 'incoming' ? 'text-emerald-500' : 'text-rose-500';
             const DirIcon = item.direction === 'incoming' ? ArrowDownRight : ArrowUpRight;
@@ -255,7 +256,10 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
                 style={{
                   background: 'hsl(var(--card))',
                   border: '1px solid hsl(var(--border) / 0.15)',
-                  borderRadius: '1.75rem',
+                  borderTopLeftRadius: idx === 0 ? '1.75rem' : '0.5rem',
+                  borderTopRightRadius: idx === 0 ? '1.75rem' : '0.5rem',
+                  borderBottomLeftRadius: idx === filteredItems.length - 1 ? '1.75rem' : '0.5rem',
+                  borderBottomRightRadius: idx === filteredItems.length - 1 ? '1.75rem' : '0.5rem',
                   boxShadow: '0 2px 16px -4px hsl(var(--glass-shadow) / 0.5), inset 0 1px 0 hsl(0 0% 100% / 0.06)',
                 }}
               >
@@ -300,7 +304,9 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
                 </div>
               </div>
             );
-          })
+            })
+          }
+          </div>
         )}
       </div>
 
