@@ -182,9 +182,10 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
   }
 
   return (
-    <div className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col p-4 space-y-5 font-sans">
-      <div className="pt-4 pb-1 flex items-start justify-between gap-3">
-        <div className="flex items-start gap-4">
+    <div className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col font-sans">
+      <div className="sticky top-0 z-30 relative px-4 pt-4 pb-3 flex items-start justify-between gap-3">
+        <div className="absolute inset-x-0 top-0 h-24 z-0 bg-gradient-to-b from-background/95 via-background/70 to-transparent backdrop-blur-xl [mask-image:linear-gradient(to_bottom,black_0%,black_52%,transparent_100%)] pointer-events-none" />
+        <div className="flex items-start gap-4 relative z-10 min-w-0 drop-shadow-[0_1px_3px_hsl(var(--background)/0.9)]">
           {onBack && (
             <button
               type="button"
@@ -200,8 +201,12 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
             <p className="text-[13px] text-muted-foreground font-medium opacity-80">Manage budgets and track source balances</p>
           </div>
         </div>
-        {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
+        <div className="relative z-10">
+          {!onBack && <AccountQuickButton onClick={onOpenAccount} />}
+        </div>
       </div>
+
+      <div className="px-4 space-y-5 mt-2">
 
       {accounts.length === 0 ? (
         <div className="rounded-[2.5rem] border border-dashed border-border/20 p-10 text-center text-muted-foreground/60">
@@ -502,6 +507,7 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
         </div>,
         document.body,
       )}
+      </div>
     </div>
   );
 }

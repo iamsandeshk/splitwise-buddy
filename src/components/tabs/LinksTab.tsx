@@ -88,8 +88,9 @@ export function LinksTab({ onOpenAccount, onBack, bannerAdActive = true }: Links
   return (
     <div className="p-4 space-y-4 pb-20">
       {/* Header */}
-      <div className="pt-4 pb-1">
-        <div className="flex items-center justify-between">
+      <div className="sticky top-0 z-30 relative pt-4 pb-1">
+        <div className="absolute inset-x-0 top-0 h-24 z-0 bg-gradient-to-b from-background/95 via-background/70 to-transparent backdrop-blur-xl [mask-image:linear-gradient(to_bottom,black_0%,black_52%,transparent_100%)] pointer-events-none" />
+        <div className="flex items-center justify-between relative z-10 min-w-0 drop-shadow-[0_1px_3px_hsl(var(--background)/0.9)]">
           <div className="flex items-start gap-2.5">
             {onBack && (
               <button

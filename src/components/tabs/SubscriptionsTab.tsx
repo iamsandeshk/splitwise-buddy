@@ -511,8 +511,9 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
 
   return (
     <div className="w-full h-full overflow-y-auto pb-40 scroll-smooth flex flex-col font-sans relative bg-background text-foreground">
-      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md px-5 pt-5 pb-4 flex items-center justify-between border-b border-border/10">
-        <div className="flex items-center gap-4">
+      <div className="sticky top-0 z-30 relative px-5 pt-5 pb-4 flex items-center justify-between">
+        <div className="absolute inset-x-0 top-0 h-24 z-0 bg-gradient-to-b from-background/95 via-background/70 to-transparent backdrop-blur-xl [mask-image:linear-gradient(to_bottom,black_0%,black_52%,transparent_100%)] pointer-events-none" />
+        <div className="flex items-center gap-4 relative z-10 min-w-0 drop-shadow-[0_1px_3px_hsl(var(--background)/0.9)]">
           {onBack && (
             <button
               onClick={onBack}
