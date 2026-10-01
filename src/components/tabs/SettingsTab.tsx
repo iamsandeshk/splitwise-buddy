@@ -818,7 +818,7 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
   return (
     <div className="w-full h-full overflow-y-auto pb-40 scroll-smooth">
       {/* Header — sticky */}
-      <div className="sticky top-0 z-30 bg-background px-4 pt-4 pb-1">
+      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md px-4 pt-4 pb-1 border-b border-border/10">
         <div className="flex items-center gap-3">
           {onBack && (
             <button
@@ -834,7 +834,6 @@ export function SettingsTab({ onBack }: SettingsTabProps) {
             <h1 className="text-[28px] font-bold leading-none tracking-tight">Settings<span className="text-primary">.</span></h1>
           </div>
         </div>
-        <hr className="rule-dashed mt-4" />
       </div>
       <div className="p-4 space-y-6 pb-20">
 
