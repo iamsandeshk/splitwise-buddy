@@ -90,6 +90,10 @@ export default function AdminProUsersPage() {
   const [pushLink, setPushLink] = useState('');
   const [isPushing, setIsPushing] = useState(false);
 
+  // Notification action sheet
+  const [selectedNotif, setSelectedNotif] = useState<AppNotification | null>(null);
+  const [isSendingAgain, setIsSendingAgain] = useState(false);
+
   const currentUser = getCurrentGoogleUser();
 
   const loadData = useCallback(async () => {
@@ -308,7 +312,39 @@ try.sandeshk@gmail.com`
       toast({ title: 'Delete Failed', description: (err as Error).message || 'Could not delete.', variant: 'destructive' });
     } finally {
       setDeletingNotifId(null);
+      setSelectedNotif(null);
     }
+  };
+
+  const handleSendAgain = async (n: AppNotification) => {
+    setIsSendingAgain(true);
+    try {
+      await pushNotification({
+        title: n.title,
+        body: n.body,
+        emoji: n.emoji,
+        type: n.type,
+        link: n.link,
+      });
+      toast({ title: '✅ Re-sent!', description: 'Notification pushed again to all users.' });
+      setSelectedNotif(null);
+      await loadNotifications();
+    } catch (err) {
+      toast({ title: 'Send Failed', description: (err as Error).message || 'Could not push.', variant: 'destructive' });
+    } finally {
+      setIsSendingAgain(false);
+    }
+  };
+
+  const handleEditNotif = (n: AppNotification) => {
+    setPushTitle(n.title);
+    setPushBody(n.body);
+    setPushEmoji(n.emoji || '');
+    setPushType(n.type || 'info');
+    setPushLink(n.link || '');
+    setShowPushForm(true);
+    setSelectedNotif(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   function notifTypeIcon(type?: string) {
@@ -317,6 +353,7 @@ try.sandeshk@gmail.com`
     if (type === 'promo') return <Zap size={14} className="text-primary" />;
     return <Info size={14} className="text-blue-400" />;
   }
+
 
   // Password Prompt Screen
   if (!hasAdminAccess) {
@@ -982,9 +1019,11 @@ try.sandeshk@gmail.com`
             ) : (
               <div className="space-y-2.5">
                 {notifications.map((n) => (
-                  <div
+                  <button
                     key={n.id}
-                    className="rounded-2xl border border-border/30 bg-card p-4 flex items-start gap-3"
+                    type="button"
+                    onClick={() => setSelectedNotif(n)}
+                    className="w-full rounded-2xl border border-border/30 bg-card p-4 flex items-start gap-3 text-left active:scale-[0.98] transition-all hover:border-border/60 hover:bg-muted/20"
                   >
                     <div className="w-9 h-9 rounded-xl bg-muted/40 border border-border/20 flex items-center justify-center shrink-0">
                       {n.emoji ? (
@@ -1011,19 +1050,11 @@ try.sandeshk@gmail.com`
                         {new Date(n.createdAt).toLocaleString()}
                       </p>
                     </div>
-                    <button
-                      onClick={() => handleDeleteNotification(n.id)}
-                      disabled={deletingNotifId === n.id}
-                      className="w-8 h-8 rounded-xl bg-destructive/10 hover:bg-destructive/20 border border-destructive/20 flex items-center justify-center transition-all active:scale-90 shrink-0"
-                      title="Delete notification"
-                    >
-                      {deletingNotifId === n.id ? (
-                        <RefreshCw size={12} className="animate-spin text-destructive" />
-                      ) : (
-                        <Trash2 size={13} className="text-destructive" />
-                      )}
-                    </button>
-                  </div>
+                    {/* tap hint */}
+                    <div className="w-6 h-6 rounded-lg bg-muted/40 flex items-center justify-center shrink-0 self-center">
+                      <ChevronDown size={13} className="text-muted-foreground -rotate-90" />
+                    </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -1031,7 +1062,89 @@ try.sandeshk@gmail.com`
         )}
       </div>
 
-      {/* Ban User Modal */}
+      {/* Notification Action Sheet */}
+      {selectedNotif && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end justify-center p-4"
+          onClick={() => setSelectedNotif(null)}
+        >
+          <div
+            className="w-full max-w-sm bg-card rounded-3xl border border-border/30 p-5 space-y-4 shadow-2xl animate-in slide-in-from-bottom-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Preview */}
+            <div className="flex items-center gap-3 pb-3 border-b border-border/30">
+              <div className="w-10 h-10 rounded-xl bg-muted/40 border border-border/20 flex items-center justify-center shrink-0">
+                {selectedNotif.emoji ? (
+                  <span className="text-lg">{selectedNotif.emoji}</span>
+                ) : (
+                  notifTypeIcon(selectedNotif.type)
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-black text-foreground truncate">{selectedNotif.title}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{selectedNotif.body}</p>
+              </div>
+              <button
+                onClick={() => setSelectedNotif(null)}
+                className="w-7 h-7 rounded-full bg-muted/40 flex items-center justify-center text-muted-foreground shrink-0"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            {/* Actions */}
+            <div className="space-y-2">
+              {/* Send Again */}
+              <button
+                onClick={() => handleSendAgain(selectedNotif)}
+                disabled={isSendingAgain}
+                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 text-blue-400 font-bold text-sm active:scale-[0.98] transition-all"
+              >
+                {isSendingAgain ? (
+                  <RefreshCw size={16} className="animate-spin shrink-0" />
+                ) : (
+                  <Send size={16} className="shrink-0" />
+                )}
+                <div className="text-left">
+                  <p className="text-sm font-bold">Send Again</p>
+                  <p className="text-[10px] font-normal text-blue-400/70">Push this notification to all users now</p>
+                </div>
+              </button>
+
+              {/* Edit */}
+              <button
+                onClick={() => handleEditNotif(selectedNotif)}
+                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-muted/40 border border-border/30 hover:bg-muted/70 text-foreground font-bold text-sm active:scale-[0.98] transition-all"
+              >
+                <Send size={16} className="shrink-0 text-muted-foreground" style={{ transform: 'rotate(45deg)' }} />
+                <div className="text-left">
+                  <p className="text-sm font-bold">Edit &amp; Send</p>
+                  <p className="text-[10px] font-normal text-muted-foreground">Pre-fill the compose form with this notification</p>
+                </div>
+              </button>
+
+              {/* Delete */}
+              <button
+                onClick={() => handleDeleteNotification(selectedNotif.id)}
+                disabled={deletingNotifId === selectedNotif.id}
+                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-destructive/10 border border-destructive/20 hover:bg-destructive/20 text-destructive font-bold text-sm active:scale-[0.98] transition-all"
+              >
+                {deletingNotifId === selectedNotif.id ? (
+                  <RefreshCw size={16} className="animate-spin shrink-0" />
+                ) : (
+                  <Trash2 size={16} className="shrink-0" />
+                )}
+                <div className="text-left">
+                  <p className="text-sm font-bold">Delete</p>
+                  <p className="text-[10px] font-normal text-destructive/70">Remove from Firestore permanently</p>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showBanModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-card rounded-3xl border border-destructive/40 p-6 space-y-5 shadow-2xl animate-in zoom-in-95">
