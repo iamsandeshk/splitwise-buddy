@@ -247,9 +247,9 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
             const DirIcon = item.direction === 'incoming' ? ArrowDownRight : ArrowUpRight;
 
             return (
-              <button
+              <div
                 key={item.id}
-                type="button"
+                role="button" tabIndex={0}
                 onClick={() => setViewing(item)}
                 className="w-full text-left px-5 py-4 active:scale-[0.99] transition-all"
                 style={{
@@ -298,7 +298,7 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
                     </button>
                   </div>
                 </div>
-              </button>
+              </div>
             );
           })
         )}
