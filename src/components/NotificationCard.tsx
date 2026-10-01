@@ -3,7 +3,7 @@ import {
   X, Info, CheckCircle2, Zap, ExternalLink, AlertCircle,
   Bell, Star, Rocket, Gift, Megaphone, Trophy, Heart, Sparkles,
   ShoppingCart, CreditCard, Shield, Download, Globe, MessageCircle,
-  Flame, Package,
+  Flame, Package, type LucideIcon,
 } from 'lucide-react';
 import {
   subscribeToNotifications,
@@ -26,7 +26,7 @@ function saveDismissed(set: Set<string>): void {
 }
 
 // Map for __ICON__Name → lucide component
-const ICON_COMPONENT_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+const ICON_COMPONENT_MAP: Record<string, LucideIcon> = {
   Bell, Star, Rocket, Gift, Zap, CheckCircle2, AlertCircle, Info,
   Megaphone, Trophy, Heart, Sparkles, ShoppingCart, CreditCard, Shield,
   Download, Globe, MessageCircle, Flame, Package,
