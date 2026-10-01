@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, CreditCard, Lock, Pencil, PiggyBank, Plus, Star, Trash2, Wallet, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, CreditCard, Lock, Pencil, PiggyBank, Plus, Star, Trash2, Wallet, Landmark, Banknote, type LucideIcon } from 'lucide-react';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
 import { AccountTransactionsView } from '@/components/AccountTransactionsView';
 import {
@@ -45,13 +45,14 @@ const DEFAULT_FORM: AccountFormState = {
   type: 'savings',
   budget: '',
   isDefault: false,
+  customTypeName: '',
 };
 
 const TYPE_ICONS: Record<FinancialAccountType, LucideIcon> = {
   savings: PiggyBank,
-  bank: Wallet,
+  bank: Landmark,
   'credit-card': CreditCard,
-  cash: Wallet,
+  cash: Banknote,
   wallet: Wallet,
   other: Wallet,
 };
@@ -217,7 +218,9 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
           {accounts.map((account, index) => {
             const isLockedAccount = !isPro && index >= FREE_LIMITS.MAX_ACCOUNTS;
             const Icon = TYPE_ICONS[account.type] || Wallet;
-            const typeLabel = FINANCIAL_ACCOUNT_TYPES.find((item) => item.value === account.type)?.label || 'Other';
+            const typeLabel = account.type === 'other' && account.customTypeName 
+              ? account.customTypeName 
+              : (FINANCIAL_ACCOUNT_TYPES.find((item) => item.value === account.type)?.label || 'Other');
             const totalPool = Math.max(0, account.budget + account.income);
             const spent = account.personalSpent + account.sharedSpent;
             const usageRatio = totalPool > 0 ? Math.min(1, Math.max(0, spent / totalPool)) : 0;
@@ -424,6 +427,17 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
                     );
                   })}
                 </div>
+                {form.type === 'other' && (
+                  <div className="pt-2 animate-in fade-in slide-in-from-top-2">
+                    <input
+                      type="text"
+                      placeholder="Specify account type (e.g., Crypto, Meal Card)"
+                      value={form.customTypeName || ''}
+                      onChange={(event) => setForm({ ...form, customTypeName: event.target.value })}
+                      className="w-full h-10 rounded-xl border border-border/15 bg-secondary/30 px-3 text-sm font-medium focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -440,16 +454,26 @@ export function AccountsTab({ onOpenAccount, onBack, bannerAdActive = true }: Ac
                 />
               </div>
 
-              <label className="flex items-center gap-3 p-3 rounded-2xl bg-secondary/20 border border-border/15 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.isDefault}
-                  onChange={(event) => setForm({ ...form, isDefault: event.target.checked })}
-                  className="w-4 h-4 rounded text-primary focus:ring-0 cursor-pointer"
-                />
-                <div>
-                  <p className="text-xs font-bold">Set as Default Account</p>
-                  <p className="text-[10px] text-muted-foreground">New expenses will automatically use this account</p>
+              <label className="flex items-center gap-3.5 p-3.5 rounded-2xl bg-secondary/20 border border-border/15 cursor-pointer active:scale-[0.98] transition-transform">
+                <div className={cn(
+                  "w-5 h-5 rounded flex items-center justify-center transition-colors border",
+                  form.isDefault ? "bg-primary border-primary" : "border-muted-foreground/40"
+                )}>
+                  <input
+                    type="checkbox"
+                    checked={form.isDefault}
+                    onChange={(event) => setForm({ ...form, isDefault: event.target.checked })}
+                    className="absolute opacity-0 w-0 h-0"
+                  />
+                  {form.isDefault && (
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M2.5 6.5L4.5 8.5L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-bold leading-none">Set as Default Account</p>
+                  <p className="text-[11px] text-muted-foreground mt-1 opacity-80">New expenses will automatically use this account</p>
                 </div>
               </label>
             </div>

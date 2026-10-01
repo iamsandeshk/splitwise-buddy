@@ -52,6 +52,7 @@ export interface FinancialAccount {
   id: string;
   name: string;
   type: FinancialAccountType;
+  customTypeName?: string;
   budget: number;
   isDefault?: boolean;
   createdAt: string;

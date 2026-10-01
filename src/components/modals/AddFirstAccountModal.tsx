@@ -35,6 +35,7 @@ export function AddFirstAccountModal({
   const currency = getCurrency();
   const [name, setName] = useState('');
   const [type, setType] = useState<FinancialAccountType>('bank');
+  const [customTypeName, setCustomTypeName] = useState('');
   const [balance, setBalance] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -68,6 +69,7 @@ export function AddFirstAccountModal({
       id: generateId(),
       name: accountName,
       type: type,
+      customTypeName: type === 'other' ? customTypeName.trim() : '',
       budget: 0,
       isDefault: true,
       createdAt: new Date().toISOString(),
@@ -180,6 +182,17 @@ export function AddFirstAccountModal({
                 );
               })}
             </div>
+            {type === 'other' && (
+              <div className="pt-2 animate-in fade-in slide-in-from-top-2">
+                <input
+                  type="text"
+                  placeholder="Specify account type (e.g., Crypto, Meal Card)"
+                  value={customTypeName}
+                  onChange={(e) => setCustomTypeName(e.target.value)}
+                  className="w-full h-10 rounded-xl border border-border/15 bg-secondary/30 px-3 text-sm font-medium focus:outline-none focus:border-primary"
+                />
+              </div>
+            )}
           </div>
 
           {/* Current / Starting Balance */}
