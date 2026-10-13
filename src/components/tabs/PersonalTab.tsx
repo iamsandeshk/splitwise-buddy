@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search, Trash2, Calendar, X, Target, Save, AlertCircle, PieChart, CheckCircle2, Pencil, Check, Edit3, SlidersHorizontal, MessageSquare, Image as ImageIcon, User, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
-import { getPersonalExpenses, deletePersonalExpense, updatePersonalExpense, saveSharedExpense, generateId, getUniquePersonNames, getPersonBalances, type PersonalExpense, type SharedExpense, type PersonBalance, EXPENSE_CATEGORIES, getTransactionAttachment, saveTransactionAttachment, resizeImageToDataUrl, deleteTransactionAttachment } from '@/lib/storage';
+import { getPersonalExpenses, deletePersonalExpense, updatePersonalExpense, saveSharedExpense, generateId, getUniquePersonNames, getPersonBalances, type PersonalExpense, type SharedExpense, type PersonBalance, EXPENSE_CATEGORIES, getTransactionAttachment, saveTransactionAttachment, resizeImageToDataUrl, deleteTransactionAttachment, getActiveExpenseCategories, type AppCategoryItem } from '@/lib/storage';
 import { AddPersonalExpenseModal } from '@/components/modals/AddPersonalExpenseModal';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
 import { ExpenseChart } from '@/components/ExpenseChart';
@@ -46,6 +46,7 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true, onSc
   const [expenses, setExpenses] = useState<PersonalExpense[]>(getPersonalExpenses());
   const [personBalances, setPersonBalances] = useState<PersonBalance[]>(getPersonBalances());
   const [showAddModal, setShowAddModal] = useState(false);
+  const [activeCategories, setActiveCategories] = useState<AppCategoryItem[]>(getActiveExpenseCategories());
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>(currentMonthKey);
   const touchStartXRef = useRef<number | null>(null);
@@ -234,13 +235,16 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true, onSc
     const sync = () => {
       setExpenses(getPersonalExpenses());
       setPersonBalances(getPersonBalances());
+      setActiveCategories(getActiveExpenseCategories());
     };
     window.addEventListener('splitmate_trigger_add', handleTriggerAdd);
     window.addEventListener('splitmate_data_changed', sync);
+    window.addEventListener('splitmate_categories_changed', sync);
     window.addEventListener('splitmate_open_transaction', handleOpenTransaction);
     return () => {
       window.removeEventListener('splitmate_trigger_add', handleTriggerAdd);
       window.removeEventListener('splitmate_data_changed', sync);
+      window.removeEventListener('splitmate_categories_changed', sync);
       window.removeEventListener('splitmate_open_transaction', handleOpenTransaction);
     };
   }, []);
@@ -866,24 +870,28 @@ export function PersonalTab({ onOpenAccount, onBack, bannerAdActive = true, onSc
 
               {isEditingReason && showCategoryPicker && (
                 <div className="max-h-48 overflow-y-auto rounded-2xl border border-border/15 bg-secondary/20 p-2 space-y-1.5">
-                  {EXPENSE_CATEGORIES.map((category) => (
-                    <button
-                      key={category}
-                      type="button"
-                      onClick={() => {
-                        setEditedCategory(category);
-                        setShowCategoryPicker(false);
-                      }}
-                      className={cn(
-                        'w-full h-9 rounded-xl border text-[9px] font-black uppercase tracking-[0.14em] transition-all text-left px-3',
-                        editedCategory === category
-                          ? 'bg-primary/15 text-primary border-primary/25'
-                          : 'bg-secondary/30 text-muted-foreground border-border/10',
-                      )}
-                    >
-                      {category}
-                    </button>
-                  ))}
+                  {activeCategories.map((catItem) => {
+                    const category = catItem.name;
+                    return (
+                      <button
+                        key={catItem.id || category}
+                        type="button"
+                        onClick={() => {
+                          setEditedCategory(category);
+                          setShowCategoryPicker(false);
+                        }}
+                        className={cn(
+                          'w-full h-9 rounded-xl border text-[9px] font-black uppercase tracking-[0.14em] transition-all text-left px-3 flex items-center gap-1.5',
+                          editedCategory === category
+                            ? 'bg-primary/15 text-primary border-primary/25'
+                            : 'bg-secondary/30 text-muted-foreground border-border/10',
+                        )}
+                      >
+                        {catItem.emoji && <span>{catItem.emoji}</span>}
+                        <span>{category}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>

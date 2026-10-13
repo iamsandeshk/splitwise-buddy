@@ -66,7 +66,12 @@ export function BudgetsTab({ onOpenAccount, onBack, bannerAdActive = true }: Bud
   const stats = useMemo(() => {
     const now = new Date();
     const currentMonthKey = now.toISOString().slice(0, 7);
-    const monthExpenses = expenses.filter((expense) => expense.date.startsWith(currentMonthKey));
+    const monthExpenses = expenses.filter((expense) => 
+      expense.date.startsWith(currentMonthKey) && 
+      !expense.isIncome && 
+      !expense.reason?.toLowerCase().includes('initial balance') &&
+      expense.source !== 'account'
+    );
 
     const spent = monthExpenses.reduce((sum, item) => sum + item.amount, 0);
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();

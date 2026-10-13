@@ -1,7 +1,7 @@
 import { Plus, TrendingUp, TrendingDown, Users, Wallet, Activity, Target, PieChart, ArrowUpRight, ArrowDownRight, Banknote, SlidersHorizontal, ChevronRight, ChevronDown, Check, Calendar, History, Layers } from 'lucide-react';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
 import { ExpenseChart } from '@/components/ExpenseChart';
-import { getPersonalExpenses, getPersonBalances, getSharedExpenses, EXPENSE_CATEGORIES, getAccountProfile, getHomeSettings, processSubscriptionBilling } from '@/lib/storage';
+import { getPersonalExpenses, getPersonBalances, getSharedExpenses, EXPENSE_CATEGORIES, getAccountProfile, getHomeSettings, processSubscriptionBilling, getHomeBalanceTimeframe, saveHomeBalanceTimeframe, type BalanceTimeframe, type PersonalExpense } from '@/lib/storage';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCurrency } from '@/hooks/use-currency';
@@ -27,7 +27,6 @@ interface HomeTabProps {
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
 }
 
-type BalanceTimeframe = 'present' | 'previous' | 'lifetime';
 
 function matchesMonth(dateStr: string | undefined | null, targetMonth: string): boolean {
   if (!dateStr) return false;
@@ -96,10 +95,11 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
     },
   ], [presentMonthFull, prevMonthFull]);
 
-  const [balanceTimeframe, setBalanceTimeframe] = useState<BalanceTimeframe>('present');
+  const [balanceTimeframe, setBalanceTimeframe] = useState<BalanceTimeframe>(() => getHomeBalanceTimeframe());
 
   const handleSelectTimeframe = (next: BalanceTimeframe) => {
     setBalanceTimeframe(next);
+    saveHomeBalanceTimeframe(next);
   };
 
   const stats = useMemo(() => {
@@ -109,22 +109,25 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
       !(e.smsExternalId && e.smsExternalId.startsWith('demo-sms-'))
     );
 
+    const isSharedMirror = (expense: PersonalExpense) =>
+      Boolean(expense.isMirror && expense.source !== 'subscription' && expense.source !== 'recurring');
+
     // Monthly figures remain useful for the compact stats card below.
     const thisMonthPersonalExpenses = realPersonalExpenses
-      .filter(expense => matchesMonth(expense.date, presentMonthKey) && !expense.isIncome && !expense.isMirror)
+      .filter(expense => matchesMonth(expense.date, presentMonthKey) && !expense.isIncome && !isSharedMirror(expense))
       .reduce((sum, expense) => sum + expense.amount, 0);
 
     const thisMonthPersonalIncome = realPersonalExpenses
-      .filter(expense => matchesMonth(expense.date, presentMonthKey) && expense.isIncome && !expense.isMirror)
+      .filter(expense => matchesMonth(expense.date, presentMonthKey) && expense.isIncome && !isSharedMirror(expense))
       .reduce((sum, income) => sum + income.amount, 0);
 
     // Lifetime figures
     const lifetimePersonalExpenses = realPersonalExpenses
-      .filter(expense => !expense.isIncome && !expense.isMirror)
+      .filter(expense => !expense.isIncome && !isSharedMirror(expense))
       .reduce((sum, expense) => sum + expense.amount, 0);
 
     const lifetimePersonalIncome = realPersonalExpenses
-      .filter(expense => expense.isIncome && !expense.isMirror)
+      .filter(expense => expense.isIncome && !isSharedMirror(expense))
       .reduce((sum, income) => sum + income.amount, 0);
 
     // Timeframe-specific calculations for Total Balance card
@@ -150,11 +153,11 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
       const targetMonthKey = balanceTimeframe === 'present' ? presentMonthKey : prevMonthKey;
 
       personalIncoming = realPersonalExpenses
-        .filter(expense => expense.isIncome && !expense.isMirror && matchesMonth(expense.date, targetMonthKey))
+        .filter(expense => expense.isIncome && !isSharedMirror(expense) && matchesMonth(expense.date, targetMonthKey))
         .reduce((sum, income) => sum + income.amount, 0);
 
       personalOutgoing = realPersonalExpenses
-        .filter(expense => !expense.isIncome && !expense.isMirror && matchesMonth(expense.date, targetMonthKey))
+        .filter(expense => !expense.isIncome && !isSharedMirror(expense) && matchesMonth(expense.date, targetMonthKey))
         .reduce((sum, expense) => sum + expense.amount, 0);
 
       const targetShared = sharedExpenses.filter(e => matchesMonth(e.date, targetMonthKey));
@@ -191,12 +194,51 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
     // Cash flow net balance: total cash received minus total cash spent/lent
     const netTotalBalance = totalIncoming - totalOutgoing;
 
-    const categoryData = EXPENSE_CATEGORIES.map(category => {
-      const amount = realPersonalExpenses
-        .filter(expense => expense.category === category && matchesMonth(expense.date, presentMonthKey) && !expense.isIncome)
-        .reduce((sum, expense) => sum + expense.amount, 0);
-      return { name: category, value: amount };
-    }).filter(item => item.value > 0);
+    const matchesChartTimeframe = (dateStr: string | undefined | null) => {
+      if (balanceTimeframe === 'lifetime') return true;
+      const targetMonthKey = balanceTimeframe === 'present' ? presentMonthKey : prevMonthKey;
+      return matchesMonth(dateStr, targetMonthKey);
+    };
+
+    // Gather all spending items (personal + subscriptions + shared expenses paid by me)
+    const mirroredSharedIds = new Set(
+      realPersonalExpenses
+        .filter(e => e.isMirror && e.mirrorFromId)
+        .map(e => e.mirrorFromId!)
+    );
+
+    const chartItems: Array<{ category: string; amount: number }> = [];
+
+    // 1. Personal expenses (including subscriptions, recurring, and mirrored shared expenses)
+    realPersonalExpenses.forEach(e => {
+      if (!e.isIncome && matchesChartTimeframe(e.date)) {
+        chartItems.push({
+          category: e.category || 'Other',
+          amount: Number(e.amount) || 0,
+        });
+      }
+    });
+
+    // 2. Any shared expenses paid by me that don't have a personal mirror
+    sharedExpenses.forEach(se => {
+      if (se.paidBy === 'me' && !mirroredSharedIds.has(se.id) && matchesChartTimeframe(se.date)) {
+        chartItems.push({
+          category: se.category || 'Other',
+          amount: Number(se.amount) || 0,
+        });
+      }
+    });
+
+    const categoryTotals: Record<string, number> = {};
+    chartItems.forEach(item => {
+      const cat = item.category || 'Other';
+      categoryTotals[cat] = (categoryTotals[cat] || 0) + item.amount;
+    });
+
+    const categoryData = Object.entries(categoryTotals)
+      .map(([name, value]) => ({ name, value }))
+      .filter(item => item.value > 0)
+      .sort((a, b) => b.value - a.value);
 
     const topPeople = personBalances
       .filter(person => Math.abs(person.netBalance) > 0)
@@ -210,7 +252,7 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
       lifetimePersonalIncome,
       netTotalBalance,
       topPeople,
-      totalTransactions: realPersonalExpenses.length + sharedExpenses.length,
+      totalTransactions: realPersonalExpenses.filter(e => !isSharedMirror(e)).length + sharedExpenses.length,
       categoryData,
       totalIncoming,
       totalOutgoing,
@@ -236,13 +278,16 @@ export function HomeTab({ onAddPersonal, onAddShared, onOpenAccount, onNavigateT
     processSubscriptionBilling();
     const syncName = () => setProfileName(getAccountProfile().name || 'Guest');
     const syncSettings = () => setSettings(getHomeSettings());
+    const syncTimeframe = () => setBalanceTimeframe(getHomeBalanceTimeframe());
     const syncData = () => setDataVersion(v => v + 1);
     window.addEventListener('splitmate_account_changed', syncName);
     window.addEventListener('home_settings_changed', syncSettings);
+    window.addEventListener('home_balance_timeframe_changed', syncTimeframe);
     window.addEventListener('splitmate_data_changed', syncData);
     return () => {
       window.removeEventListener('splitmate_account_changed', syncName);
       window.removeEventListener('home_settings_changed', syncSettings);
+      window.removeEventListener('home_balance_timeframe_changed', syncTimeframe);
       window.removeEventListener('splitmate_data_changed', syncData);
     };
   }, []);

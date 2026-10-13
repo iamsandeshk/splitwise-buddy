@@ -26,21 +26,22 @@ export function getAllAppTransactions(): AppTransactionItem[] {
   const groupsById = new Map(getFriendGroups().map((group) => [group.id, group.name]));
 
   const personal = getPersonalExpenses()
-    .filter(item => !item.isMirror)
+    .filter(item => !item.isMirror || item.source === 'subscription' || item.source === 'recurring')
     .map<AppTransactionItem>((item) => {
+      const isSub = item.source === 'subscription';
       return {
         id: `personal:${item.id}`,
         type: 'personal',
         direction: item.isIncome ? 'incoming' : 'outgoing',
         amount: Math.abs(Number(item.amount || 0)),
-        reason: item.reason || item.category || 'General',
+        reason: item.reason || item.category || (isSub ? 'Subscription' : 'General'),
         date: item.date,
         createdAt: item.createdAt || item.date,
         sourceTab: 'personal',
         sourceId: item.id,
-        sourceLabel: 'Personal',
-        subtitle: item.category || 'General',
-        category: item.category || 'General',
+        sourceLabel: isSub ? 'Subscription' : 'Personal',
+        subtitle: isSub ? (item.category || 'Subscription') : (item.category || 'General'),
+        category: item.category || (isSub ? 'Bills & Utilities' : 'General'),
         status: item.isIncome ? 'Income' : 'Expense',
       };
     });

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { User, Tag, Wallet, ChevronLeft, Image as ImageIcon, X, CalendarDays, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import { saveSharedExpense, generateId, getUniquePersonNames, EXPENSE_CATEGORIES, getAccounts, getCurrency, getDefaultAccountId, getSuggestedReasons, getSuggestedPersons, type SharedExpense, saveTransactionAttachment, resizeImageToDataUrl } from '@/lib/storage';
+import { saveSharedExpense, generateId, getUniquePersonNames, EXPENSE_CATEGORIES, getAccounts, getCurrency, getDefaultAccountId, getSuggestedReasons, getSuggestedPersons, type SharedExpense, saveTransactionAttachment, resizeImageToDataUrl, getActiveExpenseCategories, type AppCategoryItem } from '@/lib/storage';
 import { pushUpdateToCloud } from '@/integrations/firebase/sync';
 import { getPersonProfile, getAccountProfile, savePersonProfile } from '@/lib/storage';
 import { useBannerAd } from '@/hooks/useBannerAd';
@@ -35,14 +35,27 @@ const CATEGORY_EMOJIS: Record<string, string> = {
 export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, initialReason, initialDate, initialPersonName }: AddSharedExpenseModalProps) {
   const { toast } = useToast();
   useBannerAd(isOpen);
+  const [activeCategories, setActiveCategories] = useState<AppCategoryItem[]>(getActiveExpenseCategories());
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
-  const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]); // Default to Food & Dining
+  const [category, setCategory] = useState(() => getActiveExpenseCategories()[0]?.name || 'Food & Dining');
   const [personName, setPersonName] = useState('');
   const [personEmail, setPersonEmail] = useState('');
   const [paidBy, setPaidBy] = useState<'me' | 'them'>('me');
   const [accountId, setAccountId] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+
+  useEffect(() => {
+    const handleSyncCats = () => {
+      const cats = getActiveExpenseCategories();
+      setActiveCategories(cats);
+      if (category && !cats.some(c => c.name === category)) {
+        setCategory(cats[0]?.name || 'Other');
+      }
+    };
+    window.addEventListener('splitmate_categories_changed', handleSyncCats);
+    return () => window.removeEventListener('splitmate_categories_changed', handleSyncCats);
+  }, [category]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const suggestions = getSuggestedReasons('shared');
   const suggestedPersons = getSuggestedPersons();
@@ -455,10 +468,11 @@ export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, i
               Category
             </label>
             <div className="flex flex-wrap gap-1.5">
-              {(showAllCategories ? EXPENSE_CATEGORIES : EXPENSE_CATEGORIES.slice(0, 2)).map((cat) => {
+              {(showAllCategories ? activeCategories : activeCategories.slice(0, 2)).map((catItem) => {
+                const cat = catItem.name;
                 const active = category === cat;
                 return (
-                  <button key={cat} type="button" onClick={() => setCategory(active ? '' : cat)}
+                  <button key={catItem.id || cat} type="button" onClick={() => setCategory(active ? '' : cat)}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest transition-all duration-150 border backdrop-blur-sm"
                     style={{
                       background: active ? 'hsl(var(--primary) / 0.15)' : 'hsl(var(--card) / 0.6)',
@@ -466,7 +480,7 @@ export function AddSharedExpenseModal({ isOpen, onClose, onAdd, initialAmount, i
                       border: `1px solid ${active ? 'hsl(var(--primary) / 0.25)' : 'hsl(var(--border) / 0.2)'}`,
                       transform: active ? 'scale(1.05)' : 'scale(1)',
                     }}>
-                    <span className="text-sm">{CATEGORY_EMOJIS[cat] || '📦'}</span>
+                    <span className="text-sm">{catItem.emoji || CATEGORY_EMOJIS[cat] || '📦'}</span>
                     {cat}
                   </button>
                 );

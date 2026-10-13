@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronDown } from 'lucide-react';
+import { ChevronLeft, SlidersHorizontal } from 'lucide-react';
 import { ExpenseChart } from '@/components/ExpenseChart';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
-import { EXPENSE_CATEGORIES, getPersonalExpenses, type PersonalExpense } from '@/lib/storage';
+import { ManageCategoriesModal } from '@/components/modals/ManageCategoriesModal';
+import { 
+  getPersonalExpenses, 
+  getSharedExpenses, 
+  type PersonalExpense, 
+  type SharedExpense 
+} from '@/lib/storage';
 import { cn } from '@/lib/utils';
 import { useSessionAnimation } from '@/hooks/use-session-animation';
 
@@ -14,14 +20,21 @@ interface CategoryInsightsTabProps {
 
 const CATEGORY_STYLES: Record<string, { emoji: string, color: string }> = {
   'Food & Dining': { emoji: '🍔', color: '#f59e0b' },
-  'Groceries': { emoji: '🛒', color: '#f59e0b' },
+  'Groceries': { emoji: '🛒', color: '#10b981' },
   'Healthcare': { emoji: '🩺', color: '#a855f7' },
   'Bills & Utilities': { emoji: '🏠', color: '#3b82f6' },
   'Transportation': { emoji: '🚗', color: '#ef4444' },
   'Shopping': { emoji: '🛍️', color: '#ec4899' },
-  'Entertainment': { emoji: '🎬', color: '#10b981' },
+  'Entertainment': { emoji: '🎬', color: '#8b5cf6' },
   'Education': { emoji: '📚', color: '#6366f1' },
   'Travel': { emoji: '✈️', color: '#14b8a6' },
+  'Streaming': { emoji: '📺', color: '#8b5cf6' },
+  'AI': { emoji: '🤖', color: '#06b6d4' },
+  'Productivity': { emoji: '⚡', color: '#10b981' },
+  'Work & Dev': { emoji: '💻', color: '#3b82f6' },
+  'Music': { emoji: '🎵', color: '#ec4899' },
+  'Lifestyle': { emoji: '✨', color: '#f97316' },
+  'Gaming': { emoji: '🎮', color: '#a855f7' },
   'Other': { emoji: '📦', color: '#b159c3ff' }
 };
 
@@ -29,13 +42,27 @@ type TimeRange = '1m' | '3m' | '6m' | '1y';
 
 export function CategoryInsightsTab({ onBack }: CategoryInsightsTabProps) {
   const shouldAnimate = useSessionAnimation('category-tab');
-  const [expenses, setExpenses] = useState<PersonalExpense[]>(getPersonalExpenses());
+  const [personalExpenses, setPersonalExpenses] = useState<PersonalExpense[]>(getPersonalExpenses());
+  const [sharedExpenses, setSharedExpenses] = useState<SharedExpense[]>(getSharedExpenses());
   const [timeRange, setTimeRange] = useState<TimeRange>('3m');
+  const [showManageCategories, setShowManageCategories] = useState(false);
 
   useEffect(() => {
-    const sync = () => setExpenses(getPersonalExpenses());
+    const sync = () => {
+      setPersonalExpenses(getPersonalExpenses());
+      setSharedExpenses(getSharedExpenses());
+    };
+    sync();
     window.addEventListener('focus', sync);
-    return () => window.removeEventListener('focus', sync);
+    window.addEventListener('splitmate_transaction_added', sync);
+    window.addEventListener('splitmate_expense_updated', sync);
+    window.addEventListener('splitmate_categories_changed', sync);
+    return () => {
+      window.removeEventListener('focus', sync);
+      window.removeEventListener('splitmate_transaction_added', sync);
+      window.removeEventListener('splitmate_expense_updated', sync);
+      window.removeEventListener('splitmate_categories_changed', sync);
+    };
   }, []);
 
   const { startDate, endDate, dateRangeLabel } = useMemo(() => {
@@ -51,31 +78,63 @@ export function CategoryInsightsTab({ onBack }: CategoryInsightsTabProps) {
     return { startDate: start, endDate: end, dateRangeLabel: label };
   }, [timeRange]);
 
-  const filteredExpenses = useMemo(() => {
-    return expenses.filter(expense => {
-      const d = new Date(expense.date);
-      return d >= startDate && d <= endDate;
-    });
-  }, [expenses, startDate, endDate]);
-
   const chartData = useMemo(() => {
-    return EXPENSE_CATEGORIES
-      .map((category) => {
-        const totalAmount = filteredExpenses
-          .filter((expense) => expense.category === category)
-          .reduce((sum, expense) => sum + expense.amount, 0);
+    // 1. Filter out demo SMS transactions
+    const realPersonal = personalExpenses.filter(e =>
+      !e.id.startsWith('demo-sms-') &&
+      !(e.smsExternalId && e.smsExternalId.startsWith('demo-sms-'))
+    );
 
-        return {
-          name: category,
-          value: Math.abs(totalAmount),
-          color: CATEGORY_STYLES[category]?.color || CATEGORY_STYLES['Other'].color
-        };
-      })
+    // Keep track of mirrored shared expense IDs to avoid double counting
+    const mirroredSharedIds = new Set(
+      realPersonal
+        .filter(e => e.isMirror && e.mirrorFromId)
+        .map(e => e.mirrorFromId!)
+    );
+
+    const isDateInRange = (dateStr: string) => {
+      const d = new Date(dateStr);
+      return !isNaN(d.getTime()) && d >= startDate && d <= endDate;
+    };
+
+    const categoryTotals: Record<string, number> = {};
+
+    // 2. Personal expenses (strictly outgoing expenses - EXCLUDE income and initial bank balances)
+    realPersonal.forEach(expense => {
+      // Must not be marked as income
+      if (expense.isIncome) return;
+
+      // Must not be an initial balance or account setup transaction
+      const reasonLower = (expense.reason || '').toLowerCase();
+      if (reasonLower.includes('initial balance') || expense.source === 'account') {
+        return;
+      }
+
+      if (isDateInRange(expense.date)) {
+        const cat = expense.category || 'Other';
+        categoryTotals[cat] = (categoryTotals[cat] || 0) + Number(expense.amount || 0);
+      }
+    });
+
+    // 3. Shared expenses paid by me (that do not already have a personal mirror)
+    sharedExpenses.forEach(se => {
+      if (se.paidBy === 'me' && !mirroredSharedIds.has(se.id) && isDateInRange(se.date)) {
+        const cat = se.category || 'Other';
+        categoryTotals[cat] = (categoryTotals[cat] || 0) + Number(se.amount || 0);
+      }
+    });
+
+    return Object.entries(categoryTotals)
+      .map(([name, totalAmount]) => ({
+        name,
+        value: Math.abs(totalAmount),
+        color: CATEGORY_STYLES[name]?.color || CATEGORY_STYLES['Other'].color
+      }))
       .filter((item) => item.value > 0)
       .sort((a, b) => b.value - a.value);
-  }, [filteredExpenses]);
+  }, [personalExpenses, sharedExpenses, startDate, endDate]);
 
-  const total = useMemo(() => filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0), [filteredExpenses]);
+  const total = useMemo(() => chartData.reduce((sum, item) => sum + item.value, 0), [chartData]);
 
   const toggleTimeRange = () => {
     const ranges: TimeRange[] = ['1m', '3m', '6m', '1y'];
@@ -113,12 +172,24 @@ export function CategoryInsightsTab({ onBack }: CategoryInsightsTabProps) {
           </div>
         </div>
 
-        <button
-          onClick={toggleTimeRange}
-          className="px-4 py-2 rounded-full bg-secondary/50 text-[13px] font-medium text-foreground flex items-center gap-1.5 active:scale-95 transition-all mt-1"
-        >
-          {getRangeLabel(timeRange)}
-        </button>
+        <div className="flex items-center gap-1.5 relative z-10 mt-1">
+          <button
+            type="button"
+            onClick={() => setShowManageCategories(true)}
+            className="h-9 px-3 rounded-full bg-secondary/50 text-[12px] font-semibold text-foreground flex items-center gap-1.5 active:scale-95 transition-all border border-border/10 hover:bg-secondary/70"
+            title="Edit categories for expenses and subscriptions"
+          >
+            <SlidersHorizontal size={13} className="text-primary" />
+            <span>Edit</span>
+          </button>
+
+          <button
+            onClick={toggleTimeRange}
+            className="h-9 px-3.5 rounded-full bg-secondary/50 text-[12px] font-medium text-foreground flex items-center gap-1.5 active:scale-95 transition-all border border-border/10"
+          >
+            {getRangeLabel(timeRange)}
+          </button>
+        </div>
       </div>
 
       <div className="px-4 pt-1 pb-6 space-y-4">
@@ -181,6 +252,11 @@ export function CategoryInsightsTab({ onBack }: CategoryInsightsTabProps) {
           </div>
         </div>
       </div>
+
+      <ManageCategoriesModal
+        isOpen={showManageCategories}
+        onClose={() => setShowManageCategories(false)}
+      />
     </div>
   );
 }

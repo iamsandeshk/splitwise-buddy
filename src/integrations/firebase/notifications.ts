@@ -141,12 +141,19 @@ export async function deleteNotification(id: string): Promise<void> {
 /**
  * Try to fire a local (system) push notification on native Android/iOS.
  * Silently fails on web.
+ * This must not request permissions from passive listeners, because opening the
+ * Home tab should never trigger a native permission prompt or plugin crash.
  */
 export async function scheduleLocalPush(title: string, body: string): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
+  if (!Capacitor.isPluginAvailable('LocalNotifications')) return;
+
   try {
-    const permResult = await LocalNotifications.requestPermissions();
-    if (permResult.display !== 'granted') return;
+    const permResult = await LocalNotifications.checkPermissions();
+    if (permResult.display !== 'granted') {
+      return;
+    }
+
     await LocalNotifications.schedule({
       notifications: [
         {

@@ -20,10 +20,16 @@ import {
   Pause,
   Play,
   X as CloseIcon,
-  Lock
+  Lock,
+  Gift,
+  Tag,
+  FileText,
+  CreditCard,
+  Zap
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { MoneyDisplay } from '@/components/MoneyDisplay';
-import { generateId, getSubscriptions, saveSubscriptions, getAccountSummaries, getDefaultAccountId, savePersonalExpense, processSubscriptionBilling, consumePendingOpenItem, type SubscriptionCycle, type SubscriptionItem, type PersonalExpense, getCurrency, FREE_LIMITS } from '@/lib/storage';
+import { generateId, getSubscriptions, saveSubscriptions, getAccountSummaries, getDefaultAccountId, savePersonalExpense, processSubscriptionBilling, consumePendingOpenItem, type SubscriptionCycle, type SubscriptionItem, type PersonalExpense, getCurrency, FREE_LIMITS, getActiveSubscriptionCategories, type AppCategoryItem } from '@/lib/storage';
 import { AddFirstAccountModal } from '@/components/modals/AddFirstAccountModal';
 import { cn } from '@/lib/utils';
 import { AccountQuickButton } from '@/components/AccountQuickButton';
@@ -32,6 +38,7 @@ import { NativeAdCard } from '@/components/NativeAdCard';
 import { useBannerAd } from '@/hooks/useBannerAd';
 import { useProGate } from '@/hooks/useProGate';
 import { requestProUpgrade } from '@/lib/proAccess';
+import { SubscriptionDetailPage } from '@/components/subscriptions/SubscriptionDetailPage';
 
 interface SubscriptionsTabProps {
   onOpenAccount: () => void;
@@ -256,9 +263,16 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
   const [suggestionLogoErrorMap, setSuggestionLogoErrorMap] = useState<Record<string, boolean>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<SubscriptionItem | null>(null);
+  const [subCategories, setSubCategories] = useState<AppCategoryItem[]>(getActiveSubscriptionCategories());
   const currency = getCurrency();
   const accounts = useMemo(() => getAccountSummaries(), []);
   const defaultAccountId = useMemo(() => getDefaultAccountId(), []);
+
+  useEffect(() => {
+    const handleSyncCats = () => setSubCategories(getActiveSubscriptionCategories());
+    window.addEventListener('splitmate_categories_changed', handleSyncCats);
+    return () => window.removeEventListener('splitmate_categories_changed', handleSyncCats);
+  }, []);
 
   const [addStep, setAddStep] = useState<'select' | 'details'>('select');
   const [searchQuery, setSearchQuery] = useState('');
@@ -396,6 +410,14 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
     logoUrl: '',
     startDate: new Date().toISOString().split('T')[0],
     accountId: '',
+    category: 'Entertainment',
+    autoRenew: true,
+    freeTrial: false,
+    trialEndDate: '',
+    notes: '',
+    autoPay: false,
+    autoPayPlatform: 'PhonePe',
+    customAutoPayPlatform: '',
   });
 
   const stats = useMemo(() => {
@@ -456,9 +478,21 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
 
   const handleCreate = () => {
     const amount = Number(form.amount);
-    if (!form.appName.trim() || !Number.isFinite(amount) || amount <= 0) return;
+    if (!form.appName.trim() || !Number.isFinite(amount) || amount <= 0) {
+      toast.error('Please enter a valid service name and price');
+      return;
+    }
+
+    if (form.freeTrial && !form.trialEndDate) {
+      toast.error('Please specify when the free trial ends');
+      return;
+    }
 
     const selectedAccountId = form.accountId || defaultAccountId || accounts[0]?.id;
+
+    const finalAutoPayPlatform = form.autoPay
+      ? (form.autoPayPlatform === 'Custom' ? form.customAutoPayPlatform.trim() || 'Custom' : form.autoPayPlatform)
+      : undefined;
 
     const item: SubscriptionItem = {
       id: generateId(),
@@ -469,6 +503,13 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
       startDate: form.startDate,
       accountId: selectedAccountId,
       createdAt: new Date().toISOString(),
+      category: form.category || 'Entertainment',
+      autoRenew: form.autoRenew !== false,
+      freeTrial: form.freeTrial,
+      trialEndDate: form.freeTrial ? form.trialEndDate : undefined,
+      notes: form.notes?.trim() || undefined,
+      autoPay: form.autoPay,
+      autoPayPlatform: finalAutoPayPlatform,
     };
 
     const next = [item, ...items];
@@ -478,9 +519,25 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
     processSubscriptionBilling();
 
     setItems(next);
-    setForm({ appName: '', amount: '', cycle: 'monthly', logoUrl: '', startDate: new Date().toISOString().split('T')[0], accountId: '' });
+    setForm({ 
+      appName: '', 
+      amount: '', 
+      cycle: 'monthly', 
+      logoUrl: '', 
+      startDate: new Date().toISOString().split('T')[0], 
+      accountId: '',
+      category: 'Entertainment',
+      autoRenew: true,
+      freeTrial: false,
+      trialEndDate: '',
+      notes: '',
+      autoPay: false,
+      autoPayPlatform: 'PhonePe',
+      customAutoPayPlatform: '',
+    });
     setAddStep('select');
     setShowAdd(false);
+    toast.success(`${item.appName} subscription added`);
   };
 
   const handleDeleteTrigger = (id: string, e?: React.MouseEvent) => {
@@ -495,7 +552,9 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
     const saved = saveSubscriptions(next);
     if (!saved) return;
     setItems(next);
-    setSelectedItem(null);
+    if (selectedItem?.id === id) {
+      setSelectedItem(next.find(i => i.id === id) || null);
+    }
     processSubscriptionBilling();
   };
 
@@ -656,7 +715,11 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                const daysUntil = getDaysUntilDue(item.startDate || item.createdAt, item.cycle, item.createdAt);
                
                let subtitle = '';
-               if (daysUntil !== null) {
+               if (item.freeTrial && item.trialEndDate) {
+                  subtitle = `Trial ends ${formatSubscriptionDate(item.trialEndDate)}`;
+               } else if (item.autoRenew === false) {
+                  subtitle = `One-time • ${formatSubscriptionDate(item.startDate || item.createdAt)}`;
+               } else if (daysUntil !== null) {
                   subtitle = `Renews on ${formatSubscriptionDate(item.startDate || item.createdAt)}`;
                } else if (item.cycle === 'lifetime') {
                   subtitle = 'Lifetime access';
@@ -935,7 +998,7 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                                       className="flex flex-col items-center gap-2 group outline-none"
                                     >
                                       <div 
-                                        className="w-14 h-14 rounded-[22.5%] overflow-hidden flex items-center justify-center bg-secondary/40 border border-border/10 p-2.5 group-hover:scale-105 group-active:scale-95 transition-all shadow-sm group-hover:border-primary/40 group-hover:shadow-primary/10"
+                                        className="w-14 h-14 rounded-[22.5%] overflow-hidden flex items-center justify-center bg-secondary/40 border border-border/10 p-2.5 group-hover:scale-105 group-active:scale-95 transition-all shadow-sm group-hover:border-primary/40"
                                         style={{ clipPath: 'inset(0% round 22.5%)' }}
                                       >
                                         {currentSrc ? (
@@ -996,20 +1059,20 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col h-full justify-between space-y-6 overflow-y-auto scrollbar-hide">
-                  <div className="flex items-center justify-between flex-shrink-0">
+                <div className="flex flex-col h-full overflow-hidden min-h-0">
+                  <div className="flex items-center justify-between flex-shrink-0 mb-4">
                     <div className="flex items-center gap-3">
                       <button
                         type="button"
                         onClick={() => setAddStep('select')}
-                        className="w-10 h-10 rounded-full bg-secondary/50 flex items-center justify-center hover:bg-secondary transition-colors"
+                        className="w-10 h-10 rounded-full bg-secondary/80 hover:bg-secondary border border-border/15 flex items-center justify-center transition-colors"
                         aria-label="Back to service selection"
                       >
                         <ChevronLeft size={20} strokeWidth={2.5} />
                       </button>
                       <div>
-                        <h2 className="text-xl font-black tracking-tight">New Subscription</h2>
-                        <p className="text-xs text-muted-foreground font-medium mt-0.5">Stay on top of your renewals</p>
+                        <h2 className="text-xl font-bold tracking-tight text-foreground">New Subscription</h2>
+                        <p className="text-xs text-muted-foreground font-medium mt-0.5">Stay on top of your renewals & trials</p>
                       </div>
                     </div>
                     <button 
@@ -1019,78 +1082,354 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                         setSelectedCategory('All');
                         setSearchQuery('');
                       }} 
-                      className="w-11 h-11 rounded-full bg-secondary/50 flex items-center justify-center hover:bg-secondary transition-colors"
+                      className="w-10 h-10 rounded-full bg-secondary/80 hover:bg-secondary border border-border/15 flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground"
                     >
-                      <CloseIcon size={20} />
+                      <CloseIcon size={18} />
                     </button>
                   </div>
 
-                  <div className="space-y-5 flex-1">
-                     <div className="space-y-2">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Service Name</label>
+                  <div className="space-y-5 flex-1 overflow-y-auto pr-1 pb-4 no-scrollbar">
+                     {/* Service Name */}
+                     <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">Service Name</label>
                         <input 
                           autoFocus={!form.appName}
                           value={form.appName}
                           onChange={e => setForm(prev => ({ ...prev, appName: e.target.value, logoUrl: getLogoUrl(e.target.value) || prev.logoUrl }))}
-                          placeholder="e.g. Apple Music, Figma"
-                          className="w-full h-14 rounded-2xl bg-secondary/30 border border-border/10 px-5 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                          placeholder="e.g. Apple Music, Figma, Claude"
+                          className="w-full h-12 rounded-2xl bg-secondary/35 border border-border/15 px-4 text-sm font-bold text-foreground outline-none focus:border-border/40 transition-all"
                         />
                      </div>
 
-                     <div className="space-y-2">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Start Date</label>
+                     {/* Price & Billing Cycle Pills */}
+                     <div className="space-y-3">
+                        <div className="space-y-1.5">
+                           <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">Price ({currency.symbol})</label>
+                           <input 
+                             type="number"
+                             step="any"
+                             value={form.amount}
+                             onChange={e => setForm(prev => ({ ...prev, amount: e.target.value }))}
+                             placeholder="0.00"
+                             className="w-full h-12 rounded-2xl bg-secondary/35 border border-border/15 px-4 text-sm font-bold text-foreground outline-none focus:border-border/40 transition-all"
+                           />
+                        </div>
+
+                        {/* Pill cycle selector */}
+                        <div className="space-y-1.5">
+                           <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1 flex items-center gap-1.5">
+                             <Repeat size={12} />
+                             Billing Frequency
+                           </label>
+                           <div className="grid grid-cols-3 gap-2">
+                             {(['monthly', 'yearly', 'weekly', 'quarterly', 'daily', 'lifetime'] as SubscriptionCycle[]).map(c => {
+                               const isSelected = form.cycle === c;
+                               return (
+                                 <button
+                                   key={c}
+                                   type="button"
+                                   onClick={() => setForm(prev => ({ ...prev, cycle: c }))}
+                                   className={cn(
+                                     "h-11 rounded-xl text-xs font-bold capitalize transition-all border",
+                                     isSelected
+                                       ? "bg-primary text-primary-foreground border-primary"
+                                       : "bg-secondary/30 hover:bg-secondary/50 text-muted-foreground hover:text-foreground border-border/10"
+                                   )}
+                                 >
+                                   {c}
+                                 </button>
+                               );
+                             })}
+                           </div>
+                        </div>
+                     </div>
+
+                     {/* Start Date */}
+                     <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1 flex items-center gap-1.5">
+                          <Calendar size={12} />
+                          Start Date / Next Payment Date
+                        </label>
                         <input 
                           type="date"
                           value={form.startDate}
                           onChange={e => setForm(prev => ({ ...prev, startDate: e.target.value }))}
-                          className="w-full h-14 rounded-2xl bg-secondary/30 border border-border/10 px-5 text-sm font-semibold outline-none"
+                          style={{ colorScheme: 'dark' }}
+                          className="w-full h-12 rounded-2xl bg-secondary/35 border border-border/15 px-4 text-xs font-semibold text-foreground outline-none focus:border-border/40"
                         />
                      </div>
 
-                     <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                           <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Price</label>
-                           <input 
-                             type="number"
-                             value={form.amount}
-                             onChange={e => setForm(prev => ({ ...prev, amount: e.target.value }))}
-                             placeholder="0.00"
-                             className="w-full h-14 rounded-2xl bg-secondary/30 border border-border/10 px-5 text-sm font-bold outline-none"
-                           />
-                        </div>
-                        <div className="space-y-2">
-                           <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Cycle</label>
-                           <select 
-                             value={form.cycle}
-                             onChange={e => setForm(prev => ({ ...prev, cycle: e.target.value as SubscriptionCycle }))}
-                             className="w-full h-14 rounded-2xl bg-secondary/30 border border-border/10 px-5 text-sm font-bold outline-none appearance-none capitalize"
+                     {/* Auto-Renew / Non-Recurring Toggle */}
+                     <div className="rounded-2xl bg-secondary/25 border border-border/15 p-4 space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                           <div className="space-y-0.5 min-w-0">
+                              <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                <Repeat size={13} className="text-muted-foreground" />
+                                Auto-Renewing Subscription
+                              </p>
+                              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                {form.autoRenew 
+                                  ? `Renews continuously every ${form.cycle === 'monthly' ? 'month' : form.cycle}.` 
+                                  : 'Paid for one time only. No recurring renewals.'}
+                              </p>
+                           </div>
+                           <button
+                             type="button"
+                             role="switch"
+                             aria-checked={form.autoRenew}
+                             onClick={() => setForm(prev => ({ ...prev, autoRenew: !prev.autoRenew }))}
+                             className={cn(
+                               "w-12 h-7 rounded-full p-1 transition-colors duration-200 ease-in-out relative shrink-0 border flex items-center focus:outline-none",
+                               form.autoRenew ? "bg-primary border-primary" : "bg-secondary/70 border-border/20"
+                             )}
                            >
-                             {CYCLES.map(c => <option key={c} value={c}>{c}</option>)}
-                           </select>
+                             <span 
+                               className={cn(
+                                 "w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 block pointer-events-none transform",
+                                 form.autoRenew ? "translate-x-5" : "translate-x-0"
+                               )}
+                             />
+                           </button>
+                        </div>
+                        {!form.autoRenew && (
+                          <div className="pt-2 border-t border-border/10 text-[11px] text-amber-400 font-medium flex items-center gap-1.5">
+                            <AlertCircle size={14} className="shrink-0" />
+                            <span>Monthly plan paid for one time only: charges once without automatic renewals.</span>
+                          </div>
+                        )}
+                     </div>
+
+                     {/* Free Trial Toggle */}
+                     <div className="rounded-2xl bg-secondary/25 border border-border/15 p-4 space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                           <div className="space-y-0.5 min-w-0">
+                              <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                <Gift size={13} className="text-muted-foreground" />
+                                Free Trial
+                              </p>
+                              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                {form.freeTrial 
+                                  ? 'Free trial active. Billing will only begin after the trial ends.' 
+                                  : 'Subscription has no free trial.'}
+                              </p>
+                           </div>
+                           <button
+                             type="button"
+                             role="switch"
+                             aria-checked={form.freeTrial}
+                             onClick={() => {
+                               const next = !form.freeTrial;
+                               setForm(prev => ({ 
+                                 ...prev, 
+                                 freeTrial: next,
+                                 trialEndDate: next && !prev.trialEndDate ? prev.startDate : prev.trialEndDate
+                               }));
+                             }}
+                             className={cn(
+                               "w-12 h-7 rounded-full p-1 transition-colors duration-200 ease-in-out relative shrink-0 border flex items-center focus:outline-none",
+                               form.freeTrial ? "bg-primary border-primary" : "bg-secondary/70 border-border/20"
+                             )}
+                           >
+                             <span 
+                               className={cn(
+                                 "w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 block pointer-events-none transform",
+                                 form.freeTrial ? "translate-x-5" : "translate-x-0"
+                               )}
+                             />
+                           </button>
+                        </div>
+
+                        {form.freeTrial && (
+                          <div className="pt-2 border-t border-border/10 space-y-1.5 animate-in fade-in">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">
+                              When Does Free Trial End?
+                            </label>
+                            <input 
+                              type="date"
+                              value={form.trialEndDate}
+                              onChange={e => setForm(prev => ({ ...prev, trialEndDate: e.target.value }))}
+                              style={{ colorScheme: 'dark' }}
+                              className="w-full h-11 rounded-xl bg-background border border-border/20 px-3.5 text-xs font-semibold text-foreground outline-none"
+                            />
+                          </div>
+                        )}
+                     </div>
+
+                     {/* Pay From Account */}
+                     <div className="space-y-2">
+                         <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1 flex items-center gap-1.5">
+                           <CreditCard size={12} />
+                           Pay From Account
+                         </label>
+                         <div className="grid grid-cols-2 gap-2">
+                           <button
+                             type="button"
+                             onClick={() => setForm(prev => ({ ...prev, accountId: '' }))}
+                             className={cn(
+                               "p-3 rounded-2xl border text-left transition-all flex flex-col justify-between",
+                               !form.accountId
+                                 ? "bg-primary/10 border-primary/50 text-foreground"
+                                 : "bg-secondary/30 border-border/10 text-muted-foreground hover:bg-secondary/50"
+                             )}
+                           >
+                             <span className="text-xs font-bold text-foreground">Default Account</span>
+                             <span className="text-[10px] font-medium text-muted-foreground/70 mt-0.5">Primary cash / wallet</span>
+                           </button>
+
+                           {accounts.map(acc => {
+                             const isSelected = form.accountId === acc.id;
+                             return (
+                               <button
+                                 key={acc.id}
+                                 type="button"
+                                 onClick={() => setForm(prev => ({ ...prev, accountId: acc.id }))}
+                                 className={cn(
+                                   "p-3 rounded-2xl border text-left transition-all flex flex-col justify-between",
+                                   isSelected
+                                     ? "bg-primary/10 border-primary/50 text-foreground"
+                                     : "bg-secondary/30 border-border/10 text-muted-foreground hover:bg-secondary/50"
+                                 )}
+                               >
+                                 <span className="text-xs font-bold truncate text-foreground">{acc.name}</span>
+                                 <span className="text-[10px] font-bold uppercase text-muted-foreground/80 mt-0.5">
+                                   {acc.type}
+                                 </span>
+                               </button>
+                             );
+                           })}
+                         </div>
+                      </div>
+
+                     {/* Auto-Pay Active Card */}
+                     <div className="rounded-2xl bg-secondary/25 border border-border/15 p-4 space-y-3">
+                       <div className="flex items-center justify-between gap-3">
+                         <div className="space-y-0.5 min-w-0">
+                           <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                             <Zap size={13} className="text-muted-foreground" />
+                             Auto-Pay Active
+                           </p>
+                           <p className="text-[11px] text-muted-foreground leading-relaxed">
+                             {form.autoPay 
+                               ? `Automatic debit mandate configured via ${form.autoPayPlatform === 'Custom' ? (form.customAutoPayPlatform.trim() || 'Custom platform') : form.autoPayPlatform}.` 
+                               : 'No automatic mandate configured (paid manually).'}
+                           </p>
+                         </div>
+
+                         <button
+                           type="button"
+                           role="switch"
+                           aria-checked={form.autoPay}
+                           onClick={() => setForm(prev => ({ ...prev, autoPay: !prev.autoPay }))}
+                           className={cn(
+                             "w-12 h-7 rounded-full p-1 transition-colors duration-200 ease-in-out relative shrink-0 border flex items-center focus:outline-none",
+                             form.autoPay ? "bg-primary border-primary" : "bg-secondary/70 border-border/20"
+                           )}
+                         >
+                           <span 
+                             className={cn(
+                               "w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 block pointer-events-none transform",
+                               form.autoPay ? "translate-x-5" : "translate-x-0"
+                             )}
+                           />
+                         </button>
+                       </div>
+
+                       {form.autoPay && (
+                         <div className="pt-2 border-t border-border/10 space-y-2 animate-in fade-in">
+                           <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">
+                             Where is Auto-Pay Active?
+                           </label>
+                           <div className="grid grid-cols-5 gap-1.5">
+                             {['PhonePe', 'Paytm', 'Slice', 'GPay', 'Custom'].map(plat => {
+                               const isSelected = form.autoPayPlatform === plat;
+                               return (
+                                 <button
+                                   key={plat}
+                                   type="button"
+                                   onClick={() => setForm(prev => ({ ...prev, autoPayPlatform: plat }))}
+                                   className={cn(
+                                     "h-9 rounded-xl text-[11px] font-bold transition-all border",
+                                     isSelected
+                                       ? "bg-primary text-primary-foreground border-primary"
+                                       : "bg-secondary/30 hover:bg-secondary/50 text-muted-foreground hover:text-foreground border-border/10"
+                                   )}
+                                 >
+                                   {plat === 'Custom' ? 'Other' : plat}
+                                 </button>
+                               );
+                             })}
+                           </div>
+
+                           {form.autoPayPlatform === 'Custom' && (
+                             <div className="pt-1">
+                               <input
+                                 type="text"
+                                 value={form.customAutoPayPlatform}
+                                 onChange={e => setForm(prev => ({ ...prev, customAutoPayPlatform: e.target.value }))}
+                                 placeholder="Enter platform (e.g. Cred, Amazon Pay, NetBanking, ICICI)"
+                                 className="w-full h-11 rounded-xl bg-background border border-border/20 px-3.5 text-xs font-semibold text-foreground outline-none focus:border-border/40"
+                                />
+                             </div>
+                           )}
+                         </div>
+                       )}
+                     </div>
+
+                     {/* Category Selector */}
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1 flex items-center gap-1.5">
+                          <Tag size={12} />
+                          Category
+                        </label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {subCategories.map(catItem => {
+                            const cat = catItem.name;
+                            const isSelected = form.category === cat;
+                            return (
+                              <button
+                                key={catItem.id || cat}
+                                type="button"
+                                onClick={() => setForm(prev => ({ ...prev, category: cat }))}
+                                className={cn(
+                                  "px-3 py-1.5 rounded-full text-xs font-semibold transition-all border flex items-center gap-1",
+                                  isSelected
+                                    ? "bg-primary text-primary-foreground border-primary"
+                                    : "bg-secondary/30 hover:bg-secondary/50 text-muted-foreground hover:text-foreground border-border/10"
+                                )}
+                              >
+                                {catItem.emoji && <span>{catItem.emoji}</span>}
+                                <span>{cat}</span>
+                              </button>
+                            );
+                          })}
                         </div>
                      </div>
 
-                     <div className="space-y-2">
-                         <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Pay From Account</label>
-                         <select 
-                           value={form.accountId || defaultAccountId || accounts[0]?.id || ''}
-                           onChange={e => setForm(prev => ({ ...prev, accountId: e.target.value }))}
-                           className="w-full h-14 rounded-2xl bg-secondary/30 border border-border/10 px-5 text-sm font-bold outline-none capitalize"
-                         >
-                           {accounts.map(acc => (
-                             <option key={acc.id} value={acc.id}>
-                               {acc.name} ({currency.symbol}{acc.available.toLocaleString()})
-                             </option>
-                           ))}
-                         </select>
-                      </div>
+                     {/* Notes */}
+                     <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1 flex items-center gap-1.5">
+                          <FileText size={12} />
+                          Notes / Description (Optional)
+                        </label>
+                        <textarea
+                          value={form.notes}
+                          onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))}
+                          placeholder="e.g. Student plan, shared account with family, card auto-debit on 5th..."
+                          rows={2}
+                          className="w-full rounded-2xl bg-secondary/35 border border-border/15 p-3 text-xs font-medium text-foreground outline-none resize-none focus:border-border/40"
+                        />
+                     </div>
 
-                     <button 
+                  </div>
+
+                  {/* Sticky Footer for New Subscription */}
+                  <div className="shrink-0 pt-3 border-t border-border/10">
+                    <button 
                       onClick={handleCreate}
-                      className="w-full h-14 mt-4 rounded-[1.5rem] bg-primary text-primary-foreground font-black active:scale-[0.97] transition-all hover:brightness-110"
-                     >
-                       Save Subscription
-                     </button>
+                      className="w-full h-12 rounded-2xl bg-primary text-primary-foreground font-bold text-sm tracking-wide transition-all active:scale-[0.98] border border-primary/20 hover:brightness-105 shadow-md flex items-center justify-center gap-2"
+                    >
+                      Save Subscription
+                    </button>
                   </div>
                 </div>
               )}
@@ -1188,7 +1527,14 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
                       .filter(obj => obj.days !== null && obj.days >= 0 && obj.days <= 31)
                       .sort((a,b) => (a.days as number) - (b.days as number))
                       .map(({item, days}, idx, arr) => (
-                         <div key={item.id} className={cn("p-4 flex items-center gap-4", idx !== arr.length -1 && "border-b border-white/5")}>
+                         <div 
+                           key={item.id} 
+                           onClick={() => {
+                             setShowCalendar(false);
+                             setSelectedItem(item);
+                           }}
+                           className={cn("p-4 flex items-center gap-4 cursor-pointer hover:bg-white/5 transition-colors", idx !== arr.length -1 && "border-b border-white/5")}
+                         >
                             <div className="w-12 h-12 rounded-full overflow-hidden bg-black flex-shrink-0 flex items-center justify-center border border-white/10">
                               {item.logoUrl ? (
                                  <img src={item.logoUrl} className="w-full h-full object-cover" />
@@ -1214,131 +1560,28 @@ export function SubscriptionsTab({ onOpenAccount, onBack, bannerAdActive = true 
         document.body
       )}
 
-      {selectedItem && createPortal(
-        <div className="fixed inset-0 z-[10002] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-300 pointer-events-auto" onClick={() => {
-          setSelectedItem(null);
-          setDeletingId(null);
-        }}>
-           <motion.div 
-             initial={{ y: "100%", opacity: 0 }}
-             animate={{ y: 0, opacity: 1 }}
-             exit={{ y: "100%", opacity: 0 }}
-             transition={{ type: "spring", damping: 30, stiffness: 300 }}
-             className="w-full max-w-md bg-card rounded-[3rem] p-7 pt-9 pb-10 shadow-2xl overflow-hidden border border-border/10"
-             onClick={e => e.stopPropagation()}
-           >
-              <AnimatePresence mode="wait">
-                {deletingId === selectedItem.id ? (
-                  <motion.div 
-                    key="delete-confirm"
-                    initial={{ y: 20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    exit={{ y: -20, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="space-y-6"
-                  >
-                    <div className="text-center space-y-3">
-                       <div className="w-16 h-16 rounded-3xl bg-destructive/10 flex items-center justify-center mx-auto mb-4 border border-destructive/20 shadow-inner">
-                          <Trash2 size={28} className="text-destructive" />
-                       </div>
-                       <h2 className="text-2xl font-black tracking-tight">Cancel Subscription?</h2>
-                       <p className="text-[13px] font-medium text-muted-foreground px-4 leading-relaxed">
-                         Are you sure you want to remove this subscription? Future renewals will stop, and past payments will remain in your transactions history.
-                       </p>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 pt-6">
-                       <button 
-                         onClick={() => setDeletingId(null)}
-                         className="w-full h-14 rounded-2xl bg-secondary text-foreground font-bold hover:bg-secondary/80 transition-all active:scale-[0.97]"
-                       >
-                         Keep it
-                       </button>
-                       <button 
-                         onClick={() => {
-                           confirmDelete();
-                           setSelectedItem(null);
-                         }}
-                         className="h-14 rounded-2xl bg-destructive text-white font-black shadow-xl shadow-destructive/20 hover:brightness-110 transition-all active:scale-[0.97] uppercase tracking-widest text-[11px]"
-                       >
-                         Delete
-                       </button>
-                    </div>
-                  </motion.div>
-                ) : (
-                  <motion.div 
-                    key="detail-view"
-                    initial={{ y: 20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    exit={{ y: -20, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="space-y-6"
-                  >
-                    <div className="flex flex-col items-center text-center space-y-3">
-                       <div 
-                          className="w-16 h-16 rounded-[22.5%] overflow-hidden flex items-center justify-center bg-black/40 border border-border/10 shadow-xl"
-                          style={{ clipPath: 'inset(0% round 22.5%)' }}
-                       >
-                          {selectedItem.logoUrl ? (
-                            <img src={selectedItem.logoUrl} className="w-full h-full object-cover" alt="" />
-                          ) : (
-                            <span className="text-xl font-bold text-primary">{selectedItem.appName?.charAt(0) || 'S'}</span>
-                          )}
-                       </div>
-                       <div>
-                          <h2 className="text-xl font-bold tracking-tight">{selectedItem.appName}</h2>
-                          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">{selectedItem.cycle || 'monthly'} Subscription</p>
-                       </div>
-                    </div>
-
-                    <div className="bg-secondary/15 rounded-2xl p-4 text-center border border-border/5 my-2">
-                       <p className="text-3xl font-black text-destructive tracking-tighter leading-tight flex items-center justify-center">
-                         <MoneyDisplay amount={-(Number(selectedItem.amount) || 0)} size="lg" />
-                       </p>
-                       <p className="text-[9px] font-bold text-muted-foreground mt-1 uppercase tracking-widest leading-none">
-                         {selectedItem.cycle === 'lifetime' ? 'one-time payment' : `per ${(selectedItem.cycle || 'monthly').replace('ly', '').replace('i', 'y')}`}
-                       </p>
-                    </div>
-
-                    <div className="space-y-3">
-                       <div className="flex items-center justify-between p-3.5 bg-secondary/10 rounded-2xl border border-border/5">
-                          <div className="flex items-center gap-3">
-                             <Clock size={16} className="text-muted-foreground opacity-60" />
-                             <span className="text-xs font-bold">Next Renewal</span>
-                          </div>
-                          <span className="text-xs font-black text-primary">
-                             {selectedItem.cycle === 'lifetime'
-                               ? 'Lifetime Access'
-                               : (() => {
-                                   const days = getDaysUntilDue(selectedItem.startDate || selectedItem.createdAt, selectedItem.cycle, selectedItem.createdAt);
-                                   return days !== null ? `in ${days} days` : 'Not scheduled';
-                                 })()}
-                          </span>
-                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 pt-2">
-                       <button 
-                         onClick={() => togglePause(selectedItem.id)}
-                         className="h-14 rounded-xl bg-blue-500/10 text-blue-500 font-bold hover:bg-blue-500/20 transition-all active:scale-[0.97] flex items-center justify-center gap-2 border border-blue-500/10"
-                       >
-                         <Repeat size={16} className={cn("transition-transform duration-500", selectedItem.paused && "rotate-180")} />
-                         {selectedItem.paused ? "Resume" : "Pause"}
-                       </button>
-                       <button 
-                         onClick={(e) => handleDeleteTrigger(selectedItem.id, e)}
-                         className="h-14 rounded-xl bg-destructive/10 text-destructive font-bold hover:bg-destructive/20 transition-all active:scale-[0.97] flex items-center justify-center gap-2 border border-destructive/10"
-                       >
-                         <Trash2 size={16} />
-                         Delete
-                       </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-           </motion.div>
-        </div>,
-        document.body
+      {selectedItem && (
+        <SubscriptionDetailPage
+          subscription={selectedItem}
+          isOpen={Boolean(selectedItem)}
+          onClose={() => {
+            setSelectedItem(null);
+            setDeletingId(null);
+          }}
+          onUpdate={(updated) => {
+            setItems(prev => prev.map(s => s.id === updated.id ? updated : s));
+            setSelectedItem(updated);
+          }}
+          onDelete={(id) => {
+            const next = items.filter(s => s.id !== id);
+            saveSubscriptions(next);
+            setItems(next);
+            setSelectedItem(null);
+          }}
+          onTogglePause={(id) => {
+            togglePause(id);
+          }}
+        />
       )}
     </div>
   );

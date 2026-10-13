@@ -100,6 +100,7 @@ export function NotificationCard() {
   const [hasError, setHasError] = useState(false);
   const latestIdRef = useRef<string | null>(null);
   const seenIdsRef = useRef<Set<string>>(new Set());
+  const hasLoadedInitialSnapshotRef = useRef(false);
 
   useEffect(() => {
     let unsub: (() => void) | undefined;
@@ -107,6 +108,14 @@ export function NotificationCard() {
       unsub = subscribeToNotifications((incoming) => {
         try {
           const newest = incoming[0] ?? null;
+
+          if (!hasLoadedInitialSnapshotRef.current) {
+            incoming.forEach((n) => seenIdsRef.current.add(n.id));
+            latestIdRef.current = newest?.id ?? null;
+            hasLoadedInitialSnapshotRef.current = true;
+            setNotifications(incoming);
+            return;
+          }
 
           incoming.forEach((n) => {
             if (!seenIdsRef.current.has(n.id)) {

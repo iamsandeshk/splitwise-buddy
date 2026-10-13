@@ -9,7 +9,7 @@ import { useBannerAd } from '@/hooks/useBannerAd';
 import { cn } from '@/lib/utils';
 import { type AppTransactionItem, getAllAppTransactions } from '@/lib/transactions';
 import { NativeAdCard } from '@/components/NativeAdCard';
-import { deletePersonalExpense, deleteSharedExpense, getTransactionAttachment, getPersonBalances, type PersonBalance } from '@/lib/storage';
+import { deletePersonalExpense, deleteSharedExpense, getTransactionAttachment, getPersonBalances, processSubscriptionBilling, type PersonBalance } from '@/lib/storage';
 
 interface TransactionsTabProps {
   onOpenAccount: () => void;
@@ -48,6 +48,7 @@ export function TransactionsTab({ onOpenAccount, onBack, onNavigateToTab, banner
   }, [viewing]);
 
   useEffect(() => {
+    processSubscriptionBilling();
     const sync = () => {
       setItems(getAllAppTransactions());
       setPersonBalances(getPersonBalances());

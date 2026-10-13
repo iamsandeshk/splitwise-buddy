@@ -196,6 +196,7 @@ export const STORAGE_KEYS = {
   SUBSCRIPTIONS: 'splitmate_subscriptions',
   BUDGET_PLANNER: 'splitmate_budget_planner',
   HOME_SETTINGS: 'splitmate_home_settings',
+  HOME_BALANCE_TIMEFRAME: 'splitmate_home_balance_timeframe',
   PERSON_PROFILES: 'splitmate_person_profiles',
   PENDING_SYNC_UPDATES: 'splitmate_pending_sync_updates',
   REJECTION_NOTIFICATIONS: 'splitmate_rejection_notifications',
@@ -203,6 +204,8 @@ export const STORAGE_KEYS = {
   FRIEND_GROUPS: 'splitmate_friend_groups',
   ACCOUNTS: 'splitmate_accounts',
   RECURRING_PAYMENTS: 'splitmate_recurring_payments',
+  CUSTOM_CATEGORIES: 'splitmate_custom_categories',
+  SUBSCRIPTION_CATEGORIES: 'splitmate_subscription_categories',
 
   ADS_ENABLED: 'splitmate_ads_enabled',
 };
@@ -590,6 +593,14 @@ export interface SubscriptionItem {
   paused?: boolean;
   accountId?: string;
   createdAt: string;
+  category?: string;
+  autoRenew?: boolean; // false = paid for only one time and no recurring
+  freeTrial?: boolean;
+  trialEndDate?: string;
+  notes?: string;
+  reminderEnabled?: boolean;
+  autoPay?: boolean;
+  autoPayPlatform?: string;
 }
 
 export type RecurringFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -1010,8 +1021,8 @@ export function deletePersonalExpense(id: string): void {
   const pExpenses = getPersonalExpenses();
   const expenseToDelete = pExpenses.find(e => e.id === id);
 
-  if (expenseToDelete?.isMirror && expenseToDelete.mirrorFromId) {
-    // If it's a mirror, delegating to deleteSharedExpense will clean up the shared expense,
+  if (expenseToDelete?.isMirror && expenseToDelete.mirrorFromId && expenseToDelete.source !== 'subscription' && expenseToDelete.source !== 'recurring') {
+    // If it's a mirror from a shared expense, delegating to deleteSharedExpense will clean up the shared expense,
     // trigger peer updates, AND clean up this mirror from personal expenses automatically.
     deleteSharedExpense(expenseToDelete.mirrorFromId);
     return;
@@ -2176,6 +2187,97 @@ export const EXPENSE_CATEGORIES = [
   'Other'
 ];
 
+export interface AppCategoryItem {
+  id: string;
+  name: string;
+  emoji: string;
+  hidden?: boolean;
+  isCustom?: boolean;
+}
+
+export const DEFAULT_EXPENSE_CATEGORIES: AppCategoryItem[] = [
+  { id: 'Food & Dining', name: 'Food & Dining', emoji: '🍔' },
+  { id: 'Transportation', name: 'Transportation', emoji: '🚗' },
+  { id: 'Shopping', name: 'Shopping', emoji: '🛍️' },
+  { id: 'Entertainment', name: 'Entertainment', emoji: '🎬' },
+  { id: 'Bills & Utilities', name: 'Bills & Utilities', emoji: '🏠' },
+  { id: 'Healthcare', name: 'Healthcare', emoji: '🩺' },
+  { id: 'Education', name: 'Education', emoji: '📚' },
+  { id: 'Travel', name: 'Travel', emoji: '✈️' },
+  { id: 'Groceries', name: 'Groceries', emoji: '🛒' },
+  { id: 'Other', name: 'Other', emoji: '📦' }
+];
+
+export const DEFAULT_SUBSCRIPTION_CATEGORIES: AppCategoryItem[] = [
+  { id: 'Entertainment', name: 'Entertainment', emoji: '🎬' },
+  { id: 'AI', name: 'AI', emoji: '🤖' },
+  { id: 'Streaming', name: 'Streaming', emoji: '📺' },
+  { id: 'Music', name: 'Music', emoji: '🎵' },
+  { id: 'Productivity', name: 'Productivity', emoji: '⚡' },
+  { id: 'Cloud & Storage', name: 'Cloud & Storage', emoji: '☁️' },
+  { id: 'Work & Dev', name: 'Work & Dev', emoji: '💻' },
+  { id: 'Lifestyle', name: 'Lifestyle', emoji: '✨' },
+  { id: 'Utilities', name: 'Utilities', emoji: '🔧' },
+  { id: 'Gaming', name: 'Gaming', emoji: '🎮' },
+  { id: 'Other', name: 'Other', emoji: '📦' }
+];
+
+export function getExpenseCategoriesConfig(): AppCategoryItem[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.CUSTOM_CATEGORIES);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {
+    return [...DEFAULT_EXPENSE_CATEGORIES];
+  }
+  return [...DEFAULT_EXPENSE_CATEGORIES];
+}
+
+export function saveExpenseCategoriesConfig(cats: AppCategoryItem[]): void {
+  localStorage.setItem(STORAGE_KEYS.CUSTOM_CATEGORIES, JSON.stringify(cats));
+  window.dispatchEvent(new CustomEvent('splitmate_categories_changed'));
+}
+
+export function getSubscriptionCategoriesConfig(): AppCategoryItem[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.SUBSCRIPTION_CATEGORIES);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {
+    return [...DEFAULT_SUBSCRIPTION_CATEGORIES];
+  }
+  return [...DEFAULT_SUBSCRIPTION_CATEGORIES];
+}
+
+export function saveSubscriptionCategoriesConfig(cats: AppCategoryItem[]): void {
+  localStorage.setItem(STORAGE_KEYS.SUBSCRIPTION_CATEGORIES, JSON.stringify(cats));
+  window.dispatchEvent(new CustomEvent('splitmate_categories_changed'));
+}
+
+export function getActiveExpenseCategories(): AppCategoryItem[] {
+  const all = getExpenseCategoriesConfig();
+  const visible = all.filter(c => !c.hidden);
+  return visible.length > 0 ? visible : all;
+}
+
+export function getActiveExpenseCategoryNames(): string[] {
+  return getActiveExpenseCategories().map(c => c.name);
+}
+
+export function getActiveSubscriptionCategories(): AppCategoryItem[] {
+  const all = getSubscriptionCategoriesConfig();
+  const visible = all.filter(c => !c.hidden);
+  return visible.length > 0 ? visible : all;
+}
+
+export function getActiveSubscriptionCategoryNames(): string[] {
+  return getActiveSubscriptionCategories().map(c => c.name);
+}
+
 // Export/Import
 export function exportAllData(): string {
   const data: Record<string, unknown> = {
@@ -2576,11 +2678,11 @@ export function getAccountSummaries(): FinancialAccountSummary[] {
     );
 
     const income = relatedPersonal
-      .filter((entry) => !!entry.isIncome && !entry.isMirror)
+      .filter((entry) => !!entry.isIncome && (!entry.isMirror || entry.source === 'subscription' || entry.source === 'recurring'))
       .reduce((sum, entry) => sum + entry.amount, 0);
 
     const personalSpent = relatedPersonal
-      .filter((entry) => !entry.isIncome && !entry.isMirror)
+      .filter((entry) => !entry.isIncome && (!entry.isMirror || entry.source === 'subscription' || entry.source === 'recurring'))
       .reduce((sum, entry) => sum + entry.amount, 0);
 
     const sharedSpent = shared
@@ -2727,6 +2829,7 @@ export function saveSubscriptions(items: SubscriptionItem[]): boolean {
   }
 
   localStorage.setItem(STORAGE_KEYS.SUBSCRIPTIONS, JSON.stringify(items));
+  window.dispatchEvent(new Event('splitmate_data_changed'));
   return true;
 }
 
@@ -3631,6 +3734,31 @@ export function saveHomeSettings(settings: HomeTabSettings): void {
   }
 }
 
+export type BalanceTimeframe = 'present' | 'previous' | 'lifetime';
+
+export function getHomeBalanceTimeframe(): BalanceTimeframe {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.HOME_BALANCE_TIMEFRAME);
+    if (stored === 'present' || stored === 'previous' || stored === 'lifetime') {
+      return stored;
+    }
+  } catch {
+    // fallback to default
+  }
+  return 'lifetime';
+}
+
+export function saveHomeBalanceTimeframe(timeframe: BalanceTimeframe): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.HOME_BALANCE_TIMEFRAME, timeframe);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('home_balance_timeframe_changed'));
+    }
+  } catch {
+    // ignore
+  }
+}
+
 export function generateInviteLink(): string {
   if (typeof window === 'undefined') return '';
   const profile = getAccountProfile();
@@ -4230,6 +4358,15 @@ export function processSubscriptionBilling(): void {
     // If initial start date is in the future, it cannot be billed yet
     if (cycleDate > todayDate) continue;
 
+    // Free trial handling: if trial is active and not yet ended, don't bill yet
+    if (sub.freeTrial && sub.trialEndDate) {
+      const trialParts = sub.trialEndDate.split('T')[0].split('-').map(Number);
+      if (trialParts.length === 3 && !isNaN(trialParts[0])) {
+        const trialEnd = new Date(trialParts[0], trialParts[1] - 1, trialParts[2], 23, 59, 59, 999);
+        if (todayDate < trialEnd) continue;
+      }
+    }
+
     // Advance through each billing date up to today
     let safetyCounter = 0;
     while (cycleDate <= todayDate && safetyCounter < 500) {
@@ -4246,7 +4383,7 @@ export function processSubscriptionBilling(): void {
           id: generateId(),
           amount: Number(sub.amount) || 0,
           reason: `Subscription: ${(sub.appName || 'Subscription').trim()}`,
-          category: 'Bills & Utilities',
+          category: sub.category || 'Bills & Utilities',
           date: billingDateStr,
           createdAt: new Date().toISOString(),
           isIncome: false,
@@ -4259,7 +4396,8 @@ export function processSubscriptionBilling(): void {
         anyPosted = true;
       }
 
-      if (sub.cycle === 'lifetime') break;
+      // If lifetime or paid only one time (no recurring renewal), stop after first billing
+      if (sub.cycle === 'lifetime' || sub.autoRenew === false) break;
 
       // Calculate next cycle date
       const next = new Date(cycleDate);
@@ -4290,6 +4428,7 @@ export function processSubscriptionBilling(): void {
   if (anyPosted || modified) {
     localStorage.setItem(STORAGE_KEYS.PERSONAL_EXPENSES, JSON.stringify(pExpenses));
     window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('splitmate_data_changed'));
   }
 }
 

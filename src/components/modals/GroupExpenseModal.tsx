@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { User, Tag, Wallet, ChevronLeft, Plus, X, Users, Check, Search, FolderPlus, History, Trash2, AlertTriangle } from 'lucide-react';
-import { saveSharedExpense, generateId, getUniquePersonNames, EXPENSE_CATEGORIES, getCurrency, type SharedExpense, getFriendGroups, saveFriendGroup, type FriendGroup, getFriendGroup, getAccountProfile, deleteFriendGroup, getDefaultAccountId, getAccounts, type PersonProfile } from '@/lib/storage';
+import { saveSharedExpense, generateId, getUniquePersonNames, EXPENSE_CATEGORIES, getCurrency, type SharedExpense, getFriendGroups, saveFriendGroup, type FriendGroup, getFriendGroup, getAccountProfile, deleteFriendGroup, getDefaultAccountId, getAccounts, type PersonProfile, getActiveExpenseCategories, type AppCategoryItem } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { pushUpdateToCloud } from '@/integrations/firebase/sync';
@@ -48,13 +48,26 @@ export function GroupExpenseModal({ isOpen, onClose, onAdd, defaultGroupId }: Gr
   const [newPersonName, setNewPersonName] = useState('');
 
   // Expense details state
+  const [activeCategories, setActiveCategories] = useState<AppCategoryItem[]>(getActiveExpenseCategories());
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
-  const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
+  const [category, setCategory] = useState(() => getActiveExpenseCategories()[0]?.name || 'Food & Dining');
   const [paidBy, setPaidBy] = useState<string>('me');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleteConfirmGroup, setDeleteConfirmGroup] = useState<FriendGroup | null>(null);
+
+  useEffect(() => {
+    const handleSyncCats = () => {
+      const cats = getActiveExpenseCategories();
+      setActiveCategories(cats);
+      if (category && !cats.some(c => c.name === category)) {
+        setCategory(cats[0]?.name || 'Other');
+      }
+    };
+    window.addEventListener('splitmate_categories_changed', handleSyncCats);
+    return () => window.removeEventListener('splitmate_categories_changed', handleSyncCats);
+  }, [category]);
 
   const amountRef = useRef<HTMLInputElement>(null);
   const personInputRef = useRef<HTMLInputElement>(null);
@@ -479,11 +492,12 @@ export function GroupExpenseModal({ isOpen, onClose, onAdd, defaultGroupId }: Gr
               <div className="space-y-4">
                 <label className="text-[11px] font-black text-muted-foreground/40 uppercase tracking-widest px-1">Category</label>
                 <div className="flex flex-wrap gap-2">
-                  {EXPENSE_CATEGORIES.map((cat) => {
+                  {activeCategories.map((catItem) => {
+                    const cat = catItem.name;
                     const active = category === cat;
                     return (
                       <button
-                        key={cat}
+                        key={catItem.id || cat}
                         type="button"
                         onClick={() => setCategory(cat)}
                         className={cn(
@@ -493,7 +507,7 @@ export function GroupExpenseModal({ isOpen, onClose, onAdd, defaultGroupId }: Gr
                             : "bg-secondary/10 border-transparent text-muted-foreground hover:bg-secondary/20"
                         )}
                       >
-                        <span className="text-base grayscale-[0.5]">{CATEGORY_EMOJIS[cat] || '📦'}</span>
+                        <span className="text-base grayscale-[0.5]">{catItem.emoji || CATEGORY_EMOJIS[cat] || '📦'}</span>
                         {cat}
                       </button>
                     );

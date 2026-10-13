@@ -4,7 +4,8 @@ import {
   savePersonalExpense, generateId, EXPENSE_CATEGORIES, getAccounts, getCurrency,
   getDefaultAccountId, getSuggestedReasons, saveSharedExpense, getUniquePersonNames,
   type PersonalExpense, type SharedExpense, type FinancialAccountType,
-  saveTransactionAttachment, resizeImageToDataUrl, updateSharedExpenseAttachment
+  saveTransactionAttachment, resizeImageToDataUrl, updateSharedExpenseAttachment,
+  getActiveExpenseCategories, type AppCategoryItem
 } from '@/lib/storage';
 import {
   Tag, CalendarDays, ChevronLeft, Save, Plus, Image as ImageIcon, X,
@@ -50,9 +51,10 @@ const CATEGORY_EMOJIS: Record<string, string> = {
 export function AddPersonalExpenseModal({ isOpen, onClose, onAdd, initialIsIncome = false }: AddPersonalExpenseModalProps) {
   const { toast } = useToast();
   useBannerAd(isOpen);
+  const [activeCategories, setActiveCategories] = useState<AppCategoryItem[]>(getActiveExpenseCategories());
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
-  const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
+  const [category, setCategory] = useState(() => getActiveExpenseCategories()[0]?.name || 'Food & Dining');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isIncome, setIsIncome] = useState(false);
@@ -62,6 +64,18 @@ export function AddPersonalExpenseModal({ isOpen, onClose, onAdd, initialIsIncom
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const dateInputRef = React.useRef<HTMLInputElement>(null);
   const accounts = getAccounts();
+
+  useEffect(() => {
+    const handleSyncCats = () => {
+      const cats = getActiveExpenseCategories();
+      setActiveCategories(cats);
+      if (!cats.some(c => c.name === category)) {
+        setCategory(cats[0]?.name || 'Other');
+      }
+    };
+    window.addEventListener('splitmate_categories_changed', handleSyncCats);
+    return () => window.removeEventListener('splitmate_categories_changed', handleSyncCats);
+  }, [category]);
 
   // Person state
   const [personName, setPersonName] = useState('');
@@ -199,7 +213,7 @@ export function AddPersonalExpenseModal({ isOpen, onClose, onAdd, initialIsIncom
   };
 
   const VISIBLE_CATEGORIES = 2;
-  const visibleCats = showAllCategories ? EXPENSE_CATEGORIES : EXPENSE_CATEGORIES.slice(0, VISIBLE_CATEGORIES);
+  const visibleCats = showAllCategories ? activeCategories : activeCategories.slice(0, VISIBLE_CATEGORIES);
 
   const catThemes: Record<string, { text: string; border: string; bg: string }> = {
     'Food & Dining': { text: 'text-orange-500', border: 'border-orange-500/40', bg: 'bg-orange-500/10' },
@@ -532,12 +546,13 @@ export function AddPersonalExpenseModal({ isOpen, onClose, onAdd, initialIsIncom
               <div className="space-y-2">
                 <label className="block text-[10px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] px-0.5">Category</label>
                 <div className="flex flex-wrap gap-1.5">
-                  {visibleCats.map((cat) => {
+                  {visibleCats.map((catItem) => {
+                    const cat = catItem.name;
                     const isActive = category === cat;
                     const theme = catThemes[cat] || { text: 'text-primary', border: 'border-primary/40', bg: 'bg-primary/10' };
                     return (
                       <button
-                        key={cat}
+                        key={catItem.id || cat}
                         type="button"
                         onClick={() => setCategory(cat)}
                         className={cn(
@@ -548,7 +563,7 @@ export function AddPersonalExpenseModal({ isOpen, onClose, onAdd, initialIsIncom
                         )}
                       >
                         <span className={cn('text-[11px] transition-transform', isActive ? 'scale-110' : 'scale-100')}>
-                          {CATEGORY_EMOJIS[cat] || '📦'}
+                          {catItem.emoji || CATEGORY_EMOJIS[cat] || '📦'}
                         </span>
                         <span className={cn('text-[8px] font-bold uppercase tracking-wider leading-none', isActive ? theme.text : 'text-muted-foreground')}>
                           {cat}

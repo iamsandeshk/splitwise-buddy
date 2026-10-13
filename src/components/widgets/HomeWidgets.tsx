@@ -205,6 +205,7 @@ export function SubscriptionsWidget({ onNavigate }: { onNavigate: (id: string) =
             <div 
               key={sub.id} 
               onClick={() => {
+                setPendingOpenItem('subscriptions', sub.id);
                 onNavigate('subscriptions');
               }}
               className="py-2 flex items-center justify-between group/sub cursor-pointer active:scale-[0.98] transition-all hover:bg-white/[0.02] -mx-2 px-2 rounded-xl"
@@ -249,10 +250,11 @@ export function SubscriptionsWidget({ onNavigate }: { onNavigate: (id: string) =
 export function CategoryInsightsWidget({ onNavigate }: { onNavigate: (id: string) => void }) {
   const settings = useMemo(() => getHomeSettings(), []);
   const categories = useMemo(() => {
-    const expenses = getPersonalExpenses().filter(e => !e.isMirror);
+    const expenses = getPersonalExpenses().filter(e => !e.isIncome);
     const map: Record<string, number> = {};
     expenses.forEach(e => {
-       map[e.category] = (map[e.category] || 0) + e.amount;
+       const cat = e.category || 'Other';
+       map[cat] = (map[cat] || 0) + e.amount;
     });
     const all = Object.entries(map).sort((a,b) => b[1] - a[1]);
     
@@ -308,7 +310,7 @@ export function BudgetsWidget({ onNavigate }: { onNavigate: (id: string) => void
 
 
 export function RecentPersonalWidget({ onNavigate }: { onNavigate: (id: string) => void }) {
-  const recent = useMemo(() => getPersonalExpenses().filter(e => !e.isMirror).slice(0, 2), []);
+  const recent = useMemo(() => getPersonalExpenses().filter(e => !e.isMirror || e.source === 'subscription' || e.source === 'recurring').slice(0, 2), []);
   return (
     <WidgetContainer 
       title="Recent Private" 

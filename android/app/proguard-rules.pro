@@ -25,6 +25,10 @@
 # Keep Capacitor plugin classes discovered through annotations/reflection.
 -keep @com.getcapacitor.annotation.CapacitorPlugin class * { *; }
 
+# Keep Capacitor annotation definitions and their members. Permission aliases
+# are read reflectively by Capacitor when plugins request Android permissions.
+-keep class com.getcapacitor.annotation.** { *; }
+
 # Capacitor plugin methods called from JavaScript.
 -keepclassmembers class * {
     @com.getcapacitor.PluginMethod <methods>;

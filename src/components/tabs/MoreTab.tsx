@@ -133,7 +133,12 @@ export function MoreTab({ onOpenAccount, onOpenFeatureTab }: MoreTabProps) {
     const now = new Date();
     const monthKey = now.toISOString().slice(0, 7);
     const spentThisMonth = getPersonalExpenses()
-      .filter((expense) => expense.date.startsWith(monthKey))
+      .filter((expense) => 
+        expense.date.startsWith(monthKey) && 
+        !expense.isIncome && 
+        !expense.reason?.toLowerCase().includes('initial balance') &&
+        expense.source !== 'account'
+      )
       .reduce((sum, expense) => sum + expense.amount, 0);
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const remainingDays = Math.max(1, daysInMonth - now.getDate() + 1);
